@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { formatDate, isValidDateInput, parseDate, periodOfDateInput } from "./dates";
+import {
+  formatDate,
+  formatMonth,
+  isValidDateInput,
+  isValidMonthInput,
+  parseDate,
+  parseMonth,
+  periodOfDateInput,
+} from "./dates";
 
 describe("formatDate", () => {
   it("renders ISO dates as dd/mm/yyyy", () => {
@@ -94,5 +102,66 @@ describe("periodOfDateInput", () => {
   it("gives the month a date falls in", () => {
     assert.equal(periodOfDateInput("09/03/2026"), "2026-03");
     assert.equal(periodOfDateInput("nonsense"), null);
+  });
+});
+
+describe("formatMonth", () => {
+  it("renders YYYY-MM as mm/yyyy", () => {
+    assert.equal(formatMonth("2026-03"), "03/2026");
+    assert.equal(formatMonth("2026-10"), "10/2026");
+    // A month-year pair that a native <input type="month"> would instead spell
+    // out in the viewer's own browser language.
+    assert.equal(formatMonth("2026-09"), "09/2026");
+  });
+
+  it("returns an empty string for nothing", () => {
+    assert.equal(formatMonth(null), "");
+    assert.equal(formatMonth(undefined), "");
+    assert.equal(formatMonth(""), "");
+  });
+});
+
+describe("parseMonth", () => {
+  it("reads mm/yyyy", () => {
+    assert.equal(parseMonth("03/2026"), "2026-03");
+    assert.equal(parseMonth("10/2026"), "2026-10");
+  });
+
+  it("reads what people actually type", () => {
+    assert.equal(parseMonth("3/2026"), "2026-03");
+    assert.equal(parseMonth("03-2026"), "2026-03");
+    assert.equal(parseMonth("03.2026"), "2026-03");
+    assert.equal(parseMonth("  03/2026  "), "2026-03");
+  });
+
+  it("rejects an impossible month", () => {
+    assert.equal(parseMonth("13/2026"), null);
+    assert.equal(parseMonth("00/2026"), null);
+  });
+
+  it("rejects anything that is not a whole month", () => {
+    assert.equal(parseMonth(""), null);
+    assert.equal(parseMonth("2026"), null);
+    assert.equal(parseMonth("2026-03"), null);
+    assert.equal(parseMonth("March"), null);
+  });
+
+  it("round-trips with formatMonth", () => {
+    for (const period of ["2026-01", "2026-09", "2026-12", "2027-06"]) {
+      assert.equal(parseMonth(formatMonth(period)), period);
+    }
+  });
+});
+
+describe("isValidMonthInput", () => {
+  it("treats an empty field as valid, since a deadline month is optional", () => {
+    assert.equal(isValidMonthInput(""), true);
+    assert.equal(isValidMonthInput("   "), true);
+  });
+
+  it("flags a part-typed or impossible month", () => {
+    assert.equal(isValidMonthInput("03/"), false);
+    assert.equal(isValidMonthInput("13/2026"), false);
+    assert.equal(isValidMonthInput("03/2026"), true);
   });
 });

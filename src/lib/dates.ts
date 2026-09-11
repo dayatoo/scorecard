@@ -62,3 +62,43 @@ export function periodOfDateInput(text: string): string | null {
   const iso = parseDate(text);
   return iso ? iso.slice(0, 7) : null;
 }
+
+// --------------------------------------------------------------------------
+// Month-only fields (a milestone's target month, a KPI's deadline month)
+// --------------------------------------------------------------------------
+//
+// Same problem as full dates: a native <input type="month"> renders in the
+// viewer's own browser language ("September ----" for one person, a different
+// order for another) rather than anything the page controls. These back a
+// plain text field the same way, at mm/yyyy, keeping "YYYY-MM" as the
+// storage and transport format used throughout scoring.ts.
+
+export const MONTH_PLACEHOLDER = "mm/yyyy";
+
+/** "YYYY-MM" to "mm/yyyy". Empty input gives "". */
+export function formatMonth(value: string | null | undefined): string {
+  if (!value) return "";
+  const match = value.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return value;
+  return `${match[2]}/${match[1]}`;
+}
+
+/** "mm/yyyy" (or "m/yyyy") to "YYYY-MM", or null if it is not a real month. */
+export function parseMonth(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(/^(\d{1,2})[/\-.](\d{4})$/);
+  if (!match) return null;
+
+  const month = Number(match[1]);
+  const year = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/** True when the text is either empty or a month this app can read. */
+export function isValidMonthInput(text: string): boolean {
+  return text.trim() === "" || parseMonth(text) !== null;
+}

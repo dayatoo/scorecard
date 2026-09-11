@@ -6,12 +6,13 @@ import { useMemo, useState, useTransition } from "react";
 
 import { ConfirmSaveDialog, SaveBar } from "@/components/ConfirmSaveDialog";
 import { DateField } from "@/components/DateField";
+import { MonthField } from "@/components/MonthField";
 import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
 import { ScoreChart, ValueChart } from "@/components/ScoreChart";
 import { useDirtyForm } from "@/components/useDirtyForm";
 import { BAND_STYLES } from "@/lib/band-style";
 import { DEFAULT_CURRENCY } from "@/lib/config";
-import { formatDate } from "@/lib/dates";
+import { formatDate, formatMonth } from "@/lib/dates";
 import { formatPeriodLabel } from "@/lib/fiscal";
 import {
   BANDS,
@@ -138,13 +139,21 @@ export function KpiDetailClient({
         return value.length ? value.map(departmentName).join(", ") : "none";
       }
       if (field === "targets" && value && typeof value === "object") {
-        return BANDS.map((b) => `${bandLabel(b)} ${(value as Record<string, string>)[b] || "—"}`).join("; ");
+        const targets = value as Record<string, string>;
+        return BANDS.map((b) => {
+          const raw = targets[b] || "";
+          const shown = kpi.metricType === "MONTH_COMPLETION" && b === "MEET" ? formatMonth(raw) : raw;
+          return `${bandLabel(b)} ${shown || "—"}`;
+        }).join("; ");
       }
       if (field === "scoreFinalAfterDeadline") {
         return value ? "score freezes at the deadline" : "partial credit after the deadline";
       }
       if (field === "completionDate") {
         return value ? formatDate(String(value)) : "not completed";
+      }
+      if (field === "deadlineMonth") {
+        return value ? formatMonth(String(value)) : "none";
       }
       if (value === "" || value === null || value === undefined) return "empty";
       return String(value);
@@ -551,11 +560,10 @@ function SettingsPanel({
         {kpi.isLeaf && kpi.metricType !== "MONTH_COMPLETION" && (
           <>
             <Field label="Deadline month" hint="Optional. Means the last day of that month.">
-              <input
-                type="month"
+              <MonthField
                 className={`mt-1 ${inputClass}`}
                 value={draft.deadlineMonth}
-                onChange={(e) => setField("deadlineMonth", e.target.value)}
+                onChange={(yearMonth) => setField("deadlineMonth", yearMonth)}
               />
             </Field>
             <Field
@@ -636,11 +644,10 @@ function TargetsPanel({
       >
         <div className="max-w-xs">
           <Field label="Target month (Meet)">
-            <input
-              type="month"
+            <MonthField
               className={`mt-1 ${inputClass}`}
               value={draft.targets.MEET ?? ""}
-              onChange={(e) => setField("targets", { ...draft.targets, MEET: e.target.value })}
+              onChange={(yearMonth) => setField("targets", { ...draft.targets, MEET: yearMonth })}
             />
           </Field>
         </div>
