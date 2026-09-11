@@ -23,13 +23,24 @@ You will create two free accounts:
 ## 2. Copy the two connection strings
 
 1. In your Supabase project, open **Project Settings** (the cog) → **Database**.
-2. Find **Connection string**. You need two of them:
+2. Find **Connection string**. There's a selector near the top with three
+   options — you need two of them, and it is easy to pick the wrong one:
    - **Transaction pooler** — the one on port `6543`. This is `DATABASE_URL`.
-   - **Direct connection** — the one on port `5432`. This is `DIRECT_URL`.
+   - **Session pooler** — the one on port `5432`. This is `DIRECT_URL`.
+
+   Do **not** use the option literally labelled **"Direct connection"**
+   (`db.<your-project>.supabase.co:5432`). It looks like the obvious choice
+   for `DIRECT_URL`, but that host only accepts IPv6 connections, and most
+   home and office networks can't reach it — you'll get `P1001: Can't reach
+   database server` when you try to run migrations in step 5. **Session
+   pooler** is the IPv4-friendly equivalent and works the same way for our
+   purposes.
 3. Copy each into a scratch file and replace `[YOUR-PASSWORD]` with the
    password you saved in step 1.
 
-The pooler string usually ends in `?pgbouncer=true`. Keep that on the end.
+Both pooler strings share the same host (something like
+`aws-0-<region>.pooler.supabase.com`) and differ only in port. The transaction
+pooler string usually ends in `?pgbouncer=true`. Keep that on the end.
 
 ## 3. Choose your two secrets
 
@@ -53,8 +64,8 @@ Keep `SESSION_SECRET` private. Changing it later simply signs everyone out.
 
    | Name | Value |
    | --- | --- |
-   | `DATABASE_URL` | the port-`6543` pooler string from step 2 |
-   | `DIRECT_URL` | the port-`5432` direct string from step 2 |
+   | `DATABASE_URL` | the port-`6543` transaction pooler string from step 2 |
+   | `DIRECT_URL` | the port-`5432` session pooler string from step 2 |
    | `APP_PASSWORD` | your shared password from step 3 |
    | `SESSION_SECRET` | your long random string from step 3 |
 
@@ -133,10 +144,16 @@ redeploy.
 **The password is not accepted** — check `APP_PASSWORD` in Vercel for stray
 spaces or quote marks, then redeploy.
 
-**Pages error with a database message** — the connection strings are wrong, or
-you have not run `npx prisma migrate deploy`. Check that `DATABASE_URL` uses
-port 6543 and `DIRECT_URL` uses 5432, and that both have the real password in
-place of `[YOUR-PASSWORD]`.
+**Pages error with a database message, e.g. "table does not exist"** — the
+connection strings are wrong, or you have not run `npx prisma migrate deploy`
+(step 5). Check that `DATABASE_URL` uses port 6543 and `DIRECT_URL` uses 5432,
+and that both have the real password in place of `[YOUR-PASSWORD]`.
+
+**`P1001: Can't reach database server at db.<project>.supabase.co:5432`** when
+running `npx prisma migrate deploy` — `DIRECT_URL` is set to the option
+literally labelled "Direct connection" on Supabase's page, which needs IPv6.
+Go back to step 2 and use the **Session pooler** string instead (same port,
+`5432`, but a different, IPv4-friendly host).
 
 **Everyone was signed out** — `SESSION_SECRET` changed. Signing in again is all
 that is needed.
