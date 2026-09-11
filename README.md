@@ -38,12 +38,18 @@ targets; parent nodes roll up as the weighted average of their children.
 Scoring logic lives in `src/lib/scoring.ts`, with a standalone sanity check
 at `src/lib/scoring.check.ts` (run via `npm run check:scoring`).
 
-## Getting started
+## Database
+
+Data is stored in Postgres via [Supabase](https://supabase.com) (free
+tier). There is no authentication — this is intended for single-user/
+internal use.
+
+## Getting started (local)
 
 ```bash
 npm install
-cp .env.example .env
-npx prisma migrate dev
+cp .env.example .env   # fill in your Supabase connection strings
+npx prisma migrate deploy
 npm run seed      # optional: loads sample KPIs across all metric types
 npm run dev
 ```
@@ -56,5 +62,7 @@ Open http://localhost:3000:
   hierarchy, set weights and target configuration.
 - **Enter Data** (`/entry`) — monthly data-entry form for leaf KPIs.
 
-Data is stored locally in SQLite (`prisma/dev.db`); there is no
-authentication — this is intended for single-user/internal use.
+## Deploying (Vercel + Supabase, no coding required)
+
+See the step-by-step, no-code walkthrough for creating a free Supabase
+database and deploying this app to a public URL with Vercel.
