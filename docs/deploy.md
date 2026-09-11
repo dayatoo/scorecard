@@ -37,10 +37,17 @@ You will create two free accounts:
    purposes.
 3. Copy each into a scratch file and replace `[YOUR-PASSWORD]` with the
    password you saved in step 1.
+4. To the **transaction pooler** string only (the one for `DATABASE_URL`), add
+   `?pgbouncer=true` at the very end — Supabase's own copy-paste string does
+   **not** include this; you have to type it on yourself. Without it, the
+   running app will intermittently fail with errors like `prepared statement
+   "s0" already exists`, because Prisma expects to reuse one connection for a
+   prepared statement and the transaction pooler hands out a different one
+   per query. This flag tells Prisma to send plain queries instead. The
+   session pooler string (`DIRECT_URL`) does not need it.
 
 Both pooler strings share the same host (something like
-`aws-0-<region>.pooler.supabase.com`) and differ only in port. The transaction
-pooler string usually ends in `?pgbouncer=true`. Keep that on the end.
+`aws-0-<region>.pooler.supabase.com`) and differ only in port.
 
 ## 3. Choose your two secrets
 
@@ -154,6 +161,12 @@ running `npx prisma migrate deploy` — `DIRECT_URL` is set to the option
 literally labelled "Direct connection" on Supabase's page, which needs IPv6.
 Go back to step 2 and use the **Session pooler** string instead (same port,
 `5432`, but a different, IPv4-friendly host).
+
+**`prepared statement "sN" already exists`** (any number in place of N),
+usually right after the app has been running for a bit — `DATABASE_URL` in
+Vercel is missing `?pgbouncer=true` on the end. Add it (see step 2) and
+redeploy. This only affects the deployed app's `DATABASE_URL`; your local
+`.env` doesn't need it for running migrations.
 
 **Everyone was signed out** — `SESSION_SECRET` changed. Signing in again is all
 that is needed.
