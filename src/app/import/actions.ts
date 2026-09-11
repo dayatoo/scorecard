@@ -3,13 +3,14 @@
 import { applyImport, type ImportSummary } from "@/app/actions/admin";
 import { attempt, type ActionResult } from "@/app/actions/result";
 import { requireAuth } from "@/lib/session";
-import { parseWorkbook, type ParsedKpi, type ParseIssue } from "@/lib/workbook";
+import { parseWorkbook, type ParsedKpi, type ParsedValue, type ParseIssue } from "@/lib/workbook";
 import { validateHierarchy, type Issue } from "@/lib/validation";
 import type { KpiRecord } from "@/lib/kpi-tree";
 
 export type ImportPreview = {
   kpis: ParsedKpi[];
   departments: string[];
+  values: ParsedValue[];
   parseIssues: ParseIssue[];
   /** Structural problems: weights, target order, cycles. */
   issues: Issue[];
@@ -63,6 +64,7 @@ async function readWorkbook(formData: FormData): Promise<ImportPreview> {
   return {
     kpis: parsed.kpis,
     departments: parsed.departments,
+    values: parsed.values,
     parseIssues: parsed.issues,
     issues: parsed.kpis.length > 0 ? validateHierarchy(asRecords) : [],
     counts: {
@@ -93,6 +95,7 @@ export async function commitImport(input: {
   fiscalYearId: string;
   kpis: ParsedKpi[];
   departments: string[];
+  values?: ParsedValue[];
 }): Promise<ActionResult<ImportSummary>> {
   return attempt(async () => {
     await requireAuth();

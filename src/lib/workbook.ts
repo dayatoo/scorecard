@@ -26,6 +26,7 @@ export const KPI_SHEET = "KPIs";
 export const DEPARTMENT_SHEET = "Departments";
 export const README_SHEET = "Readme";
 export const SCORES_SHEET = "Scores";
+export const VALUES_SHEET = "Values";
 
 const BAND_COLUMNS: Record<Band, string> = {
   POOR: "Poor",
@@ -82,9 +83,21 @@ export type ParsedKpi = {
 
 export type ParseIssue = { row: number | null; message: string };
 
+/** One month's recorded figure for a KPI, read from the optional Values sheet. */
+export type ParsedValue = {
+  code: string;
+  period: string;
+  value: number | null;
+  basis: "ACTUAL" | "ESTIMATE";
+  completionDate: string | null;
+  note: string | null;
+  row: number;
+};
+
 export type ParseResult = {
   kpis: ParsedKpi[];
   departments: string[];
+  values: ParsedValue[];
   issues: ParseIssue[];
 };
 
@@ -182,6 +195,7 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
     return {
       kpis: [],
       departments: [],
+      values: [],
       issues: [{ row: null, message: "That file could not be read as an Excel workbook (.xlsx)." }],
     };
   }
@@ -191,6 +205,7 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
     return {
       kpis: [],
       departments: [],
+      values: [],
       issues: [{ row: null, message: `The workbook has no "${KPI_SHEET}" sheet. Start from the downloadable template.` }],
     };
   }
@@ -335,7 +350,126 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
   // Any department named on a KPI counts, even if the sheet omits it.
   for (const kpi of kpis) kpi.departments.forEach((d) => departments.add(d));
 
-  return { kpis, departments: [...departments].sort(), issues };
+  const values = parseValuesSheet(workbook, codes, issues);
+
+  return { kpis, departments: [...departments].sort(), values, issues };
+}
+
+/**
+ * Reads the optional Values sheet — one row per KPI per month, so a year of
+ * figures can be loaded alongside the hierarchy instead of typed in by hand.
+ * A workbook without the sheet imports structure only, exactly as before.
+ */
+function parseValuesSheet(
+  workbook: ExcelJS.Workbook,
+  codes: Set<string>,
+  issues: ParseIssue[]
+): ParsedValue[] {
+  const sheet = workbook.getWorksheet(VALUES_SHEET);
+  if (!sheet) return [];
+
+  const columnOf = new Map<string, number>();
+  sheet.getRow(1).eachCell((cell, index) => {
+    const name = cellText(cell.value).toLowerCase();
+    if (name) columnOf.set(name, index);
+  });
+
+  const get = (row: ExcelJS.Row, column: string): string => {
+    const index = columnOf.get(column.toLowerCase());
+    return index ? cellText(row.getCell(index).value) : "";
+  };
+
+  const values: ParsedValue[] = [];
+  const seen = new Map<string, number>();
+
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+
+    const code = get(row, "Code");
+    const periodText = get(row, "Period");
+    if (!code && !periodText) return; // blank spacer row
+
+    if (!codes.has(code.toLowerCase())) {
+      issues.push({
+        row: rowNumber,
+        message: `Values sheet: "${code}" does not match any KPI on the ${KPI_SHEET} sheet.`,
+      });
+      return;
+    }
+
+    const period = parseMonth(periodText);
+    if (!period) {
+      issues.push({
+        row: rowNumber,
+        message: `Values sheet: "${periodText}" is not a month. Use YYYY-MM, e.g. 2026-08.`,
+      });
+      return;
+    }
+
+    const key = `${code.toLowerCase()}|${period}`;
+    const duplicate = seen.get(key);
+    if (duplicate) {
+      issues.push({
+        row: rowNumber,
+        message: `Values sheet: ${code} already has a figure for ${period} on row ${duplicate}.`,
+      });
+      return;
+    }
+    seen.set(key, rowNumber);
+
+    const valueText = get(row, "Value");
+    const value = valueText ? parseNumber(valueText) : null;
+    if (valueText && value === null) {
+      issues.push({
+        row: rowNumber,
+        message: `Values sheet: ${code}: "${valueText}" is not a number.`,
+      });
+      return;
+    }
+
+    const completionText = get(row, "Completion Date");
+    let completionDate: string | null = null;
+    if (completionText) {
+      const parsed = parseDateCell(completionText);
+      if (!parsed) {
+        issues.push({
+          row: rowNumber,
+          message: `Values sheet: ${code}: "${completionText}" is not a date. Use dd/mm/yyyy.`,
+        });
+        return;
+      }
+      completionDate = parsed;
+    }
+
+    const basisText = get(row, "Basis").trim().toUpperCase();
+    values.push({
+      code,
+      period,
+      value,
+      basis: basisText.startsWith("E") ? "ESTIMATE" : "ACTUAL",
+      completionDate,
+      note: get(row, "Note") || null,
+      row: rowNumber,
+    });
+  });
+
+  return values;
+}
+
+/** "09/03/2026", "2026-03-09" or a real date cell to ISO yyyy-mm-dd. */
+function parseDateCell(text: string): string | null {
+  const trimmed = text.trim();
+  const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const dmy = trimmed.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+  if (!dmy) return null;
+  const day = Number(dmy[1]);
+  const month = Number(dmy[2]);
+  const year = Number(dmy[3]);
+  if (month < 1 || month > 12 || day < 1) return null;
+  if (day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function buildTargetConfig(params: {
@@ -455,6 +589,7 @@ function addReadmeSheet(workbook: ExcelJS.Workbook) {
     ["Deadline Month", "Optional, YYYY-MM. Use it for a KPI that is time-bound even though its metric is not. It means the last day of that month."],
     ["Score Final After Deadline", 'Yes — the score freezes at whatever it was in the deadline month; later achievement is recorded but does not change it. No (the default) — later achievement still earns partial credit, capped at 2.9 one month late, 2.4 two months late, and 0 after that.'],
     ["Departments", "Who owns the KPI. Separate several with a semicolon, e.g. Finance; Operations. Names should match the Departments sheet."],
+    ["Values sheet (optional)", 'Add a sheet named "Values" to load monthly figures alongside the hierarchy, instead of typing them in. Columns: Code, Period, Value, Basis, Completion Date, Note. Period is YYYY-MM. Basis is Actual or Estimate. Completion Date (dd/mm/yyyy) is only for month-of-completion KPIs. A row overwrites whatever is recorded for that KPI and month.'],
   ];
 
   lines.forEach(([label, text], index) => {

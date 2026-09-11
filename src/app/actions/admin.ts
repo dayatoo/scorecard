@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/session";
 import { fiscalYearLabel } from "@/lib/fiscal";
-import type { ParsedKpi } from "@/lib/workbook";
+import type { ParsedKpi, ParsedValue } from "@/lib/workbook";
 import { attempt, type ActionResult } from "./result";
 
 export async function createFiscalYear(input: {
@@ -159,6 +159,8 @@ export type ImportSummary = {
   updated: number;
   removed: number;
   departmentsCreated: number;
+  /** Monthly figures written from the workbook's optional Values sheet. */
+  valuesWritten: number;
 };
 
 /**
@@ -173,6 +175,7 @@ export async function applyImport(input: {
   fiscalYearId: string;
   kpis: ParsedKpi[];
   departments: string[];
+  values?: ParsedValue[];
 }): Promise<ImportSummary> {
   await requireAuth();
 
@@ -265,11 +268,32 @@ export async function applyImport(input: {
     });
   }
 
+  // Monthly figures, if the workbook carried a Values sheet. Written after the
+  // hierarchy so every code resolves, and upserted so re-importing a corrected
+  // sheet overwrites rather than duplicates.
+  let valuesWritten = 0;
+  for (const v of input.values ?? []) {
+    const kpiId = idByCode.get(v.code.toLowerCase());
+    if (!kpiId) continue;
+    const data = {
+      value: v.value,
+      basis: v.basis,
+      completionDate: v.completionDate ? new Date(v.completionDate) : null,
+      note: v.note,
+    };
+    await prisma.kpiValue.upsert({
+      where: { kpiId_period: { kpiId, period: v.period } },
+      create: { kpiId, period: v.period, ...data },
+      update: data,
+    });
+    valuesWritten++;
+  }
+
   revalidatePath("/");
   revalidatePath("/kpis");
   revalidatePath("/entry");
   revalidatePath("/manage");
   revalidatePath("/milestones");
 
-  return { created, updated, removed: toRemove.length, departmentsCreated };
+  return { created, updated, removed: toRemove.length, departmentsCreated, valuesWritten };
 }

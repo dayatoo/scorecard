@@ -239,6 +239,102 @@ describe("parse errors", () => {
   });
 });
 
+describe("Values sheet", () => {
+  const VALUE_COLUMNS = ["Code", "Period", "Value", "Basis", "Completion Date", "Note"];
+
+  const buildWithValues = async (valueRows: (string | number | null)[][]) => {
+    const ExcelJS = (await import("exceljs")).default;
+    const { KPI_COLUMNS, VALUES_SHEET } = await import("./workbook");
+    const workbook = new ExcelJS.Workbook();
+
+    const kpis = workbook.addWorksheet("KPIs");
+    kpis.addRow([...KPI_COLUMNS]);
+    kpis.addRow([
+      "K1", "A KPI", null, 100, "Finance", "QUANTITY", "units",
+      "HIGHER_BETTER", "FIXED", 1, 2, 3, 4, 5, 6, null, "No",
+    ]);
+
+    const values = workbook.addWorksheet(VALUES_SHEET);
+    values.addRow(VALUE_COLUMNS);
+    valueRows.forEach((r) => values.addRow(r));
+
+    const written = (await workbook.xlsx.writeBuffer()) as unknown;
+    const bytes =
+      written instanceof Uint8Array
+        ? new Uint8Array(written)
+        : new Uint8Array(written as ArrayBuffer);
+    return bytesToArrayBuffer(bytes);
+  };
+
+  it("reads a figure, defaulting an unmarked basis to actual", async () => {
+    const result = await parseWorkbook(await buildWithValues([["K1", "2026-08", 4, null, null, "on track"]]));
+
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.values.length, 1);
+    assert.deepEqual(
+      { ...result.values[0], row: undefined },
+      {
+        code: "K1", period: "2026-08", value: 4, basis: "ACTUAL",
+        completionDate: null, note: "on track", row: undefined,
+      }
+    );
+  });
+
+  it("recognises an estimate", async () => {
+    const result = await parseWorkbook(await buildWithValues([["K1", "2026-08", 4, "Estimate", null, null]]));
+    assert.equal(result.values[0].basis, "ESTIMATE");
+  });
+
+  it("reads a completion date as dd/mm/yyyy, not month-first", async () => {
+    const result = await parseWorkbook(await buildWithValues([["K1", "2026-08", null, null, "03/09/2026", null]]));
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.values[0].completionDate, "2026-09-03");
+  });
+
+  it("rejects a date that does not exist", async () => {
+    const result = await parseWorkbook(await buildWithValues([["K1", "2026-08", null, null, "31/02/2026", null]]));
+    assert.ok(result.issues.some((i) => i.message.includes("is not a date")));
+    assert.equal(result.values.length, 0);
+  });
+
+  it("reports a code that matches no KPI", async () => {
+    const result = await parseWorkbook(await buildWithValues([["NOPE", "2026-08", 4, null, null, null]]));
+    assert.ok(result.issues.some((i) => i.message.includes("does not match any KPI")));
+  });
+
+  it("reports a malformed period rather than guessing at it", async () => {
+    const result = await parseWorkbook(await buildWithValues([["K1", "whenever", 4, null, null, null]]));
+    assert.ok(result.issues.some((i) => i.message.includes("is not a month")));
+  });
+
+  it("reports the same KPI twice in one month", async () => {
+    const result = await parseWorkbook(
+      await buildWithValues([
+        ["K1", "2026-08", 4, null, null, null],
+        ["K1", "2026-08", 5, null, null, null],
+      ])
+    );
+    assert.ok(result.issues.some((i) => i.message.includes("already has a figure")));
+    assert.equal(result.values.length, 1);
+  });
+
+  it("reports a value that is not a number", async () => {
+    const result = await parseWorkbook(await buildWithValues([["K1", "2026-08", "lots", null, null, null]]));
+    assert.ok(result.issues.some((i) => i.message.includes("is not a number")));
+  });
+
+  it("ignores blank spacer rows", async () => {
+    const result = await parseWorkbook(await buildWithValues([[], ["K1", "2026-08", 4, null, null, null]]));
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.values.length, 1);
+  });
+
+  it("returns no values when the workbook has no Values sheet", async () => {
+    const result = await parseWorkbook(bytesToArrayBuffer(await buildExampleWorkbook()));
+    assert.deepEqual(result.values, []);
+  });
+});
+
 // Keeps the ExportKpi shape honest against what the writer actually needs.
 const _shapeCheck: ExportKpi = {
   code: "X", name: "X", parentCode: null, weight: 0, departments: [],

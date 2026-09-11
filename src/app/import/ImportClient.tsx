@@ -57,6 +57,7 @@ export function ImportClient({
           fiscalYearId,
           kpis: preview.kpis,
           departments: preview.departments,
+          values: preview.values,
         });
         if (!result.ok) {
           setError(result.error);
@@ -143,6 +144,8 @@ export function ImportClient({
             {summary.removed > 0 && `, ${summary.removed} removed`}
             {summary.departmentsCreated > 0 &&
               `, ${summary.departmentsCreated} new department${summary.departmentsCreated === 1 ? "" : "s"}`}
+            {summary.valuesWritten > 0 &&
+              `, ${summary.valuesWritten} monthly figure${summary.valuesWritten === 1 ? "" : "s"}`}
             .
           </p>
           <Link href="/" className="mt-2 inline-block font-medium underline">
@@ -162,6 +165,9 @@ export function ImportClient({
               value={`${preview.counts.weightTotal.toFixed(2)}%`}
               tone={Math.abs(preview.counts.weightTotal - 100) > 0.01 ? "warn" : "ok"}
             />
+            {preview.values.length > 0 && (
+              <Stat label="Monthly figures" value={String(preview.values.length)} />
+            )}
           </dl>
 
           {preview.parseIssues.length > 0 && (
@@ -283,6 +289,16 @@ export function ImportClient({
                   from: "recorded",
                   to: "unchanged — KPIs are matched on their code",
                 },
+                ...(preview.values.length > 0
+                  ? [
+                      {
+                        field: "values",
+                        label: "Monthly figures in this file",
+                        from: "whatever is recorded for those months now",
+                        to: `${preview.values.length} figures written, overwriting those months`,
+                      },
+                    ]
+                  : []),
               ]
             : []
         }
