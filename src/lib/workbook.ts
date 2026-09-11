@@ -60,6 +60,36 @@ const METRIC_TYPES: MetricType[] = [
   "MONTH_COMPLETION",
 ];
 
+const DIRECTIONS: Direction[] = ["HIGHER_BETTER", "LOWER_BETTER"];
+const TARGET_MODES: TargetMode[] = ["FIXED", "RANGE"];
+
+/**
+ * Units seen on most scorecards. Unlike the columns above this is only a
+ * shortlist — the unit is a free label on the KPI, so a KPI counted in
+ * anything else (tonnes, complaints, MWh) still types straight in.
+ */
+const UNIT_SUGGESTIONS = ["%", DEFAULT_CURRENCY, "days", "score", "units", "months"];
+
+/**
+ * The columns whose value has to come from a list, so people pick rather than
+ * remember the spelling. `strict` columns reject anything else; Unit only
+ * offers its list, since any label is valid there.
+ */
+const LIST_COLUMNS: { column: string; values: string[]; strict: boolean }[] = [
+  { column: "Metric Type", values: METRIC_TYPES, strict: true },
+  { column: "Unit", values: UNIT_SUGGESTIONS, strict: false },
+  { column: "Direction", values: DIRECTIONS, strict: true },
+  { column: "Target Mode", values: TARGET_MODES, strict: true },
+  { column: "Score Final After Deadline", values: ["Yes", "No"], strict: true },
+];
+
+/**
+ * How far down the sheet the dropdowns reach. Excel validates a fixed block of
+ * cells rather than a whole column, so this has to be well past the ~100 rows a
+ * scorecard runs to, without being so far that the file bloats.
+ */
+const VALIDATED_ROWS = 500;
+
 // --------------------------------------------------------------------------
 // Parsing
 // --------------------------------------------------------------------------
@@ -589,6 +619,7 @@ function addReadmeSheet(workbook: ExcelJS.Workbook) {
     ["Deadline Month", "Optional, YYYY-MM. Use it for a KPI that is time-bound even though its metric is not. It means the last day of that month."],
     ["Score Final After Deadline", 'Yes — the score freezes at whatever it was in the deadline month; later achievement is recorded but does not change it. No (the default) — later achievement still earns partial credit, capped at 2.9 one month late, 2.4 two months late, and 0 after that.'],
     ["Departments", "Who owns the KPI. Separate several with a semicolon, e.g. Finance; Operations. Names should match the Departments sheet."],
+    ["Dropdowns", `Metric Type, Direction, Target Mode and Score Final After Deadline are dropdowns — pick from the list rather than typing, and Excel will refuse anything else. Unit offers ${UNIT_SUGGESTIONS.join(", ")} as a shortcut but accepts any label, so a KPI counted in something else can still be typed in. Every one of them may be left blank on a KPI that has children.`],
     ["Values sheet (optional)", 'Add a sheet named "Values" to load monthly figures alongside the hierarchy, instead of typing them in. Columns: Code, Period, Value, Basis, Completion Date, Note. Period is YYYY-MM. Basis is Actual or Estimate. Completion Date (dd/mm/yyyy) is only for month-of-completion KPIs. A row overwrites whatever is recorded for that KPI and month.'],
   ];
 
@@ -618,7 +649,58 @@ function addKpiSheet(workbook: ExcelJS.Workbook) {
       header === "Name" ? 42 : header === "Departments" ? 26 : header === "Score Final After Deadline" ? 24 : 16,
   }));
   styleHeader(sheet);
+  addListValidation(sheet);
   return sheet;
+}
+
+/**
+ * Turns the fixed-vocabulary columns into dropdowns. A blank is always allowed
+ * — a KPI with children carries no metric at all — and the strict columns
+ * explain themselves when something else is typed, rather than just refusing.
+ */
+function addListValidation(sheet: ExcelJS.Worksheet) {
+  for (const { column, values, strict } of LIST_COLUMNS) {
+    const index = KPI_COLUMNS.indexOf(column as (typeof KPI_COLUMNS)[number]) + 1;
+    if (index === 0) continue;
+    const letter = sheet.getColumn(index).letter;
+
+    // One validation over the whole column range, rather than one per cell.
+    // Per-cell would both create 500 empty rows and hit an ExcelJS bug: it
+    // merges alike validations into ranges but sorts the addresses as text,
+    // so "F10" sorts before "F2" and the merge emits two overlapping ranges —
+    // which Excel reports as unreadable content.
+    validationsOf(sheet).add(`${letter}2:${letter}${VALIDATED_ROWS + 1}`, {
+      type: "list",
+      allowBlank: true,
+      formulae: [`"${values.join(",")}"`],
+      ...(strict
+        ? {
+            showErrorMessage: true,
+            // OOXML allows only stop / warning / information here; ExcelJS
+            // types it as a bare string and writes whatever it is given, and
+            // Excel then refuses to open a file carrying anything else.
+            errorStyle: "stop",
+            errorTitle: `${column} not recognised`,
+            error: `${column} must be one of: ${values.join(", ")}.`,
+          }
+        : {
+            // A suggestion, not a rule — so say so on the way in rather than
+            // complaining on the way out.
+            showErrorMessage: false,
+            showInputMessage: true,
+            promptTitle: column,
+            prompt: `Pick one, or type your own — any label is accepted.`,
+          }),
+    });
+  }
+}
+
+/** ExcelJS exposes the range-addressed validation store, but does not type it. */
+function validationsOf(sheet: ExcelJS.Worksheet): {
+  add: (range: string, validation: ExcelJS.DataValidation) => void;
+} {
+  return (sheet as unknown as { dataValidations: { add: (range: string, validation: ExcelJS.DataValidation) => void } })
+    .dataValidations;
 }
 
 function formatTargetCell(

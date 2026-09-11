@@ -239,6 +239,90 @@ describe("parse errors", () => {
   });
 });
 
+describe("column dropdowns", () => {
+  /**
+   * Validation is stored against a range, not a cell, so read it back out of
+   * the file the way Excel does rather than through the cell API.
+   */
+  const validationsOf = async (bytes: Uint8Array) => {
+    // JSZip rather than a new devDependency: ExcelJS writes the workbook with
+    // it, so it is always present alongside it.
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(bytes);
+    const sheets = Object.keys(zip.files).filter((n) => n.startsWith("xl/worksheets/sheet"));
+
+    let xml = "";
+    for (const name of sheets) {
+      const text = await zip.files[name].async("string");
+      if (text.includes("dataValidation")) xml = text;
+    }
+
+    return [...xml.matchAll(/<dataValidation\s([^>]*)>\s*<formula1>(.*?)<\/formula1>/g)].map((m) => {
+      const attrs = Object.fromEntries(
+        [...m[1].matchAll(/(\w+)="([^"]*)"/g)].map((a) => [a[1], a[2]])
+      );
+      return {
+        sqref: attrs.sqref,
+        title: attrs.errorTitle ?? attrs.promptTitle ?? "",
+        strict: attrs.showErrorMessage === "1",
+        options: m[2].replace(/&quot;/g, "").split(","),
+      };
+    });
+  };
+
+  const forColumn = async (bytes: Uint8Array, header: string) => {
+    const { KPI_COLUMNS } = await import("./workbook");
+    const index = KPI_COLUMNS.indexOf(header as (typeof KPI_COLUMNS)[number]);
+    const letter = String.fromCharCode(65 + index);
+    return (await validationsOf(bytes)).find((v) => v.sqref.startsWith(`${letter}2:`));
+  };
+
+  it("offers every valid value on the closed columns, and refuses anything else", async () => {
+    const bytes = await buildTemplateWorkbook([]);
+
+    for (const [header, expected] of [
+      ["Metric Type", ["PERCENTAGE", "DOLLAR", "QUANTITY", "DAYS", "MONTH_COMPLETION"]],
+      ["Direction", ["HIGHER_BETTER", "LOWER_BETTER"]],
+      ["Target Mode", ["FIXED", "RANGE"]],
+      ["Score Final After Deadline", ["Yes", "No"]],
+    ] as const) {
+      const validation = await forColumn(bytes, header);
+      assert.deepEqual(validation?.options, [...expected], header);
+      assert.equal(validation?.strict, true, `${header} should refuse a typo`);
+    }
+  });
+
+  it("suggests units without enforcing them, since any label is valid", async () => {
+    const unit = await forColumn(await buildTemplateWorkbook([]), "Unit");
+
+    assert.ok(unit?.options.includes(DEFAULT_CURRENCY));
+    assert.equal(unit?.strict, false);
+  });
+
+  it("covers enough rows for a full scorecard", async () => {
+    const validation = await forColumn(await buildTemplateWorkbook([]), "Metric Type");
+    const lastRow = Number(validation!.sqref.split(":")[1].replace(/\D/g, ""));
+
+    assert.ok(lastRow >= 200, `dropdowns stop at row ${lastRow}`);
+  });
+
+  it("writes non-overlapping ranges, which Excel reports as corruption", async () => {
+    const ranges = (await validationsOf(await buildTemplateWorkbook([]))).map((v) => v.sqref);
+
+    assert.equal(new Set(ranges).size, ranges.length);
+    // One range per validated column, not one per cell.
+    assert.equal(ranges.length, 5);
+  });
+
+  it("leaves the sheet empty, so exported rows start at row 2", async () => {
+    const result = await parseWorkbook(bytesToArrayBuffer(await buildExampleWorkbook()));
+
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.kpis.length, 7);
+    assert.equal(result.kpis[0].code, "SG1");
+  });
+});
+
 describe("Values sheet", () => {
   const VALUE_COLUMNS = ["Code", "Period", "Value", "Basis", "Completion Date", "Note"];
 
