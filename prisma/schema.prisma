@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum MetricType {
+  PERCENTAGE
+  DOLLAR
+  QUANTITY
+  DAYS
+  MONTH_COMPLETION
+}
+
+enum Direction {
+  HIGHER_BETTER
+  LOWER_BETTER
+}
+
+enum TargetMode {
+  FIXED
+  RANGE
+}
+
+// A single node in the KPI hierarchy: Strategic Goal -> KPI -> sub-KPI -> sub-sub-KPI.
+// Depth is unlimited via self-reference; a node with children is a rollup node
+// (its score is the weighted average of its children's scores) and its metric/
+// target fields are ignored. A node with no children is a leaf that must define
+// metricType/direction/targetMode and a targetConfig, and carries monthly values.
+model Kpi {
+  id       String  @id @default(cuid())
+  name     String
+  parentId String?
+  parent   Kpi?    @relation("KpiHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children Kpi[]   @relation("KpiHierarchy")
+
+  // Relative weight among siblings under the same parent (normalized at rollup time).
+  weight Float @default(1)
+
+  // Sort order among siblings, for stable display.
+  sortOrder Int @default(0)
+
+  // Leaf-only fields (null for rollup/parent nodes).
+  metricType MetricType?
+  direction  Direction?
+  targetMode TargetMode?
+
+  // JSON-encoded target configuration, shape depends on metricType/targetMode.
+  // FIXED numeric:  { meetTarget, poorThreshold, goodThreshold, veryGoodThreshold, excellentThreshold }
+  // RANGE numeric:  { poor:[min,max], improvementNeeded:[min,max], meet:[min,max], good:[min,max], veryGood:[min,max], excellent:[min,max] }
+  // MONTH_COMPLETION: { targetMonth: "YYYY-MM" }
+  targetConfig String?
+
+  values KpiValue[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([parentId])
+}
+
+// One monthly recorded value for a leaf KPI.
+model KpiValue {
+  id     String @id @default(cuid())
+  kpiId  String
+  kpi    Kpi    @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+
+  // Period this value applies to, formatted "YYYY-MM".
+  period String
+
+  // Numeric metrics (percentage/dollar/quantity/days) use `value`.
+  value Float?
+
+  // MONTH_COMPLETION metrics use the actual completion date instead.
+  completionDate DateTime?
+
+  note String?
+
+  enteredAt DateTime @default(now())
+
+  @@unique([kpiId, period])
+  @@index([kpiId])
+}
