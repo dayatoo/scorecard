@@ -1,3 +1,10 @@
+// Company KPI Scorecard — data model.
+//
+// A scorecard is scoped to a FiscalYear (April 1 -> March 31). Within a year the
+// KPIs form a hierarchy up to 4 levels deep: Strategic Goal -> KPI -> sub-KPI ->
+// sub-sub-KPI. Only leaf nodes carry a metric, targets and a weight; parents are
+// pure rollups of their children.
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -26,62 +33,150 @@ enum TargetMode {
   RANGE
 }
 
-// A single node in the KPI hierarchy: Strategic Goal -> KPI -> sub-KPI -> sub-sub-KPI.
-// Depth is unlimited via self-reference; a node with children is a rollup node
-// (its score is the weighted average of its children's scores) and its metric/
-// target fields are ignored. A node with no children is a leaf that must define
-// metricType/direction/targetMode and a targetConfig, and carries monthly values.
-model Kpi {
+// Whether a recorded figure is settled or still a forecast. An estimate scores
+// exactly like an actual; the distinction drives the "provisional" flagging and
+// the fallback rule in scoring.ts (use the period's actual, else the most recent
+// estimate at or before that period).
+enum ValueBasis {
+  ACTUAL
+  ESTIMATE
+}
+
+// One financial year, April of `startYear` through March of `startYear + 1`.
+// Each year owns its own hierarchy, weights and targets, so changing next
+// year's targets never rewrites last year's scores.
+model FiscalYear {
+  id        String  @id @default(cuid())
+  startYear Int     @unique
+  label     String
+  isActive  Boolean @default(false)
+
+  kpis Kpi[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Owner of a KPI. Departments, not individuals — picked from a managed dropdown.
+model Department {
   id       String  @id @default(cuid())
-  name     String
+  name     String  @unique
+  isActive Boolean @default(true)
+
+  kpis KpiDepartment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Kpi {
+  id           String     @id @default(cuid())
+  fiscalYearId String
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+
+  // Stable human-readable identifier, unique within the year. Used as the join
+  // key for spreadsheet import (`Parent Code` refers to it).
+  code String
+  name String
+
   parentId String?
   parent   Kpi?    @relation("KpiHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
   children Kpi[]   @relation("KpiHierarchy")
 
-  // Relative weight among siblings under the same parent (normalized at rollup time).
-  weight Float @default(1)
-
-  // Sort order among siblings, for stable display.
   sortOrder Int @default(0)
 
-  // Leaf-only fields (null for rollup/parent nodes).
+  // Global weight as a percentage. Leaves only; across a fiscal year every
+  // leaf weight should sum to 100. A parent's effective weight is derived at
+  // read time as the sum of its descendant leaves.
+  weight Float @default(0)
+
+  // --- Leaf-only fields. Null on rollup nodes, whose score is the weighted
+  // average of their children. ---
+
   metricType MetricType?
   direction  Direction?
   targetMode TargetMode?
+  unit       String?
 
-  // JSON-encoded target configuration, shape depends on metricType/targetMode.
-  // FIXED numeric:  { meetTarget, poorThreshold, goodThreshold, veryGoodThreshold, excellentThreshold }
-  // RANGE numeric:  { poor:[min,max], improvementNeeded:[min,max], meet:[min,max], good:[min,max], veryGood:[min,max], excellent:[min,max] }
-  // MONTH_COMPLETION: { targetMonth: "YYYY-MM" }
+  // JSON-encoded targets; the shape depends on metricType/targetMode.
+  //   FIXED numeric:  { poor, improvementNeeded, meet, good, veryGood, excellent }
+  //   RANGE numeric:  { poor: [min,max], improvementNeeded: [min,max], ... }
+  //   MONTH_COMPLETION: { targetMonth: "YYYY-MM" }
   targetConfig String?
 
-  values KpiValue[]
+  // Optional deadline for KPIs that are time-bound even though their metric is
+  // not time-based. "YYYY-MM", meaning the last day of that month. Ignored for
+  // MONTH_COMPLETION, which already carries a target month.
+  deadlineMonth String?
+
+  // true  -> the score freezes at its deadline-month value; later achievement
+  //          is recorded but never changes the score.
+  // false -> later achievement still earns partial credit, capped by how late
+  //          it is (see applyDeadline in scoring.ts).
+  scoreFinalAfterDeadline Boolean @default(false)
+
+  departments KpiDepartment[]
+  values      KpiValue[]
+  updates     KpiUpdate[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([fiscalYearId, code])
+  @@index([fiscalYearId])
   @@index([parentId])
 }
 
-// One monthly recorded value for a leaf KPI.
-model KpiValue {
-  id     String @id @default(cuid())
-  kpiId  String
-  kpi    Kpi    @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+// Many-to-many: a KPI can be owned by several departments.
+model KpiDepartment {
+  kpiId        String
+  kpi          Kpi        @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
 
-  // Period this value applies to, formatted "YYYY-MM".
+  @@id([kpiId, departmentId])
+  @@index([departmentId])
+}
+
+// One month's recorded figure for a leaf KPI.
+model KpiValue {
+  id    String @id @default(cuid())
+  kpiId String
+  kpi   Kpi    @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+
+  // The month this figure reports, "YYYY-MM".
   period String
 
-  // Numeric metrics (percentage/dollar/quantity/days) use `value`.
+  // Cumulative year-to-date figure (or the latest estimate of it) for numeric
+  // metrics. Null for MONTH_COMPLETION, which records a date instead.
   value Float?
+  basis ValueBasis @default(ACTUAL)
 
-  // MONTH_COMPLETION metrics use the actual completion date instead.
   completionDate DateTime?
 
+  // Commentary on this month's number specifically. Longer-running narrative
+  // belongs in KpiUpdate.
   note String?
 
   enteredAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([kpiId, period])
   @@index([kpiId])
+}
+
+// Free-form status updates shown as a history on the KPI detail page.
+model KpiUpdate {
+  id    String @id @default(cuid())
+  kpiId String
+  kpi   Kpi    @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+
+  // The month the update relates to, "YYYY-MM".
+  period String
+  body   String
+  author String?
+
+  createdAt DateTime @default(now())
+
+  @@index([kpiId, createdAt])
 }

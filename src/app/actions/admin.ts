@@ -1,0 +1,275 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+
+import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/session";
+import { fiscalYearLabel } from "@/lib/fiscal";
+import type { ParsedKpi } from "@/lib/workbook";
+import { attempt, type ActionResult } from "./result";
+
+export async function createFiscalYear(input: {
+  startYear: number;
+  copyFromId: string | null;
+}): Promise<ActionResult> {
+  return attempt(async () => {
+    await requireAuth();
+
+    if (
+      !Number.isInteger(input.startYear) ||
+      input.startYear < 2000 ||
+      input.startYear > 2100
+    ) {
+      throw new Error("Enter a starting year between 2000 and 2100.");
+    }
+
+    const existing = await prisma.fiscalYear.findUnique({
+      where: { startYear: input.startYear },
+    });
+    if (existing)
+      throw new Error(`${fiscalYearLabel(input.startYear)} already exists.`);
+
+    const created = await prisma.fiscalYear.create({
+      data: {
+        startYear: input.startYear,
+        label: fiscalYearLabel(input.startYear),
+      },
+    });
+
+    if (input.copyFromId) await copyHierarchy(input.copyFromId, created.id);
+
+    revalidatePath("/manage");
+    revalidatePath("/");
+  });
+}
+
+/**
+ * Duplicates a year's hierarchy, weights and targets into a new year — the
+ * usual starting point, since most of a scorecard carries over and only the
+ * numbers move. Recorded values are deliberately not copied.
+ */
+async function copyHierarchy(fromId: string, toId: string): Promise<void> {
+  const source = await prisma.kpi.findMany({
+    where: { fiscalYearId: fromId },
+    orderBy: { sortOrder: "asc" },
+    include: { departments: true },
+  });
+
+  // Two passes: create every KPI parentless, then wire up the hierarchy once
+  // all the new ids exist.
+  const idMap = new Map<string, string>();
+  for (const kpi of source) {
+    const created = await prisma.kpi.create({
+      data: {
+        fiscalYearId: toId,
+        code: kpi.code,
+        name: kpi.name,
+        sortOrder: kpi.sortOrder,
+        weight: kpi.weight,
+        metricType: kpi.metricType,
+        direction: kpi.direction,
+        targetMode: kpi.targetMode,
+        targetConfig: kpi.targetConfig,
+        unit: kpi.unit,
+        deadlineMonth: kpi.deadlineMonth,
+        scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+        departments: {
+          createMany: {
+            data: kpi.departments.map((d) => ({
+              departmentId: d.departmentId,
+            })),
+          },
+        },
+      },
+    });
+    idMap.set(kpi.id, created.id);
+  }
+
+  for (const kpi of source) {
+    if (!kpi.parentId) continue;
+    await prisma.kpi.update({
+      where: { id: idMap.get(kpi.id) as string },
+      data: { parentId: idMap.get(kpi.parentId) },
+    });
+  }
+}
+
+export async function setActiveFiscalYear(id: string): Promise<ActionResult> {
+  return attempt(async () => {
+    await requireAuth();
+    await prisma.$transaction([
+      prisma.fiscalYear.updateMany({ data: { isActive: false } }),
+      prisma.fiscalYear.update({ where: { id }, data: { isActive: true } }),
+    ]);
+    revalidatePath("/");
+    revalidatePath("/manage");
+  });
+}
+
+export async function deleteFiscalYear(id: string): Promise<ActionResult> {
+  return attempt(async () => {
+    await requireAuth();
+    // Cascades to KPIs, their values and their updates.
+    await prisma.fiscalYear.delete({ where: { id } });
+    revalidatePath("/");
+    revalidatePath("/manage");
+  });
+}
+
+export async function saveDepartments(
+  departments: { id: string | null; name: string }[],
+): Promise<ActionResult> {
+  return attempt(async () => {
+    await requireAuth();
+
+    const names = departments.map((d) => d.name.trim()).filter(Boolean);
+    const duplicate = names.find(
+      (name, index) => names.indexOf(name) !== index,
+    );
+    if (duplicate) throw new Error(`"${duplicate}" is listed twice.`);
+
+    const keptIds = departments.map((d) => d.id).filter(Boolean) as string[];
+
+    await prisma.$transaction(async (tx) => {
+      // Removing a department detaches it from its KPIs rather than deleting
+      // them; ownership is metadata, not the KPI itself.
+      await tx.department.deleteMany({ where: { id: { notIn: keptIds } } });
+
+      for (const department of departments) {
+        const name = department.name.trim();
+        if (!name) continue;
+        if (department.id) {
+          await tx.department.update({
+            where: { id: department.id },
+            data: { name },
+          });
+        } else {
+          await tx.department.create({ data: { name } });
+        }
+      }
+    });
+
+    revalidatePath("/manage");
+    revalidatePath("/kpis");
+  });
+}
+
+export type ImportSummary = {
+  created: number;
+  updated: number;
+  removed: number;
+  departmentsCreated: number;
+};
+
+/**
+ * Replaces a fiscal year's hierarchy with the contents of a parsed workbook.
+ *
+ * Matching is by code, so re-importing an edited sheet updates KPIs in place
+ * and keeps their recorded values. A KPI whose code has disappeared from the
+ * sheet is removed, along with its values — which is why the import screen
+ * shows a diff and asks for confirmation first.
+ */
+export async function applyImport(input: {
+  fiscalYearId: string;
+  kpis: ParsedKpi[];
+  departments: string[];
+}): Promise<ImportSummary> {
+  await requireAuth();
+
+  const { fiscalYearId, kpis } = input;
+  if (kpis.length === 0) throw new Error("That workbook has no KPI rows.");
+
+  const existingDepartments = await prisma.department.findMany();
+  const departmentIdByName = new Map(
+    existingDepartments.map((d) => [d.name.toLowerCase(), d.id]),
+  );
+
+  let departmentsCreated = 0;
+  for (const name of input.departments) {
+    if (departmentIdByName.has(name.toLowerCase())) continue;
+    const created = await prisma.department.create({ data: { name } });
+    departmentIdByName.set(name.toLowerCase(), created.id);
+    departmentsCreated++;
+  }
+
+  const existing = await prisma.kpi.findMany({ where: { fiscalYearId } });
+  const existingByCode = new Map(
+    existing.map((k) => [k.code.toLowerCase(), k]),
+  );
+  const incomingCodes = new Set(kpis.map((k) => k.code.toLowerCase()));
+
+  let created = 0;
+  let updated = 0;
+  const idByCode = new Map<string, string>();
+
+  // Pass 1: upsert every row without its parent, so a parent listed after its
+  // child in the sheet still resolves.
+  for (const [index, kpi] of kpis.entries()) {
+    const data = {
+      name: kpi.name,
+      sortOrder: index,
+      weight: kpi.weight,
+      metricType: kpi.metricType,
+      direction: kpi.direction,
+      targetMode: kpi.targetMode,
+      targetConfig: kpi.targetConfig,
+      unit: kpi.unit,
+      deadlineMonth: kpi.deadlineMonth,
+      scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+      parentId: null as string | null,
+    };
+
+    const match = existingByCode.get(kpi.code.toLowerCase());
+    const record = match
+      ? await prisma.kpi.update({ where: { id: match.id }, data })
+      : await prisma.kpi.create({
+          data: { ...data, fiscalYearId, code: kpi.code },
+        });
+
+    if (match) updated++;
+    else created++;
+    idByCode.set(kpi.code.toLowerCase(), record.id);
+
+    await prisma.kpiDepartment.deleteMany({ where: { kpiId: record.id } });
+    const departmentIds = kpi.departments
+      .map((name) => departmentIdByName.get(name.toLowerCase()))
+      .filter(Boolean) as string[];
+    if (departmentIds.length > 0) {
+      await prisma.kpiDepartment.createMany({
+        data: departmentIds.map((departmentId) => ({
+          kpiId: record.id,
+          departmentId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+  }
+
+  // Pass 2: attach parents.
+  for (const kpi of kpis) {
+    if (!kpi.parentCode) continue;
+    const parentId = idByCode.get(kpi.parentCode.toLowerCase());
+    if (!parentId) continue;
+    await prisma.kpi.update({
+      where: { id: idByCode.get(kpi.code.toLowerCase()) as string },
+      data: { parentId },
+    });
+  }
+
+  const toRemove = existing.filter(
+    (k) => !incomingCodes.has(k.code.toLowerCase()),
+  );
+  if (toRemove.length > 0) {
+    await prisma.kpi.deleteMany({
+      where: { id: { in: toRemove.map((k) => k.id) } },
+    });
+  }
+
+  revalidatePath("/");
+  revalidatePath("/kpis");
+  revalidatePath("/entry");
+  revalidatePath("/manage");
+  revalidatePath("/milestones");
+
+  return { created, updated, removed: toRemove.length, departmentsCreated };
+}

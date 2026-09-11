@@ -1,0 +1,71 @@
+import { getScorecard } from "@/lib/data";
+import { isAuthenticated } from "@/lib/session";
+import { flattenTree } from "@/lib/kpi-tree";
+import { buildExportWorkbook, type ExportKpi } from "@/lib/workbook";
+
+const XLSX_TYPE =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+/**
+ * The scorecard as a workbook: the hierarchy in the same shape the importer
+ * reads, plus a Scores sheet for the months on screen. Exporting and
+ * re-importing the same file is a no-op, which is what makes it safe to use
+ * the export as the editing surface for bulk changes.
+ */
+export async function GET(request: Request) {
+  if (!(await isAuthenticated())) {
+    return new Response("Not signed in.", { status: 401 });
+  }
+
+  const params = new URL(request.url).searchParams;
+  const scorecard = await getScorecard({
+    fiscalYearId: params.get("fy") ?? undefined,
+    period: params.get("period") ?? undefined,
+  });
+
+  if (!scorecard) return new Response("No scorecard to export.", { status: 404 });
+
+  const nodes = flattenTree(scorecard.roots);
+  const codeById = new Map(nodes.map((n) => [n.id, n.code]));
+
+  const kpis: ExportKpi[] = nodes.map((node) => ({
+    code: node.code,
+    name: node.name,
+    parentCode: node.parentId ? (codeById.get(node.parentId) ?? null) : null,
+    weight: node.weight,
+    departments: node.departments.map((d) => d.name),
+    metricType: node.metricType,
+    unit: node.unit,
+    direction: node.direction,
+    targetMode: node.targetMode,
+    targetConfig: node.targetConfig,
+    deadlineMonth: node.deadlineMonth,
+    scoreFinalAfterDeadline: node.scoreFinalAfterDeadline,
+    isLeaf: node.isLeaf,
+  }));
+
+  const bytes = await buildExportWorkbook({
+    fiscalYearLabel: scorecard.fiscalYear.label,
+    kpis,
+    departments: scorecard.departments.map((d) => d.name),
+    periods: scorecard.periods,
+    tree: scorecard.roots,
+    totalsByPeriod: new Map(
+      [...scorecard.totalsByPeriod].map(([period, total]) => [
+        period,
+        { score: total.score, coverage: total.coverage },
+      ])
+    ),
+    scoresByPeriod: scorecard.scoresByPeriod,
+  });
+
+  const filename = `kpi-scorecard-${scorecard.fiscalYear.label.replace(/\//g, "-")}-${scorecard.period}.xlsx`;
+
+  return new Response(bytes as BodyInit, {
+    headers: {
+      "Content-Type": XLSX_TYPE,
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "no-store",
+    },
+  });
+}

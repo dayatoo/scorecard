@@ -1,16 +1,65 @@
-import { bandForScore, BAND_BOUNDS, type Band } from "./scoring";
+// The one place band colours are defined. Everything that shows a score —
+// cells, pills, charts, the Excel export — reads from here, so the palette
+// stays consistent.
 
-export const BAND_COLORS: Record<Band, { bg: string; text: string; border: string }> = {
-  POOR: { bg: "bg-red-100", text: "text-red-800", border: "border-red-300" },
-  IMPROVEMENT_NEEDED: { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-300" },
-  MEET: { bg: "bg-amber-100", text: "text-amber-800", border: "border-amber-300" },
-  GOOD: { bg: "bg-lime-100", text: "text-lime-800", border: "border-lime-300" },
-  VERY_GOOD: { bg: "bg-green-100", text: "text-green-800", border: "border-green-300" },
-  EXCELLENT: { bg: "bg-emerald-200", text: "text-emerald-900", border: "border-emerald-400" },
+import { BAND_BOUNDS, type Band } from "./scoring";
+
+export type BandStyle = {
+  label: string;
+  /** Tailwind classes for a filled pill or table cell. */
+  chip: string;
+  /** A softer treatment for large areas like table rows. */
+  soft: string;
+  /** Hex, for SVG charts and the Excel export, which cannot use classes. */
+  hex: string;
 };
 
-export function styleForScore(score: number | null) {
-  if (score === null) return { bg: "bg-gray-100", text: "text-gray-400", border: "border-gray-200", label: "No data" };
-  const band = bandForScore(score);
-  return { ...BAND_COLORS[band], label: BAND_BOUNDS[band].label };
+export const BAND_STYLES: Record<Band, BandStyle> = {
+  POOR: {
+    label: BAND_BOUNDS.POOR.label,
+    chip: "bg-rose-600 text-white",
+    soft: "bg-rose-50 text-rose-900 ring-1 ring-inset ring-rose-200",
+    hex: "#e11d48",
+  },
+  IMPROVEMENT_NEEDED: {
+    label: BAND_BOUNDS.IMPROVEMENT_NEEDED.label,
+    chip: "bg-orange-500 text-white",
+    soft: "bg-orange-50 text-orange-900 ring-1 ring-inset ring-orange-200",
+    hex: "#f97316",
+  },
+  MEET: {
+    label: BAND_BOUNDS.MEET.label,
+    chip: "bg-amber-400 text-amber-950",
+    soft: "bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-200",
+    hex: "#fbbf24",
+  },
+  GOOD: {
+    label: BAND_BOUNDS.GOOD.label,
+    chip: "bg-lime-500 text-lime-950",
+    soft: "bg-lime-50 text-lime-900 ring-1 ring-inset ring-lime-200",
+    hex: "#84cc16",
+  },
+  VERY_GOOD: {
+    label: BAND_BOUNDS.VERY_GOOD.label,
+    chip: "bg-emerald-500 text-white",
+    soft: "bg-emerald-50 text-emerald-900 ring-1 ring-inset ring-emerald-200",
+    hex: "#10b981",
+  },
+  EXCELLENT: {
+    label: BAND_BOUNDS.EXCELLENT.label,
+    chip: "bg-teal-700 text-white",
+    soft: "bg-teal-50 text-teal-900 ring-1 ring-inset ring-teal-200",
+    hex: "#0f766e",
+  },
+};
+
+/** Styling for a cell with no score yet — deliberately not a band colour. */
+export const NO_SCORE_STYLE = {
+  chip: "bg-gray-100 text-gray-400",
+  soft: "bg-gray-50 text-gray-400 ring-1 ring-inset ring-gray-200",
+  hex: "#d1d5db",
+};
+
+export function bandStyle(band: Band | null): BandStyle | null {
+  return band ? BAND_STYLES[band] : null;
 }

@@ -1,23 +1,85 @@
-import type { Kpi, KpiValue } from "@prisma/client";
+// Turns flat KPI rows plus their recorded values into a scored hierarchy.
+//
+// Weights are global: every leaf carries its own share of the company's 100%.
+// A parent's weight is therefore not stored but derived — the sum of its
+// descendant leaves — which keeps a parent's rollup consistent with the total
+// no matter how deep the tree goes.
+
 import {
-  scoreLeafKpi,
-  rollupScores,
+  bandForScore,
+  rollup,
+  scoreLeaf,
+  type Band,
   type Direction,
+  type Entry,
+  type KpiDefinition,
+  type LeafScore,
+  type MetricType,
+  type Rollup,
+  type TargetConfig,
   type TargetMode,
-  type LeafMetricType,
-  type FixedTargetConfig,
-  type RangeTargetConfig,
-  type MonthTargetConfig,
 } from "./scoring";
 
-export type TargetConfig = FixedTargetConfig | RangeTargetConfig | MonthTargetConfig;
+export type KpiRecord = {
+  id: string;
+  code: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+  weight: number;
+  metricType: MetricType | null;
+  direction: Direction | null;
+  targetMode: TargetMode | null;
+  targetConfig: string | null;
+  unit: string | null;
+  deadlineMonth: string | null;
+  scoreFinalAfterDeadline: boolean;
+  departments: { id: string; name: string }[];
+};
 
-export type KpiNode = Omit<Kpi, "targetConfig" | "metricType" | "direction" | "targetMode"> & {
-  metricType: LeafMetricType | null;
+export type ValueRecord = {
+  kpiId: string;
+  period: string;
+  value: number | null;
+  basis: "ACTUAL" | "ESTIMATE";
+  completionDate: Date | null;
+  note: string | null;
+};
+
+/** A KPI plus its computed score for one period, and its children. */
+export type ScoredNode = {
+  id: string;
+  code: string;
+  name: string;
+  level: number;
+  isLeaf: boolean;
+  /** Global weight: stored for leaves, summed from descendants for parents. */
+  weight: number;
+  metricType: MetricType | null;
   direction: Direction | null;
   targetMode: TargetMode | null;
   targetConfig: TargetConfig | null;
-  children: KpiNode[];
+  unit: string | null;
+  deadlineMonth: string | null;
+  scoreFinalAfterDeadline: boolean;
+  departments: { id: string; name: string }[];
+  parentId: string | null;
+  children: ScoredNode[];
+  /** Score for the requested period, with band and provenance. */
+  score: number | null;
+  /** The same score before rounding, used when rolling up further. */
+  exactScore: number | null;
+  band: Band | null;
+  /** Share of this node's weight that has a figure behind it, 0..1. */
+  coverage: number;
+  /** Absolute weight beneath this node that produced a score. */
+  scoredWeight: number;
+  /** Absolute weight beneath this node whose score rests on an estimate. */
+  provisionalWeight: number;
+  /** True when any of this node's score rests on an estimate. */
+  provisional: boolean;
+  /** Leaf detail — null on rollup nodes. */
+  leaf: LeafScore | null;
 };
 
 export function parseTargetConfig(raw: string | null): TargetConfig | null {
@@ -29,98 +91,171 @@ export function parseTargetConfig(raw: string | null): TargetConfig | null {
   }
 }
 
-export function buildTree(flat: Kpi[]): KpiNode[] {
-  const nodes = new Map<string, KpiNode>();
-  for (const k of flat) {
-    nodes.set(k.id, {
-      ...k,
-      metricType: k.metricType as LeafMetricType | null,
-      direction: k.direction as Direction | null,
-      targetMode: k.targetMode as TargetMode | null,
-      targetConfig: parseTargetConfig(k.targetConfig),
-      children: [],
-    });
-  }
-  const roots: KpiNode[] = [];
-  for (const node of nodes.values()) {
-    if (node.parentId) {
-      const parent = nodes.get(node.parentId);
-      if (parent) parent.children.push(node);
-      else roots.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-  const sortRec = (list: KpiNode[]) => {
-    list.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
-    for (const n of list) sortRec(n.children);
+function toDefinition(kpi: KpiRecord): KpiDefinition {
+  return {
+    metricType: kpi.metricType as MetricType,
+    direction: kpi.direction,
+    targetMode: kpi.targetMode,
+    targetConfig: parseTargetConfig(kpi.targetConfig),
+    deadlineMonth: kpi.deadlineMonth,
+    scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
   };
-  sortRec(roots);
-  return roots;
 }
 
-export type ValueLookup = Map<string, Map<string, KpiValue>>; // kpiId -> period -> value
-
-export function buildValueLookup(values: KpiValue[]): ValueLookup {
-  const map: ValueLookup = new Map();
+/**
+ * Builds the scored tree for one period.
+ *
+ * Leaves are scored from their entries; parents are rolled up depth-first so a
+ * fourth-level score reaches the Strategic Goal correctly. Coverage is tracked
+ * against *total* weight, so a parent whose children are half-reported reads
+ * "50% scored" rather than silently looking complete.
+ */
+export function buildScoredTree(
+  kpis: KpiRecord[],
+  values: ValueRecord[],
+  period: string
+): { roots: ScoredNode[]; total: Rollup; byId: Map<string, ScoredNode> } {
+  const entriesByKpi = new Map<string, Entry[]>();
   for (const v of values) {
-    if (!map.has(v.kpiId)) map.set(v.kpiId, new Map());
-    map.get(v.kpiId)!.set(v.period, v);
-  }
-  return map;
-}
-
-/** Compute the score of a node (and, as a side effect of recursion, its descendants) for one period. */
-export function scoreNodeForPeriod(
-  node: KpiNode,
-  period: string,
-  lookup: ValueLookup
-): number | null {
-  if (node.children.length === 0) {
-    if (!node.metricType) return null;
-    const entry = lookup.get(node.id)?.get(period) ?? null;
-    return scoreLeafKpi({
-      metricType: node.metricType,
-      direction: node.direction,
-      targetMode: node.targetMode,
-      targetConfig: node.targetConfig as FixedTargetConfig | RangeTargetConfig | MonthTargetConfig,
-      value: entry?.value ?? null,
-      completionDate: entry?.completionDate ?? null,
+    const list = entriesByKpi.get(v.kpiId) ?? [];
+    list.push({
+      period: v.period,
+      value: v.value,
+      basis: v.basis,
+      completionDate: v.completionDate,
     });
+    entriesByKpi.set(v.kpiId, list);
   }
-  const childScores = node.children.map((c) => ({
-    score: scoreNodeForPeriod(c, period, lookup),
-    weight: c.weight,
-  }));
-  return rollupScores(childScores);
-}
 
-/** Returns `count` periods as "YYYY-MM" strings, oldest first, ending at `endPeriod` (inclusive). */
-export function recentPeriods(endPeriod: string, count: number): string[] {
-  const [y, m] = endPeriod.split("-").map(Number);
-  const periods: string[] = [];
-  for (let i = count - 1; i >= 0; i--) {
-    const total = y * 12 + (m - 1) - i;
-    const year = Math.floor(total / 12);
-    const month = (total % 12) + 1;
-    periods.push(`${year}-${String(month).padStart(2, "0")}`);
+  const childrenOf = new Map<string | null, KpiRecord[]>();
+  for (const kpi of kpis) {
+    const list = childrenOf.get(kpi.parentId) ?? [];
+    list.push(kpi);
+    childrenOf.set(kpi.parentId, list);
   }
-  return periods;
-}
+  for (const list of childrenOf.values()) {
+    list.sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
+  }
 
-export function currentPeriod(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
+  const byId = new Map<string, ScoredNode>();
 
-export function flattenTree(nodes: KpiNode[]): KpiNode[] {
-  const out: KpiNode[] = [];
-  const walk = (list: KpiNode[]) => {
-    for (const n of list) {
-      out.push(n);
-      walk(n.children);
+  const build = (kpi: KpiRecord, level: number): ScoredNode => {
+    const kids = childrenOf.get(kpi.id) ?? [];
+    const isLeaf = kids.length === 0;
+
+    const node: ScoredNode = {
+      id: kpi.id,
+      code: kpi.code,
+      name: kpi.name,
+      level,
+      isLeaf,
+      weight: 0,
+      metricType: kpi.metricType,
+      direction: kpi.direction,
+      targetMode: kpi.targetMode,
+      targetConfig: parseTargetConfig(kpi.targetConfig),
+      unit: kpi.unit,
+      deadlineMonth: kpi.deadlineMonth,
+      scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+      departments: kpi.departments,
+      parentId: kpi.parentId,
+      children: [],
+      score: null,
+      exactScore: null,
+      band: null,
+      coverage: 0,
+      scoredWeight: 0,
+      provisionalWeight: 0,
+      provisional: false,
+      leaf: null,
+    };
+
+    if (isLeaf) {
+      const leaf = scoreLeaf(toDefinition(kpi), entriesByKpi.get(kpi.id) ?? [], period);
+      const scored = leaf.score !== null;
+      node.weight = kpi.weight;
+      node.leaf = leaf;
+      node.score = leaf.score;
+      node.exactScore = leaf.score;
+      node.band = leaf.band;
+      node.provisional = leaf.provisional;
+      node.scoredWeight = scored ? kpi.weight : 0;
+      node.provisionalWeight = scored && leaf.provisional ? kpi.weight : 0;
+      node.coverage = scored ? 1 : 0;
+    } else {
+      node.children = kids.map((child) => build(child, level + 1));
+      const result = rollup(node.children.map(toRollupInput));
+      node.weight = result.totalWeight;
+      node.score = result.score;
+      node.exactScore = result.exactScore;
+      node.band = result.band;
+      node.coverage = result.coverage;
+      node.scoredWeight = result.scoredWeight;
+      node.provisionalWeight = result.provisionalWeight;
+      // A parent is provisional if any scored weight beneath it is.
+      node.provisional = result.provisionalWeight > 0;
     }
+
+    byId.set(node.id, node);
+    return node;
   };
-  walk(nodes);
+
+  const roots = (childrenOf.get(null) ?? []).map((kpi) => build(kpi, 1));
+
+  const total = rollup(roots.map(toRollupInput));
+
+  return { roots, total, byId };
+}
+
+/** A scored node as the rollup function wants to see it. */
+function toRollupInput(node: ScoredNode) {
+  return {
+    score: node.score,
+    exactScore: node.exactScore,
+    weight: node.weight,
+    scoredWeight: node.scoredWeight,
+    provisionalWeight: node.provisionalWeight,
+  };
+}
+
+/** Every node of the tree, depth-first — the order they should be listed in. */
+export function flattenTree(roots: ScoredNode[]): ScoredNode[] {
+  const out: ScoredNode[] = [];
+  const walk = (node: ScoredNode) => {
+    out.push(node);
+    node.children.forEach(walk);
+  };
+  roots.forEach(walk);
   return out;
 }
+
+export function leavesOf(roots: ScoredNode[]): ScoredNode[] {
+  return flattenTree(roots).filter((n) => n.isLeaf);
+}
+
+/** The chain of ancestors from the Strategic Goal down to (not including) `node`. */
+export function ancestorsOf(node: ScoredNode, byId: Map<string, ScoredNode>): ScoredNode[] {
+  const chain: ScoredNode[] = [];
+  let current = node.parentId ? byId.get(node.parentId) : undefined;
+  while (current) {
+    chain.unshift(current);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  return chain;
+}
+
+/** The Strategic Goal a node belongs to (itself, if it is one). */
+export function strategicGoalOf(
+  node: ScoredNode,
+  byId: Map<string, ScoredNode>
+): ScoredNode {
+  const chain = ancestorsOf(node, byId);
+  return chain[0] ?? node;
+}
+
+/** Weighted average across a set of already-scored nodes, e.g. one department. */
+export function rollupNodes(nodes: ScoredNode[]): Rollup {
+  return rollup(nodes.map(toRollupInput));
+}
+
+export { bandForScore };

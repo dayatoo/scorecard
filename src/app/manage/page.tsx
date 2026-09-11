@@ -1,21 +1,47 @@
+import { ManageClient } from "./ManageClient";
+import { getActiveFiscalYear, listDepartments, listFiscalYears } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
-import { buildTree } from "@/lib/kpi-tree";
-import ManageClient from "@/components/ManageClient";
+import { requireAuthPage } from "@/lib/session";
 
+export const metadata = { title: "Manage — KPI Scorecard" };
 export const dynamic = "force-dynamic";
 
 export default async function ManagePage() {
-  const flat = await prisma.kpi.findMany();
-  const tree = buildTree(flat);
+  await requireAuthPage();
+
+  const [fiscalYears, departments, active] = await Promise.all([
+    listFiscalYears(),
+    listDepartments(),
+    getActiveFiscalYear(),
+  ]);
+
+  const counts = await prisma.kpi.groupBy({
+    by: ["fiscalYearId"],
+    _count: { _all: true },
+  });
+  const kpiCount = new Map(counts.map((c) => [c.fiscalYearId, c._count._all]));
+
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-1">Manage KPI Hierarchy</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Build your Strategic Goals down to leaf KPIs. A node with children automatically becomes a
-        rollup (weighted average of its children); a node with no children is a leaf you enter
-        monthly values for.
-      </p>
-      <ManageClient tree={tree} />
+    <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight">Manage</h1>
+        <p className="mt-0.5 text-sm text-gray-600">
+          Fiscal years and the department list. KPIs themselves are edited on
+          their own pages, or imported from a spreadsheet.
+        </p>
+      </div>
+
+      <ManageClient
+        fiscalYears={fiscalYears.map((fy) => ({
+          id: fy.id,
+          startYear: fy.startYear,
+          label: fy.label,
+          isActive: fy.isActive,
+          kpiCount: kpiCount.get(fy.id) ?? 0,
+        }))}
+        departments={departments.map((d) => ({ id: d.id, name: d.name }))}
+        activeId={active?.id ?? null}
+      />
     </div>
   );
 }

@@ -1,166 +1,229 @@
-import { Fragment } from "react";
-import { prisma } from "@/lib/prisma";
-import {
-  buildTree,
-  buildValueLookup,
-  scoreNodeForPeriod,
-  recentPeriods,
-  currentPeriod,
-  type KpiNode,
-} from "@/lib/kpi-tree";
-import { rollupScores } from "@/lib/scoring";
-import { styleForScore } from "@/lib/band-style";
+import Link from "next/link";
 
+import { EmptyState } from "@/components/EmptyState";
+import { IssueBanner } from "@/components/IssueBanner";
+import { PeriodPicker } from "@/components/PeriodPicker";
+import { ScoreTree, type TreeRow } from "@/components/ScoreTree";
+import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
+import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
+import { flattenTree } from "@/lib/kpi-tree";
+import { getScorecard, listFiscalYears } from "@/lib/data";
+import { requireAuthPage } from "@/lib/session";
+
+export const metadata = { title: "Dashboard — KPI Scorecard" };
+
+// Scores depend on the request (which month, which year), so this page is
+// always rendered fresh rather than cached.
 export const dynamic = "force-dynamic";
 
-function ScoreCell({ score }: { score: number | null }) {
-  const style = styleForScore(score);
+export default async function DashboardPage({ searchParams }: PageProps<"/">) {
+  await requireAuthPage();
+
+  const params = await searchParams;
+  const fiscalYearId = typeof params.fy === "string" ? params.fy : undefined;
+  const period = typeof params.period === "string" ? params.period : undefined;
+
+  const [scorecard, fiscalYears] = await Promise.all([
+    getScorecard({ fiscalYearId, period }),
+    listFiscalYears(),
+  ]);
+
+  if (!scorecard) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-10">
+        <EmptyState
+          title="No scorecard yet"
+          description="Create a fiscal year, then import your KPI hierarchy from a spreadsheet to get started."
+          actionHref="/manage"
+          actionLabel="Set up a fiscal year"
+        />
+      </div>
+    );
+  }
+
+  const nodes = flattenTree(scorecard.roots);
+
+  if (nodes.length === 0) {
+    return (
+      <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+        <Header scorecard={scorecard} fiscalYears={fiscalYears} />
+        <EmptyState
+          title={`${scorecard.fiscalYear.label} has no KPIs yet`}
+          description="Import your Strategic Goals, KPIs and sub-KPIs from a spreadsheet — download the template, fill it in, and upload it back."
+          actionHref="/import"
+          actionLabel="Import KPIs"
+        />
+      </div>
+    );
+  }
+
+  const rows: TreeRow[] = nodes.map((node) => ({
+    id: node.id,
+    code: node.code,
+    name: node.name,
+    level: node.level,
+    isLeaf: node.isLeaf,
+    weight: node.weight,
+    parentId: node.parentId,
+    departments: node.departments.map((d) => d.name),
+    pendingReason: node.leaf?.pendingReason ?? null,
+    scores: Object.fromEntries(
+      scorecard.periods.map((p) => [
+        p,
+        scorecard.scoresByPeriod.get(p)?.get(node.id) ?? {
+          score: null,
+          band: null,
+          coverage: 0,
+          provisional: false,
+        },
+      ])
+    ),
+  }));
+
+  const totalRow = {
+    scores: Object.fromEntries(
+      scorecard.periods.map((p) => {
+        const t = scorecard.totalsByPeriod.get(p);
+        return [
+          p,
+          {
+            score: t?.score ?? null,
+            band: t?.band ?? null,
+            coverage: t?.coverage ?? 0,
+            provisional: (t?.provisionalShare ?? 0) > 0,
+          },
+        ];
+      })
+    ),
+  };
+
   return (
-    <td className="px-2 py-1.5 text-center">
-      <span
-        className={`inline-block min-w-[3.5rem] rounded px-2 py-0.5 text-xs font-semibold border ${style.bg} ${style.text} ${style.border}`}
-        title={style.label}
-      >
-        {score === null ? "—" : score.toFixed(2)}
-      </span>
-    </td>
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+      <Header scorecard={scorecard} fiscalYears={fiscalYears} />
+      <IssueBanner issues={scorecard.issues} />
+
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryCard
+          label={`Total score — ${formatPeriodLabel(scorecard.period)}`}
+          score={scorecard.total.score}
+          band={scorecard.total.band}
+          provisional={scorecard.total.provisionalShare > 0}
+          footer={
+            <>
+              <CoverageBadge
+                coverage={scorecard.total.coverage}
+                provisionalShare={scorecard.total.provisionalShare}
+              />
+              <span className="ml-1 text-xs text-gray-500">of weight scored</span>
+            </>
+          }
+        />
+        {scorecard.roots.slice(0, 3).map((goal) => (
+          <SummaryCard
+            key={goal.id}
+            label={goal.name}
+            href={`/kpi/${goal.id}?period=${scorecard.period}`}
+            score={goal.score}
+            band={goal.band}
+            provisional={goal.provisional}
+            footer={
+              <>
+                <CoverageBadge coverage={goal.coverage} />
+                <span className="ml-1 text-xs text-gray-500">
+                  of {goal.weight.toFixed(0)}% weight
+                </span>
+              </>
+            }
+          />
+        ))}
+      </section>
+
+      <ScoreTree
+        rows={rows}
+        periods={scorecard.periods}
+        currentPeriod={scorecard.period}
+        total={totalRow}
+      />
+    </div>
   );
 }
 
-function Rows({
-  nodes,
-  depth,
-  periods,
-  scores,
+function Header({
+  scorecard,
+  fiscalYears,
 }: {
-  nodes: KpiNode[];
-  depth: number;
-  periods: string[];
-  scores: Map<string, Map<string, number | null>>;
+  scorecard: NonNullable<Awaited<ReturnType<typeof getScorecard>>>;
+  fiscalYears: { id: string; label: string; startYear: number }[];
 }) {
   return (
-    <>
-      {nodes.map((node) => (
-        <Fragment key={node.id}>
-          <tr className="border-b border-gray-100 hover:bg-gray-50">
-            <td className="py-1.5 pr-2" style={{ paddingLeft: `${depth * 1.25 + 0.5}rem` }}>
-              <span className={depth === 0 ? "font-semibold" : "text-sm"}>{node.name}</span>
-              {node.children.length === 0 && (
-                <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">
-                  {node.metricType?.replace("_", " ")}
-                </span>
-              )}
-            </td>
-            <td className="text-xs text-gray-400 text-center">{node.weight}</td>
-            {periods.map((p) => (
-              <ScoreCell key={p} score={scores.get(node.id)?.get(p) ?? null} />
-            ))}
-          </tr>
-          {node.children.length > 0 && (
-            <Rows nodes={node.children} depth={depth + 1} periods={periods} scores={scores} />
-          )}
-        </Fragment>
-      ))}
-    </>
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight">
+          {scorecard.fiscalYear.label} scorecard
+        </h1>
+        <p className="mt-0.5 text-sm text-gray-600">
+          Reporting {formatPeriodLabel(scorecard.period)} · year-to-date figures
+          against full-year targets
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <PeriodPicker
+          period={scorecard.period}
+          periods={periodsOfFiscalYear(scorecard.fiscalYear.startYear)}
+          fiscalYears={fiscalYears}
+          fiscalYearId={scorecard.fiscalYear.id}
+        />
+        <Link
+          href={`/api/export?fy=${scorecard.fiscalYear.id}&period=${scorecard.period}`}
+          className="rounded border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          prefetch={false}
+        >
+          Export to Excel
+        </Link>
+      </div>
+    </div>
   );
 }
 
-export default async function DashboardPage() {
-  const [flatKpis, allValues] = await Promise.all([
-    prisma.kpi.findMany(),
-    prisma.kpiValue.findMany(),
-  ]);
-  const tree = buildTree(flatKpis);
-  const lookup = buildValueLookup(allValues);
-  const periods = recentPeriods(currentPeriod(), 4); // oldest -> newest, 4 = current + last 3
-
-  const scores = new Map<string, Map<string, number | null>>();
-  const collect = (nodes: KpiNode[]) => {
-    for (const node of nodes) {
-      const perPeriod = new Map<string, number | null>();
-      for (const p of periods) {
-        perPeriod.set(p, scoreNodeForPeriod(node, p, lookup));
-      }
-      scores.set(node.id, perPeriod);
-      if (node.children.length > 0) collect(node.children);
-    }
-  };
-  collect(tree);
-
-  const totalByPeriod = new Map<string, number | null>();
-  for (const p of periods) {
-    totalByPeriod.set(
-      p,
-      rollupScores(tree.map((root) => ({ score: scores.get(root.id)?.get(p) ?? null, weight: root.weight })))
-    );
-  }
-
-  if (tree.length === 0) {
-    return (
-      <div className="max-w-5xl mx-auto p-6">
-        <h1 className="text-2xl font-semibold mb-2">Company Scorecard</h1>
-        <p className="text-gray-500">
-          No KPIs defined yet.{" "}
-          <a href="/manage" className="text-blue-600 hover:underline">
-            Set up your KPI hierarchy
-          </a>{" "}
-          to get started.
-        </p>
+function SummaryCard({
+  label,
+  score,
+  band,
+  provisional,
+  footer,
+  href,
+}: {
+  label: string;
+  score: number | null;
+  band: Parameters<typeof ScoreCell>[0]["band"];
+  provisional?: boolean;
+  footer?: React.ReactNode;
+  href?: string;
+}) {
+  const inner = (
+    <>
+      <div className="truncate text-xs font-medium text-gray-500" title={label}>
+        {label}
       </div>
-    );
-  }
-
-  return (
-    <div className="max-w-5xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-1">Company Scorecard</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Current month and trailing 3 months. Scores are on a 0–5 scale; each KPI rolls up into its
-        parent as a weighted average.
-      </p>
-
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-gray-300 text-xs text-gray-500">
-              <th className="text-left py-2 pl-2">KPI</th>
-              <th className="text-center py-2">Weight</th>
-              {periods.map((p, i) => (
-                <th key={p} className="text-center py-2 px-2">
-                  {p}
-                  {i === periods.length - 1 && (
-                    <div className="text-[10px] text-gray-400">current</div>
-                  )}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <Rows nodes={tree} depth={0} periods={periods} scores={scores} />
-            <tr className="border-t-2 border-gray-400 font-bold">
-              <td className="py-2 pl-2">Total Combined Score</td>
-              <td></td>
-              {periods.map((p) => (
-                <ScoreCell key={p} score={totalByPeriod.get(p) ?? null} />
-              ))}
-            </tr>
-          </tbody>
-        </table>
+      <div className="mt-2">
+        <ScoreCell
+          score={score}
+          band={band}
+          provisional={provisional}
+          size="lg"
+          showBandLabel
+        />
       </div>
+      <div className="mt-2">{footer}</div>
+    </>
+  );
 
-      <div className="mt-6 flex flex-wrap gap-3 text-xs">
-        {[
-          ["Poor", "bg-red-100 text-red-800 border-red-300"],
-          ["Improvement Needed", "bg-orange-100 text-orange-800 border-orange-300"],
-          ["Meet", "bg-amber-100 text-amber-800 border-amber-300"],
-          ["Good", "bg-lime-100 text-lime-800 border-lime-300"],
-          ["Very Good", "bg-green-100 text-green-800 border-green-300"],
-          ["Excellent", "bg-emerald-200 text-emerald-900 border-emerald-400"],
-        ].map(([label, cls]) => (
-          <span key={label} className={`rounded px-2 py-0.5 border ${cls}`}>
-            {label}
-          </span>
-        ))}
-      </div>
-    </div>
+  const className = "rounded-lg border bg-white px-4 py-3";
+  return href ? (
+    <Link href={href} className={`${className} block hover:border-blue-300 hover:shadow-sm`}>
+      {inner}
+    </Link>
+  ) : (
+    <div className={className}>{inner}</div>
   );
 }

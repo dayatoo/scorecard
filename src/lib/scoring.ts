@@ -1,12 +1,13 @@
 // Core scoring engine for the KPI scorecard.
 //
-// Score bands (fixed across the whole app):
-//   Poor              0   - 2.4
-//   Improvement Needed 2.5 - 2.9
-//   Meet              3.0 - 3.4
-//   Good              3.5 - 3.9
-//   Very Good         4.0 - 4.5
-//   Excellent         4.6 - 5.0
+// Pure module: no database, no React, no dates-from-`now`. Everything it needs
+// arrives as arguments, so every rule below is directly unit-testable (see
+// scoring.test.ts).
+//
+// Score bands. Note the deliberate gaps between them — a band's top and the
+// next band's bottom are one decimal step apart, which is exactly why every
+// score is rounded to 1dp before it leaves this module: a rounded score can
+// then only ever land *inside* a band, never in a gap.
 
 export type Band =
   | "POOR"
@@ -15,6 +16,15 @@ export type Band =
   | "GOOD"
   | "VERY_GOOD"
   | "EXCELLENT";
+
+export const BANDS: Band[] = [
+  "POOR",
+  "IMPROVEMENT_NEEDED",
+  "MEET",
+  "GOOD",
+  "VERY_GOOD",
+  "EXCELLENT",
+];
 
 export const BAND_BOUNDS: Record<Band, { lo: number; hi: number; label: string }> = {
   POOR: { lo: 0, hi: 2.4, label: "Poor" },
@@ -25,6 +35,8 @@ export const BAND_BOUNDS: Record<Band, { lo: number; hi: number; label: string }
   EXCELLENT: { lo: 4.6, hi: 5.0, label: "Excellent" },
 };
 
+export const MAX_SCORE = 5;
+
 export function bandForScore(score: number): Band {
   if (score >= BAND_BOUNDS.EXCELLENT.lo) return "EXCELLENT";
   if (score >= BAND_BOUNDS.VERY_GOOD.lo) return "VERY_GOOD";
@@ -34,239 +46,563 @@ export function bandForScore(score: number): Band {
   return "POOR";
 }
 
+export function bandLabel(band: Band): string {
+  return BAND_BOUNDS[band].label;
+}
+
 export type Direction = "HIGHER_BETTER" | "LOWER_BETTER";
+export type MetricType =
+  | "PERCENTAGE"
+  | "DOLLAR"
+  | "QUANTITY"
+  | "DAYS"
+  | "MONTH_COMPLETION";
+export type TargetMode = "FIXED" | "RANGE";
+export type ValueBasis = "ACTUAL" | "ESTIMATE";
 
-export type FixedTargetConfig = {
-  poorThreshold: number;
-  meetTarget: number;
-  goodThreshold: number;
-  veryGoodThreshold: number;
-  excellentThreshold: number;
-};
+/** One number per band. Targets step by 1 unit in practice. */
+export type FixedTargetConfig = Record<Band, number>;
 
-export type RangeTargetConfig = {
-  poor: [number, number];
-  improvementNeeded: [number, number];
-  meet: [number, number];
-  good: [number, number];
-  veryGood: [number, number];
-  excellent: [number, number];
-};
+/** An explicit [min, max] value window per band. */
+export type RangeTargetConfig = Record<Band, [number, number]>;
 
-export type MonthTargetConfig = {
-  targetMonth: string; // "YYYY-MM"
-};
+export type MonthTargetConfig = { targetMonth: string };
 
-function clamp(v: number, lo: number, hi: number) {
+export type TargetConfig = FixedTargetConfig | RangeTargetConfig | MonthTargetConfig;
+
+function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
 
 /**
- * Fixed numeric target.
+ * The only exit from this module. Clamps to 0..5 and rounds to 1 decimal
+ * place, so every score the app ever shows sits inside a band.
+ */
+export function roundScore(score: number): number {
+  if (!Number.isFinite(score)) return 0;
+  return Math.round(clamp(score, 0, MAX_SCORE) * 10) / 10;
+}
+
+// --------------------------------------------------------------------------
+// Fixed numeric targets
+// --------------------------------------------------------------------------
+
+/**
+ * Fixed target: one number per band, ordered by direction. The score is the
+ * **top** of the highest band whose target the value reaches — meeting the
+ * Meet target scores 3.4, reaching the Good target scores 3.9, and so on.
  *
- * Bands sit at consecutive thresholds along the value axis (ascending for
- * HIGHER_BETTER, descending for LOWER_BETTER):
- *   poorThreshold < meetTarget < goodThreshold < veryGoodThreshold < excellentThreshold
+ * Below the Poor target nothing has been "met", so the score scales
+ * proportionally into the Poor band rather than dropping straight to zero:
+ * `2.4 x (actual / poorTarget)` when higher is better, and the reciprocal when
+ * lower is better (an overrun of twice the Poor target scores 1.2).
  *
- * Meet is a single exact point (score 3.4). Any value strictly between
- * poorThreshold and meetTarget is "Improvement Needed" and flat-scores the
- * top of that band (2.9) — it does not get skipped or interpolated. Only
- * the Poor band (below poorThreshold) gets proportional credit, scaled
- * against poorThreshold. Above meetTarget, the value snaps to the top of
- * whichever band (Good/Very Good/Excellent) it falls into; beyond
- * excellentThreshold the score is capped at 5.0 with no further credit.
+ * Beyond the Excellent target there is no further credit: 5.0 is the cap.
  */
 export function scoreFixedTarget(
   actual: number,
   config: FixedTargetConfig,
   direction: Direction
 ): number {
-  const { poorThreshold, meetTarget, goodThreshold, veryGoodThreshold, excellentThreshold } =
-    config;
-
-  // Normalize so the math below can always assume "higher is better".
+  // Normalise so the comparisons below can always assume higher is better.
   const sign = direction === "HIGHER_BETTER" ? 1 : -1;
   const a = actual * sign;
-  const pT = poorThreshold * sign;
-  const mT = meetTarget * sign;
-  const gT = goodThreshold * sign;
-  const vgT = veryGoodThreshold * sign;
-  const eT = excellentThreshold * sign;
 
-  if (a < pT) {
-    // Proportional credit toward the top of the Poor band.
-    if (pT <= 0) return 0;
-    const ratio = a <= 0 ? 0 : a / pT;
-    return clamp(ratio, 0, 1) * BAND_BOUNDS.POOR.hi;
+  // Walk from the best band down; the first target reached wins.
+  for (let i = BANDS.length - 1; i >= 1; i--) {
+    const band = BANDS[i];
+    if (a >= config[band] * sign) return BAND_BOUNDS[band].hi;
   }
-  if (a < mT) return BAND_BOUNDS.IMPROVEMENT_NEEDED.hi;
-  if (a === mT) return BAND_BOUNDS.MEET.hi;
-  if (a < gT) return BAND_BOUNDS.MEET.hi;
-  if (a < vgT) return BAND_BOUNDS.GOOD.hi;
-  if (a < eT) return BAND_BOUNDS.VERY_GOOD.hi;
-  return BAND_BOUNDS.EXCELLENT.hi;
+
+  // Short of even the Poor target: proportional credit within the Poor band.
+  const poorTarget = config.POOR;
+  if (direction === "HIGHER_BETTER") {
+    if (poorTarget <= 0) return actual >= poorTarget ? BAND_BOUNDS.POOR.hi : 0;
+    return clamp(actual / poorTarget, 0, 1) * BAND_BOUNDS.POOR.hi;
+  }
+  // Lower is better, and `actual` overshot the Poor ceiling.
+  if (actual <= 0) return BAND_BOUNDS.POOR.hi;
+  if (poorTarget < 0) return 0;
+  return clamp(poorTarget / actual, 0, 1) * BAND_BOUNDS.POOR.hi;
 }
 
+// --------------------------------------------------------------------------
+// Range numeric targets
+// --------------------------------------------------------------------------
+
 /**
- * Range numeric target: every band has its own explicit [min, max] value
- * range. The score interpolates linearly within the band whose range
- * contains the actual value, scaled between that band's score bounds. The
- * "better" edge of the band's value range (per direction) maps to the top
- * of the band's score range.
+ * Range target: each band owns an explicit [min, max] window of values. The
+ * score interpolates linearly between that window and the band's own score
+ * range, so a value halfway through the Good window scores halfway between 3.5
+ * and 3.9. The edge of the window nearest the *better* neighbouring band maps
+ * to the top of the band's score range.
+ *
+ * Values falling outside every configured window clamp to 0 or 5 according to
+ * which end they fell off.
  */
 export function scoreRangeTarget(
   actual: number,
   config: RangeTargetConfig,
   direction: Direction
 ): number {
-  const bands: { range: [number, number]; band: Band }[] = [
-    { range: config.poor, band: "POOR" },
-    { range: config.improvementNeeded, band: "IMPROVEMENT_NEEDED" },
-    { range: config.meet, band: "MEET" },
-    { range: config.good, band: "GOOD" },
-    { range: config.veryGood, band: "VERY_GOOD" },
-    { range: config.excellent, band: "EXCELLENT" },
-  ];
-
-  // Order bands from worst to best along the value axis according to direction.
-  const ordered = direction === "HIGHER_BETTER" ? bands : [...bands].reverse();
+  // Order the bands by where their windows sit on the value axis, lowest
+  // value first. For "lower is better" that puts Excellent at the start.
+  const ordered = direction === "HIGHER_BETTER" ? BANDS : [...BANDS].reverse();
 
   for (let i = 0; i < ordered.length; i++) {
-    const { range, band } = ordered[i];
-    const lo = Math.min(range[0], range[1]);
-    const hi = Math.max(range[0], range[1]);
-    const isLast = i === ordered.length - 1;
-    const isFirst = i === 0;
+    const band = ordered[i];
+    const [a, b] = config[band];
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
 
-    const inRange =
-      (isFirst && actual <= hi) ||
-      (isLast && actual >= lo) ||
+    // The outermost windows are open-ended, so a value past either end of the
+    // scale still belongs to that end's band rather than falling through.
+    const isLowest = i === 0;
+    const isHighest = i === ordered.length - 1;
+    const inWindow =
+      (isLowest && actual <= hi) ||
+      (isHighest && actual >= lo) ||
       (actual >= lo && actual <= hi);
+    if (!inWindow) continue;
 
-    if (!inRange) continue;
+    const { lo: scoreLo, hi: scoreHi } = BAND_BOUNDS[band];
+    if (hi === lo) return scoreHi;
 
-    const { lo: sLo, hi: sHi } = BAND_BOUNDS[band];
-    if (hi === lo) return sHi;
-    const posFraction = clamp((actual - lo) / (hi - lo), 0, 1);
-    // Within a band, the edge closer to the "better" neighbor band scores sHi.
-    const betterEdgeIsHi = direction === "HIGHER_BETTER";
-    const score = betterEdgeIsHi ? sLo + posFraction * (sHi - sLo) : sHi - posFraction * (sHi - sLo);
-    return clamp(score, 0, 5);
+    const position = clamp((actual - lo) / (hi - lo), 0, 1);
+    return direction === "HIGHER_BETTER"
+      ? scoreLo + position * (scoreHi - scoreLo)
+      : scoreHi - position * (scoreHi - scoreLo);
   }
 
-  // Outside every configured range: clamp to the nearest extreme.
-  const worst = ordered[0];
-  const best = ordered[ordered.length - 1];
-  const worstLo = Math.min(worst.range[0], worst.range[1]);
-  const worstHi = Math.max(worst.range[0], worst.range[1]);
-  const bestLo = Math.min(best.range[0], best.range[1]);
-  const bestHi = Math.max(best.range[0], best.range[1]);
-  if (actual < worstLo || actual < worstHi) {
-    return direction === "HIGHER_BETTER" ? 0 : 5;
-  }
-  if (actual > bestHi || actual > bestLo) {
-    return direction === "HIGHER_BETTER" ? 5 : 0;
-  }
-  return 0;
+  // Unreachable for a well-formed config, but stay defined if the windows
+  // leave a gap: fall back to whichever end of the scale the value is nearer.
+  const lowestWindow = config[ordered[0]];
+  const lowestEdge = Math.max(lowestWindow[0], lowestWindow[1]);
+  const belowScale = actual < lowestEdge;
+  const worstEnd = direction === "HIGHER_BETTER" ? belowScale : !belowScale;
+  return worstEnd ? 0 : MAX_SCORE;
 }
 
-function daysInMonth(year: number, month1to12: number): number {
-  return new Date(year, month1to12, 0).getDate();
+// --------------------------------------------------------------------------
+// Period arithmetic ("YYYY-MM")
+// --------------------------------------------------------------------------
+
+export function parsePeriod(period: string): { year: number; month: number } {
+  const [year, month] = period.split("-").map(Number);
+  return { year, month };
 }
 
-function parsePeriod(period: string): { year: number; month: number } {
-  const [y, m] = period.split("-").map(Number);
-  return { year: y, month: m };
+export function formatPeriod(year: number, month: number): string {
+  return `${year}-${String(month).padStart(2, "0")}`;
 }
 
-function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
-  const total = year * 12 + (month - 1) + delta;
-  return { year: Math.floor(total / 12), month: (((total % 12) + 12) % 12) + 1 };
+export function shiftPeriod(period: string, deltaMonths: number): string {
+  const { year, month } = parsePeriod(period);
+  const total = year * 12 + (month - 1) + deltaMonths;
+  return formatPeriod(Math.floor(total / 12), (((total % 12) + 12) % 12) + 1);
 }
+
+/** Whole months from `from` to `to`; negative when `to` is earlier. */
+export function monthsBetween(from: string, to: string): number {
+  const a = parsePeriod(from);
+  const b = parsePeriod(to);
+  return (b.year - a.year) * 12 + (b.month - a.month);
+}
+
+export function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+export function lastDayOfPeriod(period: string): Date {
+  const { year, month } = parsePeriod(period);
+  return new Date(Date.UTC(year, month - 1, daysInMonth(year, month)));
+}
+
+export function periodOfDate(date: Date): string {
+  return formatPeriod(date.getUTCFullYear(), date.getUTCMonth() + 1);
+}
+
+// --------------------------------------------------------------------------
+// Month-of-completion targets
+// --------------------------------------------------------------------------
+
+// How many months early/late maps to which band. Finishing in the target month
+// is a Meet; each month early climbs a band, each month late drops one.
+const COMPLETION_LADDER: { delta: number; band: Band }[] = [
+  { delta: -3, band: "EXCELLENT" },
+  { delta: -2, band: "VERY_GOOD" },
+  { delta: -1, band: "GOOD" },
+  { delta: 0, band: "MEET" },
+  { delta: 1, band: "IMPROVEMENT_NEEDED" },
+  { delta: 2, band: "POOR" },
+];
 
 /**
- * Month-of-completion target. The Meet target is a specific month; scoring
- * within a month is scaled by day-of-month (day 1 = top of that band's
- * score, last day of the month = bottom of that band's score). Completion
- * one/two/three months earlier than target lands in Good/Very
- * Good/Excellent's month respectively; up to one/two months late lands in
- * Improvement Needed/Poor's month; later than that scores 0.
+ * Month-of-completion target. Within the landing month the score scales by day
+ * — day 1 scores the top of that band, the last day of the month the bottom.
+ * With a target of October 2026: 1 Oct scores 3.4 and 31 Oct scores 3.0.
+ *
+ * Finishing more than three months early is capped at 5.0; more than two months
+ * late scores 0.
  */
 export function scoreMonthCompletion(
   completionDate: Date,
   config: MonthTargetConfig
 ): number {
-  const target = parsePeriod(config.targetMonth);
-  const completionYear = completionDate.getFullYear();
-  const completionMonth = completionDate.getMonth() + 1;
-  const day = completionDate.getDate();
+  const completionPeriod = periodOfDate(completionDate);
+  const delta = monthsBetween(config.targetMonth, completionPeriod);
 
-  const bandOffsets: { delta: number; band: Band }[] = [
-    { delta: -3, band: "EXCELLENT" },
-    { delta: -2, band: "VERY_GOOD" },
-    { delta: -1, band: "GOOD" },
-    { delta: 0, band: "MEET" },
-    { delta: 1, band: "IMPROVEMENT_NEEDED" },
-    { delta: 2, band: "POOR" },
-  ];
+  if (delta < -3) return MAX_SCORE;
+  const rung = COMPLETION_LADDER.find((r) => r.delta === delta);
+  if (!rung) return 0; // more than two months late
 
-  for (const { delta, band } of bandOffsets) {
-    const { year, month } = shiftMonth(target.year, target.month, delta);
-    if (year === completionYear && month === completionMonth) {
-      const { lo, hi } = BAND_BOUNDS[band];
-      const dim = daysInMonth(year, month);
-      if (dim <= 1) return hi;
-      const fraction = clamp((day - 1) / (dim - 1), 0, 1);
-      return hi - fraction * (hi - lo);
-    }
-  }
+  const { lo, hi } = BAND_BOUNDS[rung.band];
+  const { year, month } = parsePeriod(completionPeriod);
+  const total = daysInMonth(year, month);
+  if (total <= 1) return hi;
 
-  // More than 3 months early: still capped at Excellent's top (no extra credit).
-  const monthsFromTarget =
-    (completionYear - target.year) * 12 + (completionMonth - target.month);
-  if (monthsFromTarget < -3) return BAND_BOUNDS.EXCELLENT.hi;
-
-  // More than 2 months late.
-  return 0;
+  const position = clamp((completionDate.getUTCDate() - 1) / (total - 1), 0, 1);
+  return hi - position * (hi - lo);
 }
 
-export type LeafMetricType = "PERCENTAGE" | "DOLLAR" | "QUANTITY" | "DAYS" | "MONTH_COMPLETION";
-export type TargetMode = "FIXED" | "RANGE";
+// --------------------------------------------------------------------------
+// Deadlines on non-time-based KPIs
+// --------------------------------------------------------------------------
 
-export function scoreLeafKpi(params: {
-  metricType: LeafMetricType;
+// Cap applied once a deadline has passed, by how many months late the
+// scorecard period is. These are the tops of exactly the bands the completion
+// ladder assigns to being one and two months late, so the app has a single
+// notion of lateness rather than two competing ones.
+const LATENESS_CAPS: Record<number, number> = {
+  1: BAND_BOUNDS.IMPROVEMENT_NEEDED.hi, // 2.9
+  2: BAND_BOUNDS.POOR.hi, // 2.4
+};
+
+export function latenessCap(monthsLate: number): number | null {
+  if (monthsLate <= 0) return null; // on time — no cap
+  if (monthsLate >= 3) return 0;
+  return LATENESS_CAPS[monthsLate];
+}
+
+export type DeadlineOutcome = {
+  score: number;
+  /** The score before any deadline rule was applied, for explaining the cap. */
+  rawScore: number;
+  monthsLate: number;
+  /** The cap in force, or null when the KPI is not yet late. */
+  cap: number | null;
+  /** True when the score was frozen at its deadline-month value. */
+  frozen: boolean;
+};
+
+/**
+ * Applies a KPI's deadline to a score already computed from its value.
+ *
+ * - Not past the deadline: the raw score stands.
+ * - `scoreFinalAfterDeadline`: the score freezes at whatever it was in the
+ *   deadline month. Later achievement is still recorded, it just no longer
+ *   moves the score.
+ * - Otherwise later achievement still earns partial credit, capped by how late
+ *   it is. Because it is a cap rather than a replacement it can only ever
+ *   lower a score, so a KPI already sitting below the cap is left alone.
+ */
+export function applyDeadline(params: {
+  rawScore: number;
+  period: string;
+  deadlineMonth: string | null;
+  scoreFinalAfterDeadline: boolean;
+  /** The score as computed for the deadline month itself. */
+  scoreAtDeadline?: number | null;
+}): DeadlineOutcome {
+  const { rawScore, period, deadlineMonth, scoreFinalAfterDeadline } = params;
+
+  if (!deadlineMonth) {
+    return { score: rawScore, rawScore, monthsLate: 0, cap: null, frozen: false };
+  }
+
+  const monthsLate = Math.max(0, monthsBetween(deadlineMonth, period));
+  if (monthsLate === 0) {
+    return { score: rawScore, rawScore, monthsLate: 0, cap: null, frozen: false };
+  }
+
+  if (scoreFinalAfterDeadline) {
+    const frozenScore = params.scoreAtDeadline ?? rawScore;
+    return { score: frozenScore, rawScore, monthsLate, cap: null, frozen: true };
+  }
+
+  const cap = latenessCap(monthsLate) ?? MAX_SCORE;
+  return { score: Math.min(rawScore, cap), rawScore, monthsLate, cap, frozen: false };
+}
+
+// --------------------------------------------------------------------------
+// Leaf scoring
+// --------------------------------------------------------------------------
+
+export type KpiDefinition = {
+  metricType: MetricType;
   direction: Direction | null;
   targetMode: TargetMode | null;
-  targetConfig: FixedTargetConfig | RangeTargetConfig | MonthTargetConfig;
+  targetConfig: TargetConfig | null;
+  deadlineMonth: string | null;
+  scoreFinalAfterDeadline: boolean;
+};
+
+export type Entry = {
+  period: string;
   value: number | null;
+  basis: ValueBasis;
   completionDate: Date | null;
-}): number | null {
-  const { metricType, direction, targetMode, targetConfig, value, completionDate } = params;
+};
 
-  if (metricType === "MONTH_COMPLETION") {
-    if (!completionDate) return null;
-    return roundScore(scoreMonthCompletion(completionDate, targetConfig as MonthTargetConfig));
+export type LeafScore = {
+  score: number | null;
+  band: Band | null;
+  /** The figure actually scored, and where it came from. */
+  value: number | null;
+  basis: ValueBasis | null;
+  /** True when scored from an estimate, so the score is provisional. */
+  provisional: boolean;
+  /** Set when a deadline changed the score; drives the UI explanation. */
+  deadline: DeadlineOutcome | null;
+  /** Why there is no score, when there isn't one. */
+  pendingReason: "NO_DATA" | "NOT_YET_DUE" | null;
+};
+
+const NO_SCORE = (pendingReason: LeafScore["pendingReason"]): LeafScore => ({
+  score: null,
+  band: null,
+  value: null,
+  basis: null,
+  provisional: false,
+  deadline: null,
+  pendingReason,
+});
+
+/**
+ * Picks the figure to score for `period`: the actual recorded for that period
+ * if there is one, otherwise the most recent estimate at or before it. A KPI
+ * that isn't complete yet has no year-to-date actual, so its latest estimate
+ * stands in and the resulting score is flagged provisional.
+ */
+export function selectEntry(entries: Entry[], period: string): Entry | null {
+  const upTo = entries
+    .filter((e) => e.period <= period)
+    .sort((a, b) => a.period.localeCompare(b.period));
+
+  const exactActual = upTo.find((e) => e.period === period && e.basis === "ACTUAL");
+  if (exactActual) return exactActual;
+
+  const exact = upTo.find((e) => e.period === period);
+  if (exact) return exact;
+
+  // Carry the most recent estimate forward; an older *actual* is deliberately
+  // not carried, because a missing YTD actual means "not reported this month".
+  for (let i = upTo.length - 1; i >= 0; i--) {
+    if (upTo[i].basis === "ESTIMATE") return upTo[i];
   }
-
-  if (value === null || value === undefined) return null;
-  if (!direction || !targetMode) return null;
-
-  if (targetMode === "FIXED") {
-    return roundScore(scoreFixedTarget(value, targetConfig as FixedTargetConfig, direction));
-  }
-  return roundScore(scoreRangeTarget(value, targetConfig as RangeTargetConfig, direction));
+  return null;
 }
 
-export function roundScore(score: number): number {
-  return Math.round(clamp(score, 0, 5) * 100) / 100;
+/**
+ * Scores one leaf KPI for one scorecard month.
+ *
+ * `MONTH_COMPLETION` KPIs need no entry to be scored once overdue: past the
+ * target month they are scored as though completed on the last day of the
+ * scorecard month, so a slipping milestone drags the score down on its own.
+ */
+export function scoreLeaf(
+  kpi: KpiDefinition,
+  entries: Entry[],
+  period: string
+): LeafScore {
+  if (kpi.metricType === "MONTH_COMPLETION") {
+    return scoreMilestoneLeaf(kpi, entries, period);
+  }
+
+  const entry = selectEntry(entries, period);
+  if (!entry || entry.value === null) return NO_SCORE("NO_DATA");
+  if (!kpi.direction || !kpi.targetMode || !kpi.targetConfig) {
+    return NO_SCORE("NO_DATA");
+  }
+
+  const raw =
+    kpi.targetMode === "FIXED"
+      ? scoreFixedTarget(entry.value, kpi.targetConfig as FixedTargetConfig, kpi.direction)
+      : scoreRangeTarget(entry.value, kpi.targetConfig as RangeTargetConfig, kpi.direction);
+
+  const deadline = applyDeadline({
+    rawScore: roundScore(raw),
+    period,
+    deadlineMonth: kpi.deadlineMonth,
+    scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+    scoreAtDeadline: kpi.deadlineMonth
+      ? scoreFrozenAtDeadline(kpi, entries, kpi.deadlineMonth)
+      : null,
+  });
+
+  const score = roundScore(deadline.score);
+  return {
+    score,
+    band: bandForScore(score),
+    value: entry.value,
+    basis: entry.basis,
+    provisional: entry.basis === "ESTIMATE",
+    deadline: kpi.deadlineMonth ? deadline : null,
+    pendingReason: null,
+  };
 }
 
-/** Weighted rollup of a set of child scores (each 0-5, with a relative weight). */
-export function rollupScores(children: { score: number | null; weight: number }[]): number | null {
-  const usable = children.filter((c) => c.score !== null && c.weight > 0);
-  if (usable.length === 0) return null;
-  const totalWeight = usable.reduce((sum, c) => sum + c.weight, 0);
-  if (totalWeight <= 0) return null;
-  const weighted = usable.reduce((sum, c) => sum + (c.score as number) * c.weight, 0);
-  return roundScore(weighted / totalWeight);
+/** The raw score as at the deadline month, used when a KPI freezes. */
+function scoreFrozenAtDeadline(
+  kpi: KpiDefinition,
+  entries: Entry[],
+  deadlineMonth: string
+): number | null {
+  const entry = selectEntry(entries, deadlineMonth);
+  if (!entry || entry.value === null) return 0; // nothing achieved by the deadline
+  if (!kpi.direction || !kpi.targetMode || !kpi.targetConfig) return null;
+
+  const raw =
+    kpi.targetMode === "FIXED"
+      ? scoreFixedTarget(entry.value, kpi.targetConfig as FixedTargetConfig, kpi.direction)
+      : scoreRangeTarget(entry.value, kpi.targetConfig as RangeTargetConfig, kpi.direction);
+  return roundScore(raw);
+}
+
+function scoreMilestoneLeaf(
+  kpi: KpiDefinition,
+  entries: Entry[],
+  period: string
+): LeafScore {
+  const config = kpi.targetConfig as MonthTargetConfig | null;
+  if (!config?.targetMonth) return NO_SCORE("NO_DATA");
+
+  const completed = entries
+    .filter((e) => e.completionDate && e.period <= period)
+    .sort((a, b) => a.period.localeCompare(b.period))[0];
+
+  if (completed?.completionDate) {
+    // Once recorded, the score stands for this month and every later one.
+    const score = roundScore(scoreMonthCompletion(completed.completionDate, config));
+    return {
+      score,
+      band: bandForScore(score),
+      value: null,
+      basis: completed.basis,
+      provisional: completed.basis === "ESTIMATE",
+      deadline: null,
+      pendingReason: null,
+    };
+  }
+
+  // Not completed. Until the target month is behind us there is nothing to
+  // say, so the KPI sits out of the rollup; after that it scores as though it
+  // were completed on the last day of the scorecard month.
+  if (monthsBetween(config.targetMonth, period) <= 0) return NO_SCORE("NOT_YET_DUE");
+
+  const score = roundScore(scoreMonthCompletion(lastDayOfPeriod(period), config));
+  return {
+    score,
+    band: bandForScore(score),
+    value: null,
+    basis: null,
+    provisional: false,
+    deadline: null,
+    pendingReason: null,
+  };
+}
+
+// --------------------------------------------------------------------------
+// Rollup
+// --------------------------------------------------------------------------
+
+export type RollupInput = {
+  /** The child's score as displayed, rounded to 1dp. */
+  score: number | null;
+  /**
+   * The same score before rounding. Aggregating from this rather than from the
+   * displayed value keeps a total from drifting as rounding errors compound,
+   * and keeps it independent of how the hierarchy happens to be grouped.
+   * Defaults to `score` — correct for a leaf, whose score is rounded by rule.
+   */
+  exactScore?: number | null;
+  /** The child's full weight, whether or not it produced a score. */
+  weight: number;
+  /**
+   * How much of that weight actually has a figure behind it. For a leaf this
+   * is its whole weight or nothing; for a parent it is the sum from its own
+   * descendants, which is what keeps coverage honest more than one level up.
+   */
+  scoredWeight: number;
+  /** How much of the scored weight rests on an estimate. */
+  provisionalWeight: number;
+};
+
+export type Rollup = {
+  /** Rounded to 1dp, so it always sits inside a band. */
+  score: number | null;
+  /** Unrounded, for feeding into a further rollup. */
+  exactScore: number | null;
+  band: Band | null;
+  /** Share of total weight that produced a score, 0..1. */
+  coverage: number;
+  /** Share of total weight whose score came from an estimate, 0..1. */
+  provisionalShare: number;
+  scoredWeight: number;
+  provisionalWeight: number;
+  totalWeight: number;
+};
+
+/**
+ * Weighted average of child scores, skipping children with no score and
+ * renormalising over the rest — so an early month with half the data still
+ * reads on the same 0-5 scale.
+ *
+ * Children are weighted by their *scored* weight rather than their nominal
+ * weight. That makes a rollup at any depth identical to a flat weighted
+ * average over every scored leaf beneath it, which is what "leaf weights sum
+ * to 100%" implies: a branch that is only half reported carries only half its
+ * weight into its parent, instead of lending its full weight to a score that
+ * rests on less.
+ */
+export function rollup(children: RollupInput[]): Rollup {
+  const totalWeight = children.reduce((sum, c) => sum + Math.max(0, c.weight), 0);
+  const scoredWeight = children.reduce((sum, c) => sum + Math.max(0, c.scoredWeight), 0);
+  const provisionalWeight = children.reduce(
+    (sum, c) => sum + Math.max(0, c.provisionalWeight),
+    0
+  );
+
+  const contributing = children.filter((c) => c.score !== null && c.scoredWeight > 0);
+
+  if (contributing.length === 0 || scoredWeight <= 0) {
+    return {
+      score: null,
+      exactScore: null,
+      band: null,
+      coverage: 0,
+      provisionalShare: 0,
+      scoredWeight: 0,
+      provisionalWeight: 0,
+      totalWeight,
+    };
+  }
+
+  const weighted = contributing.reduce(
+    (sum, c) => sum + (c.exactScore ?? (c.score as number)) * c.scoredWeight,
+    0
+  );
+  const exactScore = weighted / scoredWeight;
+  const score = roundScore(exactScore);
+
+  return {
+    score,
+    exactScore,
+    band: bandForScore(score),
+    coverage: totalWeight > 0 ? scoredWeight / totalWeight : 0,
+    provisionalShare: totalWeight > 0 ? provisionalWeight / totalWeight : 0,
+    scoredWeight,
+    provisionalWeight,
+    totalWeight,
+  };
 }
