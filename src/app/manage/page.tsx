@@ -1,5 +1,5 @@
 import { ManageClient } from "./ManageClient";
-import { getActiveFiscalYear, listDepartments, listFiscalYears } from "@/lib/data";
+import { listDepartments, listFiscalYears } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
 import { requireAuthPage } from "@/lib/session";
 
@@ -9,10 +9,9 @@ export const dynamic = "force-dynamic";
 export default async function ManagePage() {
   await requireAuthPage();
 
-  const [fiscalYears, departments, active] = await Promise.all([
+  const [fiscalYears, departments] = await Promise.all([
     listFiscalYears(),
     listDepartments(),
-    getActiveFiscalYear(),
   ]);
 
   const counts = await prisma.kpi.groupBy({
@@ -40,7 +39,6 @@ export default async function ManagePage() {
           kpiCount: kpiCount.get(fy.id) ?? 0,
         }))}
         departments={departments.map((d) => ({ id: d.id, name: d.name }))}
-        activeId={active?.id ?? null}
       />
     </div>
   );

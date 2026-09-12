@@ -91,3 +91,23 @@ test("a new fiscal year can be started from the current one", async ({ page }) =
   await page.getByRole("button", { name: "Confirm and save" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: "FY2027/28" })).toHaveCount(0);
 });
+
+test("a new fiscal year starts empty unless you choose to copy one", async ({ page }) => {
+  // Copying is a deliberate choice, not the default: it fills the new year
+  // with the active year's KPIs, and importing a smaller workbook into it
+  // afterwards would then remove whatever the workbook didn't mention.
+  await page.goto("/manage");
+
+  await expect(page.getByLabel("Copy KPIs from")).toHaveValue("");
+  await page.getByLabel("Starting year").fill("2028");
+  await page.getByRole("button", { name: "Create year" }).click();
+
+  const newYear = page.getByRole("listitem").filter({ hasText: "FY2028/29" });
+  await expect(newYear).toBeVisible();
+  await expect(newYear).toContainText("0 KPIs");
+
+  // Clean up, so the suite can be re-run.
+  await newYear.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: "FY2028/29" })).toHaveCount(0);
+});

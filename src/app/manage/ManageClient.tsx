@@ -27,15 +27,13 @@ type DepartmentDraft = { id: string | null; name: string; key: string };
 export function ManageClient({
   fiscalYears,
   departments,
-  activeId,
 }: {
   fiscalYears: FiscalYear[];
   departments: { id: string; name: string }[];
-  activeId: string | null;
 }) {
   return (
     <div className="space-y-6">
-      <FiscalYearPanel fiscalYears={fiscalYears} activeId={activeId} />
+      <FiscalYearPanel fiscalYears={fiscalYears} />
       <DepartmentPanel departments={departments} />
     </div>
   );
@@ -46,16 +44,18 @@ const inputClass =
 
 function FiscalYearPanel({
   fiscalYears,
-  activeId,
 }: {
   fiscalYears: FiscalYear[];
-  activeId: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [startYear, setStartYear] = useState(() => suggestNextYear(fiscalYears));
-  const [copyFromId, setCopyFromId] = useState<string>(activeId ?? "");
+  // Defaults to empty, not the active year: copying is a deliberate choice,
+  // since it fills the new year's hierarchy with the active year's KPIs —
+  // and re-importing a different, smaller workbook into it afterwards will
+  // match by code and remove whatever isn't in that file.
+  const [copyFromId, setCopyFromId] = useState<string>("");
   const [confirmDelete, setConfirmDelete] = useState<FiscalYear | null>(null);
 
   const run = (action: () => Promise<ActionResult>) =>
