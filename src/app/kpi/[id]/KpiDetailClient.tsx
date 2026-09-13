@@ -34,6 +34,7 @@ import {
   metricToDraft,
   type MetricDraft,
 } from "@/lib/targets";
+import { ScoreExplainer } from "./ScoreExplainer";
 
 type HistoryRow = {
   period: string;
@@ -49,7 +50,7 @@ type HistoryRow = {
   provisional: boolean;
 };
 
-type KpiProps = {
+export type KpiProps = {
   id: string;
   code: string;
   name: string;
@@ -128,6 +129,7 @@ export function KpiDetailClient({
   subKpis: {
     id: string; code: string; name: string; weight: number;
     score: number | null; band: Band | null; coverage: number; provisional: boolean;
+    exactScore: number | null; scoredWeight: number;
   }[];
   history: HistoryRow[];
   updates: { id: string; period: string; body: string; author: string | null; createdAt: string }[];
@@ -316,6 +318,17 @@ export function KpiDetailClient({
   const submittingProposal =
     currentUser.role !== "ADMIN" && changes.some((c) => settingsFields.has(c.field));
 
+  // For the score explainer: the earliest recorded completion at or before
+  // the viewed period, mirroring scoreMilestoneLeaf's own selection — the
+  // history row for the exact viewed period is usually empty, since a
+  // completion is recorded once and then stands for every later month too.
+  const completionEntry =
+    kpi.metricType === "MONTH_COMPLETION"
+      ? history
+          .filter((h) => !h.isFuture && h.completionDate && h.period <= period)
+          .sort((a, b) => a.period.localeCompare(b.period))[0] ?? null
+      : null;
+
   const numericTargets = kpi.metricType && kpi.metricType !== "MONTH_COMPLETION"
     ? BANDS.map((band) => ({ band, value: targetPoint(kpi, band) })).filter(
         (t): t is { band: Band; value: number } => t.value !== null
@@ -382,6 +395,14 @@ export function KpiDetailClient({
       )}
 
       {!kpi.isLeaf && subKpis.length > 0 && <ChildrenTable subKpis={subKpis} period={period} />}
+
+      <ScoreExplainer
+        kpi={kpi}
+        subKpis={subKpis}
+        period={period}
+        completionDate={completionEntry?.completionDate ?? null}
+        completionBasis={completionEntry?.basis ?? null}
+      />
 
       <HistoryTable history={history} kpi={kpi} currentPeriod={period} />
 

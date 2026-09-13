@@ -106,6 +106,10 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
     band: child.band,
     coverage: child.coverage,
     provisional: child.provisional,
+    // For the score explainer's rollup arithmetic: the exact (unrounded)
+    // score and the scored weight are what rollup() actually weights by.
+    exactScore: child.exactScore,
+    scoredWeight: child.scoredWeight,
   }));
 
   return (
