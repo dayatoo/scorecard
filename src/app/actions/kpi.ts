@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/session";
+import { requireAuth, type CurrentUser } from "@/lib/session";
 import { formatPeriodLabel, isPeriodInFiscalYear } from "@/lib/fiscal";
 import { formatDate } from "@/lib/dates";
 import { parseTargetConfig } from "@/lib/kpi-tree";
@@ -44,13 +44,27 @@ async function assertPeriodValid(kpiId: string, period: string) {
   }
 }
 
-/** Writes one month's figure. Called only after the user confirms a save. */
-export async function saveEntry(input: SaveEntryInput): Promise<ActionResult> {
-  return attempt(() => writeEntry(input));
+/** Throws unless the user is an admin or their department owns this KPI. */
+async function assertOwnsKpi(user: CurrentUser, kpiId: string): Promise<void> {
+  if (user.role === "ADMIN") return;
+  const owns = await prisma.kpiDepartment.findFirst({
+    where: { kpiId, departmentId: user.departmentId },
+  });
+  if (!owns) {
+    throw new Error("You can only report figures for your own department's KPIs.");
+  }
 }
 
-async function writeEntry(input: SaveEntryInput): Promise<void> {
-  await requireAuth();
+/** Writes one month's figure. Called only after the user confirms a save. */
+export async function saveEntry(input: SaveEntryInput): Promise<ActionResult> {
+  return attempt(async () => {
+    const user = await requireAuth();
+    await writeEntry(user, input);
+  });
+}
+
+async function writeEntry(user: CurrentUser, input: SaveEntryInput): Promise<void> {
+  await assertOwnsKpi(user, input.kpiId);
   await assertPeriodValid(input.kpiId, input.period);
 
   if (input.value !== null && !Number.isFinite(input.value)) {
@@ -100,11 +114,16 @@ async function writeEntry(input: SaveEntryInput): Promise<void> {
   revalidatePath(`/kpi/${input.kpiId}`);
 }
 
-/** Bulk version for the data-entry grid — one confirmation, one pass. */
+/**
+ * Bulk version for the data-entry grid — one confirmation, one pass. The
+ * ownership check runs per row (inside writeEntry), not just once up front,
+ * so one owned row in a batch can never cover an unowned row slipped in
+ * alongside it.
+ */
 export async function saveEntries(inputs: SaveEntryInput[]): Promise<ActionResult> {
   return attempt(async () => {
-    await requireAuth();
-    for (const input of inputs) await writeEntry(input);
+    const user = await requireAuth();
+    for (const input of inputs) await writeEntry(user, input);
   });
 }
 
@@ -124,10 +143,9 @@ export type SaveKpiSettingsInput = {
   phasing: Phasing;
   /** CUSTOM only: 12 monthly shares (0-100). */
   phaseConfig: number[] | null;
-  author?: string | null;
 };
 
-type AuditEntry = { field: string; label: string; from: string; to: string };
+export type AuditEntry = { field: string; label: string; from: string; to: string };
 
 function describeMetric(metricType: string | null, targetMode: string | null, direction: string | null, targetConfig: string | null): string {
   if (!metricType) return "no metric (rollup)";
@@ -144,12 +162,82 @@ function describeMetric(metricType: string | null, targetMode: string | null, di
 
 /** Updates a KPI's definition from the detail page. */
 export async function saveKpiSettings(input: SaveKpiSettingsInput): Promise<ActionResult> {
-  return attempt(() => writeKpiSettings(input));
+  return attempt(async () => {
+    const user = await requireAuth();
+    const prepared = await prepareKpiSettings(input);
+
+    if (user.role === "ADMIN") {
+      await commitKpiSettings(input, prepared, user.username);
+      return;
+    }
+
+    // A member: propose the change instead of applying it directly.
+    if (!prepared.isLeaf) {
+      throw new Error(
+        "Only an admin can change a KPI with sub-KPIs — ask them to make this change."
+      );
+    }
+    const owns = prepared.existing.departments.some(
+      (d) => d.departmentId === user.departmentId
+    );
+    if (!owns) {
+      throw new Error("You can only propose changes to your own department's KPIs.");
+    }
+    const alreadyPending = await prisma.kpiChangeProposal.findFirst({
+      where: { kpiId: input.kpiId, status: "PENDING" },
+    });
+    if (alreadyPending) {
+      throw new Error("A change to this KPI is already awaiting review.");
+    }
+    if (prepared.audits.length === 0) {
+      throw new Error("Nothing changed.");
+    }
+
+    await prisma.kpiChangeProposal.create({
+      data: {
+        kpiId: input.kpiId,
+        proposedById: user.id,
+        payload: JSON.stringify(input),
+        summary: JSON.stringify(prepared.audits),
+        baseUpdatedAt: prepared.existing.updatedAt,
+      },
+    });
+
+    revalidatePath(`/kpi/${input.kpiId}`);
+    revalidatePath("/manage/approvals");
+  });
 }
 
-async function writeKpiSettings(input: SaveKpiSettingsInput): Promise<void> {
-  await requireAuth();
+export type PreparedKpiSettings = {
+  existing: NonNullable<Awaited<ReturnType<typeof loadExistingKpi>>>;
+  isLeaf: boolean;
+  name: string;
+  code: string;
+  nextColumns: ReturnType<typeof metricColumns>;
+  phasing: Phasing;
+  phaseConfig: string | null;
+  clearedValueCount: number;
+  audits: AuditEntry[];
+};
 
+function loadExistingKpi(kpiId: string) {
+  return prisma.kpi.findUnique({
+    where: { id: kpiId },
+    include: {
+      _count: { select: { children: true, values: true } },
+      values: { select: { period: true, value: true, completionDate: true } },
+      departments: true,
+    },
+  });
+}
+
+/**
+ * Validates a settings change and computes its audit-trail diff, without
+ * writing anything. Shared by the admin direct-save path, the member
+ * propose path (which needs the diff for the approvals queue), and proposal
+ * approval (which re-validates against the KPI's current state).
+ */
+export async function prepareKpiSettings(input: SaveKpiSettingsInput): Promise<PreparedKpiSettings> {
   const name = input.name.trim();
   if (!name) throw new Error("A KPI needs a name.");
   const code = input.code.trim();
@@ -161,14 +249,7 @@ async function writeKpiSettings(input: SaveKpiSettingsInput): Promise<void> {
     throw new Error("A deadline must be a month in YYYY-MM form.");
   }
 
-  const existing = await prisma.kpi.findUnique({
-    where: { id: input.kpiId },
-    include: {
-      _count: { select: { children: true, values: true } },
-      values: { select: { period: true, value: true, completionDate: true } },
-      departments: true,
-    },
-  });
+  const existing = await loadExistingKpi(input.kpiId);
   if (!existing) throw new Error("That KPI no longer exists.");
   const isLeaf = existing._count.children === 0;
 
@@ -249,6 +330,17 @@ async function writeKpiSettings(input: SaveKpiSettingsInput): Promise<void> {
   const afterDepts = [...input.departmentIds].sort().join(",");
   push("departments", "Owning departments", beforeDepts || "none", afterDepts || "none");
 
+  return { existing, isLeaf, name, code, nextColumns, phasing, phaseConfig, clearedValueCount, audits };
+}
+
+/** Actually writes a prepared settings change, attributing the audit trail to `authorUsername`. */
+export async function commitKpiSettings(
+  input: SaveKpiSettingsInput,
+  prepared: PreparedKpiSettings,
+  authorUsername: string
+): Promise<void> {
+  const { name, code, nextColumns, phasing, phaseConfig, clearedValueCount, audits } = prepared;
+
   await prisma.$transaction(async (tx) => {
     await tx.kpi.update({
       where: { id: input.kpiId },
@@ -289,7 +381,7 @@ async function writeKpiSettings(input: SaveKpiSettingsInput): Promise<void> {
           label: a.label,
           from: a.from,
           to: a.to,
-          author: input.author?.trim() || null,
+          author: authorUsername,
         })),
       });
     }
@@ -299,6 +391,7 @@ async function writeKpiSettings(input: SaveKpiSettingsInput): Promise<void> {
   revalidatePath("/kpis");
   revalidatePath("/manage");
   revalidatePath("/manage/hierarchy");
+  revalidatePath("/manage/approvals");
   revalidatePath(`/kpi/${input.kpiId}`);
 }
 
@@ -306,10 +399,9 @@ export async function addKpiUpdate(input: {
   kpiId: string;
   period: string;
   body: string;
-  author: string | null;
 }): Promise<ActionResult> {
   return attempt(async () => {
-    await requireAuth();
+    const user = await requireAuth();
 
     const body = input.body.trim();
     if (!body) throw new Error("Write something before posting an update.");
@@ -319,7 +411,7 @@ export async function addKpiUpdate(input: {
         kpiId: input.kpiId,
         period: input.period,
         body,
-        author: input.author?.trim() || null,
+        author: user.username,
       },
     });
 

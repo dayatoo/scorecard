@@ -60,6 +60,87 @@ enum ValueBasis {
   ESTIMATE
 }
 
+enum UserRole {
+  MEMBER
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  APPROVED
+}
+
+enum ProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// A named individual account. Replaces the old shared-password login: every
+// action taken in the app is now attributable to a real, distinguishable
+// user rather than a free-text "author" string typed by whoever was signed
+// in.
+model User {
+  id              String     @id @default(cuid())
+  username        String     @unique
+  passwordHash    String
+  companyIdNumber String     @unique
+  departmentId    String
+  department      Department @relation(fields: [departmentId], references: [id])
+  role            UserRole   @default(MEMBER)
+  status          UserStatus @default(PENDING)
+
+  proposals KpiChangeProposal[] @relation("ProposedBy")
+  reviewed  KpiChangeProposal[] @relation("ReviewedBy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([departmentId])
+}
+
+// A department member's proposed change to a leaf KPI's settings, held for
+// admin approval rather than applied immediately. Mirrors the shape of a
+// writeKpiSettings call (payload) plus the human-readable diff already built
+// for the audit trail (summary), so approval can reuse both without
+// recomputing them.
+model KpiChangeProposal {
+  id           String @id @default(cuid())
+  kpiId        String
+  kpi          Kpi    @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  proposedById String
+  proposedBy   User   @relation("ProposedBy", fields: [proposedById], references: [id])
+
+  payload String // JSON: the SaveKpiSettingsInput this would apply
+  summary String // JSON: FieldChange[] for display in the approvals queue
+
+  // The KPI's updatedAt at proposal time. Re-checked at approval — if the
+  // KPI changed since (another proposal landed, or an admin edited it
+  // directly), approval is refused rather than applied over a stale base.
+  baseUpdatedAt DateTime
+
+  status       ProposalStatus @default(PENDING)
+  reviewedById String?
+  reviewedBy   User?          @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  reviewNote   String?
+  reviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([kpiId, status])
+}
+
+// Backs the rate limit on the live username-status check at login. One row
+// per check attempt, keyed by a hash of the caller's IP (never the raw IP) —
+// this only needs to answer "how many recently," not who exactly.
+model UsernameCheckAttempt {
+  id        String   @id @default(cuid())
+  ipHash    String
+  createdAt DateTime @default(now())
+
+  @@index([ipHash, createdAt])
+}
+
 // One financial year, April of `startYear` through March of `startYear + 1`.
 // Each year owns its own hierarchy, weights and targets, so changing next
 // year's targets never rewrites last year's scores.
@@ -81,7 +162,8 @@ model Department {
   name     String  @unique
   isActive Boolean @default(true)
 
-  kpis KpiDepartment[]
+  kpis  KpiDepartment[]
+  users User[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -152,6 +234,7 @@ model Kpi {
   values      KpiValue[]
   updates     KpiUpdate[]
   audits      KpiAudit[]
+  proposals   KpiChangeProposal[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

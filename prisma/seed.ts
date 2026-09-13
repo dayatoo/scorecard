@@ -5,6 +5,7 @@
 // Weights here are *local* — each KPI's share of its own siblings, not of the
 // whole company — matching the convention every group in the app now uses.
 
+import bcrypt from "bcryptjs";
 import { PrismaClient, type Prisma } from "@prisma/client";
 
 import { DEFAULT_CURRENCY } from "../src/lib/config";
@@ -152,6 +153,36 @@ async function main() {
     (await prisma.department.findMany()).map((d) => [d.name, d.id])
   );
 
+  // Two sample accounts, so the department-scoped and admin paths are both
+  // exercisable right after seeding: an admin (any department), and a
+  // Finance member to try the propose-then-approve flow against SG2.1/SG2.4.
+  const SEED_PASSWORD = "password123";
+  const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
+  await prisma.user.upsert({
+    where: { username: "admin" },
+    update: {},
+    create: {
+      username: "admin",
+      passwordHash,
+      companyIdNumber: "EMP-0001",
+      departmentId: departmentIdByName.get("Finance") as string,
+      role: "ADMIN",
+      status: "APPROVED",
+    },
+  });
+  await prisma.user.upsert({
+    where: { username: "finance.member" },
+    update: {},
+    create: {
+      username: "finance.member",
+      passwordHash,
+      companyIdNumber: "EMP-0002",
+      departmentId: departmentIdByName.get("Finance") as string,
+      role: "MEMBER",
+      status: "APPROVED",
+    },
+  });
+
   // Replace rather than duplicate, so re-seeding is idempotent.
   await prisma.fiscalYear.deleteMany({ where: { startYear: START_YEAR } });
   const fiscalYear = await prisma.fiscalYear.create({
@@ -240,6 +271,10 @@ async function main() {
     `Seeded ${KPIS.length} KPIs across ${periodsOfFiscalYear(START_YEAR).length} months, ` +
       "five levels deep, with local weights, a quarterly KPI, an annual KPI, " +
       "and phased (even and custom) targets."
+  );
+  console.log(
+    `Seeded two accounts — username "admin" (admin) and "finance.member" ` +
+      `(Finance member), both with password "${SEED_PASSWORD}".`
   );
 }
 

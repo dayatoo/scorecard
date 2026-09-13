@@ -3,7 +3,7 @@ import Link from "next/link";
 import { HierarchyEditor } from "./HierarchyEditor";
 import { getActiveFiscalYear, getScorecard, listFiscalYears } from "@/lib/data";
 import { flattenTree } from "@/lib/kpi-tree";
-import { requireAuthPage } from "@/lib/session";
+import { requireAdminPage } from "@/lib/session";
 
 export const metadata = { title: "Hierarchy — KPI Scorecard" };
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export default async function HierarchyPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireAuthPage();
+  await requireAdminPage();
 
   const query = await searchParams;
   const requestedId = typeof query.fy === "string" ? query.fy : undefined;

@@ -133,13 +133,17 @@ Requires Node.js 20.9+ and a Postgres database.
 
 ```bash
 npm install
-cp .env.example .env      # fill in your database strings and a password
+cp .env.example .env      # fill in your database strings and a session secret
 npx prisma migrate deploy # create the tables
-npm run seed              # optional: a small sample scorecard
+npm run seed              # optional: a small sample scorecard, plus two sample accounts
 npm run dev
 ```
 
-Open http://localhost:3000 and sign in with the `APP_PASSWORD` you set.
+Open http://localhost:3000/register and create an account — the first one
+created is automatically approved and made an admin. Everyone who registers
+after that is held **pending** until an admin approves them from **Manage →
+Users**. (If you ran `npm run seed`, it creates two ready-to-use accounts —
+see the console output for their usernames and password.)
 
 ## Importing your KPIs
 
@@ -172,9 +176,21 @@ deadline — are shown by name, e.g. "October 2026".
 
 ## Access
 
-There are no user accounts — a single shared password (`APP_PASSWORD`) opens
-the app. The session cookie holds a signed token rather than the password
-itself. Departments are labels for filtering and ownership, not logins.
+Everyone signs in with their own username and password, registered at
+`/register`. New registrations are **pending** until an admin approves them
+from **Manage → Users**; the first account ever created is auto-approved and
+made an admin so there's always a gatekeeper. Passwords are hashed
+(`bcryptjs`); the session cookie holds a signed token naming the signed-in
+user, never the password itself.
+
+Departments now double as a write-permission boundary, not just a label: a
+member can report monthly figures directly for any KPI their department
+owns, and can propose changes to that KPI's settings (weight, targets,
+metric, deadline, etc.) — those proposals sit in **Manage → Approvals**
+until an admin approves them. KPIs with no department (every parent/rollup
+node) and all structural changes (the hierarchy editor, fiscal years,
+departments, import) are admin-only. Reading the scorecard is unrestricted
+for every signed-in user.
 
 ## Saving
 

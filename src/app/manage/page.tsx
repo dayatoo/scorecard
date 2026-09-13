@@ -3,13 +3,13 @@ import Link from "next/link";
 import { ManageClient } from "./ManageClient";
 import { listDepartments, listFiscalYears } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
-import { requireAuthPage } from "@/lib/session";
+import { requireAdminPage } from "@/lib/session";
 
 export const metadata = { title: "Manage — KPI Scorecard" };
 export const dynamic = "force-dynamic";
 
 export default async function ManagePage() {
-  await requireAuthPage();
+  await requireAdminPage();
 
   const [fiscalYears, departments] = await Promise.all([
     listFiscalYears(),

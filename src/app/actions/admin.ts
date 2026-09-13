@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/session";
+import { requireAdmin } from "@/lib/session";
 import { fiscalYearLabel } from "@/lib/fiscal";
 import type { ParsedKpi, ParsedValue } from "@/lib/workbook";
 import { attempt, type ActionResult } from "./result";
@@ -13,7 +13,7 @@ export async function createFiscalYear(input: {
   copyFromId: string | null;
 }): Promise<ActionResult> {
   return attempt(async () => {
-    await requireAuth();
+    await requireAdmin();
 
     if (
       !Number.isInteger(input.startYear) ||
@@ -96,7 +96,7 @@ async function copyHierarchy(fromId: string, toId: string): Promise<void> {
 
 export async function setActiveFiscalYear(id: string): Promise<ActionResult> {
   return attempt(async () => {
-    await requireAuth();
+    await requireAdmin();
     await prisma.$transaction([
       prisma.fiscalYear.updateMany({ data: { isActive: false } }),
       prisma.fiscalYear.update({ where: { id }, data: { isActive: true } }),
@@ -108,7 +108,7 @@ export async function setActiveFiscalYear(id: string): Promise<ActionResult> {
 
 export async function deleteFiscalYear(id: string): Promise<ActionResult> {
   return attempt(async () => {
-    await requireAuth();
+    await requireAdmin();
     // Cascades to KPIs, their values and their updates.
     await prisma.fiscalYear.delete({ where: { id } });
     revalidatePath("/");
@@ -120,7 +120,7 @@ export async function saveDepartments(
   departments: { id: string | null; name: string }[],
 ): Promise<ActionResult> {
   return attempt(async () => {
-    await requireAuth();
+    await requireAdmin();
 
     const names = departments.map((d) => d.name.trim()).filter(Boolean);
     const duplicate = names.find(
@@ -183,7 +183,7 @@ export async function applyImport(input: {
   values?: ParsedValue[];
   mode?: ImportMode;
 }): Promise<ImportSummary> {
-  await requireAuth();
+  await requireAdmin();
   const mode: ImportMode = input.mode ?? "UPDATE";
 
   const { fiscalYearId, kpis } = input;

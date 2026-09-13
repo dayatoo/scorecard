@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/session";
+import { requireAdmin } from "@/lib/session";
 import { MAX_KPI_DEPTH } from "@/lib/validation";
 import { attempt, type ActionResult } from "./result";
 
@@ -64,10 +64,9 @@ export async function createKpi(input: {
   parentId: string | null;
   code: string;
   name: string;
-  author?: string | null;
 }): Promise<ActionResult<{ id: string }>> {
   return attempt(async () => {
-    await requireAuth();
+    const user = await requireAdmin();
 
     const code = input.code.trim();
     const name = input.name.trim();
@@ -108,7 +107,7 @@ export async function createKpi(input: {
       const parentLabel = input.parentId
         ? ((await tx.kpi.findUnique({ where: { id: input.parentId }, select: { name: true } }))?.name ?? "the top level")
         : "the top level";
-      await writeAudit(tx, kpi.id, "created", "Created", "—", `added under ${parentLabel}`, input.author ?? null);
+      await writeAudit(tx, kpi.id, "created", "Created", "—", `added under ${parentLabel}`, user.username);
       return kpi;
     });
 
@@ -119,9 +118,9 @@ export async function createKpi(input: {
   });
 }
 
-export async function deleteKpi(input: { kpiId: string; author?: string | null }): Promise<ActionResult> {
+export async function deleteKpi(input: { kpiId: string }): Promise<ActionResult> {
   return attempt(async () => {
-    await requireAuth();
+    const user = await requireAdmin();
 
     const kpi = await prisma.kpi.findUnique({
       where: { id: input.kpiId },
@@ -138,7 +137,7 @@ export async function deleteKpi(input: { kpiId: string; author?: string | null }
           "Sub-KPI deleted",
           `${kpi.code} — ${kpi.name}`,
           `deleted, along with ${kpi._count.values} recorded figure${kpi._count.values === 1 ? "" : "s"}`,
-          input.author ?? null
+          user.username
         );
       }
       // Cascades to children, values and updates.
@@ -154,10 +153,9 @@ export async function deleteKpi(input: { kpiId: string; author?: string | null }
 export async function moveKpi(input: {
   kpiId: string;
   newParentId: string | null;
-  author?: string | null;
 }): Promise<ActionResult> {
   return attempt(async () => {
-    await requireAuth();
+    const user = await requireAdmin();
 
     const kpi = await prisma.kpi.findUnique({ where: { id: input.kpiId } });
     if (!kpi) throw new Error("That KPI no longer exists.");
@@ -203,7 +201,7 @@ export async function moveKpi(input: {
       });
       // A moved KPI keeps its code — codes are identities, the key a
       // re-import matches on, not a path — so no renumbering happens here.
-      await writeAudit(tx, input.kpiId, "parentId", "Moved", oldParentName, newParentName, input.author ?? null);
+      await writeAudit(tx, input.kpiId, "parentId", "Moved", oldParentName, newParentName, user.username);
     });
 
     revalidatePath("/manage/hierarchy");
@@ -217,7 +215,7 @@ export async function reorderKpi(input: {
   direction: "up" | "down";
 }): Promise<ActionResult> {
   return attempt(async () => {
-    await requireAuth();
+    await requireAdmin();
 
     const kpi = await prisma.kpi.findUnique({ where: { id: input.kpiId } });
     if (!kpi) throw new Error("That KPI no longer exists.");

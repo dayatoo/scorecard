@@ -18,18 +18,33 @@ export async function generateMetadata({ params }: PageProps<"/kpi/[id]">) {
 }
 
 export default async function KpiDetailPage({ params, searchParams }: PageProps<"/kpi/[id]">) {
-  await requireAuthPage();
+  const currentUser = await requireAuthPage();
 
   const { id } = await params;
   const query = await searchParams;
   const period = typeof query.period === "string" ? query.period : undefined;
 
-  const [detail, departments, audits] = await Promise.all([
+  const [detail, departments, audits, pendingProposalRow] = await Promise.all([
     getKpiDetail(id, period),
     listDepartments(),
     prisma.kpiAudit.findMany({ where: { kpiId: id }, orderBy: { createdAt: "desc" }, take: 30 }),
+    prisma.kpiChangeProposal.findFirst({
+      where: { kpiId: id, status: "PENDING" },
+      include: { proposedBy: true },
+    }),
   ]);
   if (!detail) notFound();
+
+  const pendingProposal = pendingProposalRow
+    ? {
+        id: pendingProposalRow.id,
+        summary: JSON.parse(pendingProposalRow.summary) as {
+          field: string; label: string; from: string; to: string;
+        }[],
+        proposedByUsername: pendingProposalRow.proposedBy.username,
+        createdAt: pendingProposalRow.createdAt.toISOString(),
+      }
+    : null;
 
   const { scorecard, node, updates } = detail;
   const ancestors = ancestorsOf(node, scorecard.byId);
@@ -159,6 +174,8 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
         period={scorecard.period}
         periods={yearPeriods}
         fiscalYearLabel={scorecard.fiscalYear.label}
+        currentUser={currentUser}
+        pendingProposal={pendingProposal}
       />
     </div>
   );

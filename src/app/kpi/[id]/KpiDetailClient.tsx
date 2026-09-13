@@ -104,6 +104,13 @@ type Draft = {
   note: string;
 };
 
+export type PendingProposal = {
+  id: string;
+  summary: { field: string; label: string; from: string; to: string }[];
+  proposedByUsername: string;
+  createdAt: string;
+};
+
 export function KpiDetailClient({
   kpi,
   subKpis,
@@ -114,6 +121,8 @@ export function KpiDetailClient({
   period,
   periods,
   fiscalYearLabel,
+  currentUser,
+  pendingProposal,
 }: {
   kpi: KpiProps;
   subKpis: {
@@ -127,6 +136,8 @@ export function KpiDetailClient({
   period: string;
   periods: string[];
   fiscalYearLabel: string;
+  currentUser: { id: string; username: string; role: "MEMBER" | "ADMIN"; departmentId: string };
+  pendingProposal: PendingProposal | null;
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -297,6 +308,14 @@ export function KpiDetailClient({
     }
   };
 
+  const ownsKpi = currentUser.role === "ADMIN" || kpi.departmentIds.includes(currentUser.departmentId);
+  const canEditFigures = ownsKpi;
+  const canEditSettings =
+    currentUser.role === "ADMIN" ||
+    (kpi.isLeaf && ownsKpi && !pendingProposal);
+  const submittingProposal =
+    currentUser.role !== "ADMIN" && changes.some((c) => settingsFields.has(c.field));
+
   const numericTargets = kpi.metricType && kpi.metricType !== "MONTH_COMPLETION"
     ? BANDS.map((band) => ({ band, value: targetPoint(kpi, band) })).filter(
         (t): t is { band: Band; value: number } => t.value !== null
@@ -341,7 +360,12 @@ export function KpiDetailClient({
           draft={draft}
           setField={setField}
           period={period}
+          readOnly={!canEditFigures}
         />
+      )}
+
+      {pendingProposal && (
+        <PendingProposalPanel proposal={pendingProposal} isAdmin={currentUser.role === "ADMIN"} />
       )}
 
       <SettingsPanel
@@ -350,9 +374,12 @@ export function KpiDetailClient({
         setField={setField}
         departments={departments}
         crossesMetricBoundary={crossesMetricBoundary}
+        readOnly={!canEditSettings}
       />
 
-      {kpi.isLeaf && <TargetsPanel kpi={kpi} draft={draft} setField={setField} />}
+      {kpi.isLeaf && (
+        <TargetsPanel kpi={kpi} draft={draft} setField={setField} readOnly={!canEditSettings} />
+      )}
 
       {!kpi.isLeaf && subKpis.length > 0 && <ChildrenTable subKpis={subKpis} period={period} />}
 
@@ -377,7 +404,11 @@ export function KpiDetailClient({
         warnings={warnings}
         error={error}
         isSaving={isSaving}
-        title={`Save changes to ${kpi.name}?`}
+        title={
+          submittingProposal
+            ? `Submit changes to ${kpi.name} for admin approval?`
+            : `Save changes to ${kpi.name}?`
+        }
         onConfirm={save}
         onCancel={() => setConfirming(false)}
       />
@@ -578,18 +609,24 @@ function BasisToggle({
 }
 
 function EntryPanel({
-  kpi, draft, setField, period,
+  kpi, draft, setField, period, readOnly,
 }: {
   kpi: KpiProps;
   draft: Draft;
   setField: <K extends keyof Draft>(field: K, value: Draft[K]) => void;
   period: string;
+  readOnly?: boolean;
 }) {
   const isMilestone = draft.metricType === "MONTH_COMPLETION";
 
   return (
     <Panel title={`Report for ${formatPeriodLabel(period)}`}>
-      <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
+      {readOnly && (
+        <p className="mb-3 text-xs text-amber-700">
+          Read-only — this KPI isn&apos;t owned by your department.
+        </p>
+      )}
+      <fieldset disabled={readOnly} className="flex flex-wrap items-start gap-x-8 gap-y-3">
         {isMilestone ? (
           <Field label="Completion date" hint="Leave blank until it is finished.">
             <DateField
@@ -623,9 +660,9 @@ function EntryPanel({
           value={draft.basis}
           onChange={(basis) => setField("basis", basis)}
         />
-      </div>
+      </fieldset>
 
-      <div className="mt-4 border-t pt-4">
+      <fieldset disabled={readOnly} className="mt-4 border-t pt-4">
         <Field label="Note for this month">
           <textarea
             rows={2}
@@ -635,19 +672,20 @@ function EntryPanel({
             onChange={(e) => setField("note", e.target.value)}
           />
         </Field>
-      </div>
+      </fieldset>
     </Panel>
   );
 }
 
 function SettingsPanel({
-  kpi, draft, setField, departments, crossesMetricBoundary,
+  kpi, draft, setField, departments, crossesMetricBoundary, readOnly,
 }: {
   kpi: KpiProps;
   draft: Draft;
   setField: <K extends keyof Draft>(field: K, value: Draft[K]) => void;
   departments: { id: string; name: string }[];
   crossesMetricBoundary: boolean;
+  readOnly?: boolean;
 }) {
   const toggleDepartment = (id: string) => {
     const next = draft.departmentIds.includes(id)
@@ -661,7 +699,12 @@ function SettingsPanel({
 
   return (
     <Panel title="Definition" description="Metric type, target mode and direction are editable here — changing any of them recalculates every month's score from the new definition.">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {readOnly && (
+        <p className="mb-3 text-xs text-amber-700">
+          Read-only — only an admin, or your department if it owns this KPI, can change these settings.
+        </p>
+      )}
+      <fieldset disabled={readOnly} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Code" hint="Unique within the year. A spreadsheet still using the old code will treat this as a different KPI.">
           <input
             className={`mt-1 ${inputClass} font-mono`}
@@ -878,17 +921,18 @@ function SettingsPanel({
             })}
           </div>
         </div>
-      </div>
+      </fieldset>
     </Panel>
   );
 }
 
 function TargetsPanel({
-  kpi, draft, setField,
+  kpi, draft, setField, readOnly,
 }: {
   kpi: KpiProps;
   draft: Draft;
   setField: <K extends keyof Draft>(field: K, value: Draft[K]) => void;
+  readOnly?: boolean;
 }) {
   const isMilestone = draft.metricType === "MONTH_COMPLETION";
   const currentValue = kpi.leaf?.value ?? null;
@@ -940,7 +984,7 @@ function TargetsPanel({
           : "One number per band. Reaching a band's target scores the top of that band."
       }
     >
-      <div className="overflow-x-auto">
+      <fieldset disabled={readOnly} className="overflow-x-auto">
         <table className="w-full min-w-[32rem] text-sm">
           <thead>
             <tr className="border-b text-left text-xs font-medium text-gray-500 uppercase">
@@ -989,7 +1033,7 @@ function TargetsPanel({
             })}
           </tbody>
         </table>
-      </div>
+      </fieldset>
       {currentValue !== null && (
         <p className="mt-3 text-xs text-gray-500">
           Current year-to-date figure: <strong className="tabular">{currentValue.toLocaleString()}</strong>
@@ -1166,14 +1210,13 @@ function UpdatesPanel({
 }) {
   const router = useRouter();
   const [body, setBody] = useState("");
-  const [author, setAuthor] = useState("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   const post = () => {
     startTransition(async () => {
       try {
-        const result = await addKpiUpdate({ kpiId, period, body, author: author || null });
+        const result = await addKpiUpdate({ kpiId, period, body });
         if (!result.ok) {
           setError(result.error);
           return;
@@ -1201,12 +1244,6 @@ function UpdatesPanel({
           onChange={(e) => setBody(e.target.value)}
         />
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            className={`${inputClass} max-w-48`}
-            value={author}
-            placeholder="Your name (optional)"
-            onChange={(e) => setAuthor(e.target.value)}
-          />
           <button
             type="button"
             onClick={post}
@@ -1239,6 +1276,50 @@ function UpdatesPanel({
             </li>
           ))}
         </ul>
+      )}
+    </Panel>
+  );
+}
+
+function PendingProposalPanel({
+  proposal, isAdmin,
+}: {
+  proposal: PendingProposal;
+  isAdmin: boolean;
+}) {
+  return (
+    <Panel
+      title="Pending settings change"
+      description={
+        isAdmin
+          ? "Awaiting your review — approve or reject it from the Approvals queue."
+          : "Submitted for admin approval. It will apply once approved."
+      }
+    >
+      <div className="mb-2 text-xs text-gray-500">
+        Proposed by <span className="font-medium text-gray-700">{proposal.proposedByUsername}</span>{" "}
+        on {formatDate(new Date(proposal.createdAt))}
+      </div>
+      <ul className="space-y-2">
+        {proposal.summary.map((change) => (
+          <li key={change.field} className="text-sm">
+            <div className="font-medium text-gray-900">{change.label}</div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-gray-600">
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 line-through decoration-gray-400">
+                {change.from}
+              </span>
+              <span aria-hidden>→</span>
+              <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-900">
+                {change.to}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {isAdmin && (
+        <Link href="/manage/approvals" className="mt-3 inline-block text-sm text-blue-700 hover:underline">
+          Go to Approvals →
+        </Link>
       )}
     </Panel>
   );

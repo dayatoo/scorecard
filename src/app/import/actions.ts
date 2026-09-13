@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { applyImport, type ImportMode, type ImportSummary } from "@/app/actions/admin";
 import { attempt, type ActionResult } from "@/app/actions/result";
-import { requireAuth } from "@/lib/session";
+import { requireAdmin } from "@/lib/session";
 import { parseWorkbook, type ParsedKpi, type ParsedValue, type ParseIssue } from "@/lib/workbook";
 import { validateHierarchy, type Issue } from "@/lib/validation";
 import type { KpiRecord } from "@/lib/kpi-tree";
@@ -40,7 +40,7 @@ export async function previewImport(
 }
 
 async function readWorkbook(formData: FormData, fiscalYearId?: string): Promise<ImportPreview> {
-  await requireAuth();
+  await requireAdmin();
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
@@ -131,7 +131,7 @@ export async function commitImport(input: {
   mode?: ImportMode;
 }): Promise<ActionResult<ImportSummary>> {
   return attempt(async () => {
-    await requireAuth();
+    await requireAdmin();
     return applyImport(input);
   });
 }

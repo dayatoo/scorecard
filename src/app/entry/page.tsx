@@ -10,7 +10,7 @@ export const metadata = { title: "Enter data — KPI Scorecard" };
 export const dynamic = "force-dynamic";
 
 export default async function EntryPage({ searchParams }: PageProps<"/entry">) {
-  await requireAuthPage();
+  const currentUser = await requireAuthPage();
 
   const params = await searchParams;
   const fiscalYearId = typeof params.fy === "string" ? params.fy : undefined;
@@ -48,6 +48,7 @@ export default async function EntryPage({ searchParams }: PageProps<"/entry">) {
       name: node.name,
       strategicGoal: strategicGoalOf(node, scorecard.byId).name,
       departments: node.departments.map((d) => d.name),
+      departmentIds: node.departments.map((d) => d.id),
       metricType: node.metricType,
       unit: node.unit,
       // The Meet target, shown beside the input so the person entering a
@@ -87,6 +88,7 @@ export default async function EntryPage({ searchParams }: PageProps<"/entry">) {
         rows={rows}
         period={scorecard.period}
         departments={scorecard.departments.map((d) => d.name)}
+        currentUser={currentUser}
       />
     </div>
   );

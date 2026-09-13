@@ -49,31 +49,29 @@ You will create two free accounts:
 Both pooler strings share the same host (something like
 `aws-0-<region>.pooler.supabase.com`) and differ only in port.
 
-## 3. Choose your two secrets
+## 3. Choose your session secret
 
-You need two more values. Make them up now and keep them with the connection
-strings.
+You need one more value, kept with the connection strings.
 
-- **`APP_PASSWORD`** — the shared password everyone will type to open the app.
-  Choose something long that you are happy to share with your team.
 - **`SESSION_SECRET`** — a long random string the app uses to sign the "you are
   signed in" cookie. Nobody ever types this. Any 40+ random characters will do;
   mash the keyboard or use a password generator.
 
-Keep `SESSION_SECRET` private. Changing it later simply signs everyone out.
+Keep it private. Changing it later simply signs everyone out. There's no
+shared app password to set up — everyone registers their own account once
+the app is live (see step 6).
 
 ## 4. Deploy the app
 
 1. Push this repository to your own GitHub account, if it is not there already.
 2. Go to [vercel.com](https://vercel.com) and sign up with GitHub.
 3. Click **Add New → Project**, and pick this repository.
-4. Before clicking Deploy, open **Environment Variables** and add all four:
+4. Before clicking Deploy, open **Environment Variables** and add all three:
 
    | Name | Value |
    | --- | --- |
    | `DATABASE_URL` | the port-`6543` transaction pooler string from step 2 |
    | `DIRECT_URL` | the port-`5432` session pooler string from step 2 |
-   | `APP_PASSWORD` | your shared password from step 3 |
    | `SESSION_SECRET` | your long random string from step 3 |
 
 5. Click **Deploy** and wait for it to finish.
@@ -109,11 +107,14 @@ npm run seed
 
 ## 6. Open it
 
-Vercel shows you a URL like `https://kpi-scorecard-xxxx.vercel.app`. Open it,
-enter your `APP_PASSWORD`, and you are in.
+Vercel shows you a URL like `https://kpi-scorecard-xxxx.vercel.app`. Open
+`<that URL>/register` and create the first account — it's automatically
+approved and made an admin, since there's nobody else yet to approve it.
 
-Share that URL and the password with whoever needs it. Anyone with both can
-view and edit everything.
+Share the URL with everyone else and have them register too. Their accounts
+sit **pending** until you (the admin) approve them from **Manage → Users** —
+that's the gate that stops a stranger with the URL from getting in on their
+own.
 
 ---
 
@@ -144,12 +145,11 @@ adjust the targets.
 
 ## If something goes wrong
 
-**"SESSION_SECRET is not set" or "APP_PASSWORD is not set"** — the variable is
-missing in Vercel. Add it under Settings → Environment Variables, then
-redeploy.
+**"SESSION_SECRET is not set"** — the variable is missing in Vercel. Add it
+under Settings → Environment Variables, then redeploy.
 
-**The password is not accepted** — check `APP_PASSWORD` in Vercel for stray
-spaces or quote marks, then redeploy.
+**"Your account is pending admin approval"** — expected for everyone but the
+first account. Have an admin approve it from **Manage → Users**.
 
 **Pages error with a database message, e.g. "table does not exist"** — the
 connection strings are wrong, or you have not run `npx prisma migrate deploy`
@@ -176,7 +176,10 @@ Open the Supabase dashboard and resume it.
 
 ## Keeping it safe
 
-- The URL plus the password is all anyone needs, so share them deliberately.
-- Change `APP_PASSWORD` in Vercel whenever someone leaves; redeploy after.
+- New registrations need an admin to approve them — check **Manage → Users**
+  after telling someone the URL.
+- Remove someone's account from **Manage → Users** when they leave; there
+  must always be at least one admin, so promote a second person before
+  removing the first.
 - Supabase takes daily backups on the free tier. You can also press **Export to
   Excel** any time for a copy you can keep yourself.

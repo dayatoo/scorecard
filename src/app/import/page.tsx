@@ -1,12 +1,12 @@
 import { ImportClient } from "./ImportClient";
 import { getActiveFiscalYear, listFiscalYears } from "@/lib/data";
-import { requireAuthPage } from "@/lib/session";
+import { requireAdminPage } from "@/lib/session";
 
 export const metadata = { title: "Import — KPI Scorecard" };
 export const dynamic = "force-dynamic";
 
 export default async function ImportPage() {
-  await requireAuthPage();
+  await requireAdminPage();
 
   const [fiscalYears, active] = await Promise.all([
     listFiscalYears(),

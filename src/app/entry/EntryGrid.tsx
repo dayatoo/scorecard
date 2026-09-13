@@ -18,6 +18,7 @@ export type EntryRow = {
   name: string;
   strategicGoal: string;
   departments: string[];
+  departmentIds: string[];
   metricType: MetricType | null;
   unit: string | null;
   meetTarget: string | null;
@@ -47,11 +48,16 @@ export function EntryGrid({
   rows,
   period,
   departments,
+  currentUser,
 }: {
   rows: EntryRow[];
   period: string;
   departments: string[];
+  currentUser: { role: "MEMBER" | "ADMIN"; departmentId: string };
 }) {
+  const owns = (row: EntryRow) =>
+    currentUser.role === "ADMIN" || row.departmentIds.includes(currentUser.departmentId);
+
   const router = useRouter();
   const [goal, setGoal] = useState("");
   const [department, setDepartment] = useState("");
@@ -224,6 +230,7 @@ export function EntryGrid({
               const cell = draft.get(row.id) as Cell;
               const isMilestone = row.metricType === "MONTH_COMPLETION";
               const isDirty = changed.some((c) => c.id === row.id);
+              const canEdit = owns(row);
 
               return (
                 <tr
@@ -252,6 +259,7 @@ export function EntryGrid({
                         className={inputClass}
                         value={cell.completionDate}
                         onChange={(iso) => update(row.id, { completionDate: iso })}
+                        disabled={!canEdit}
                       />
                     ) : (
                       <input
@@ -262,6 +270,7 @@ export function EntryGrid({
                         className={inputClass}
                         value={cell.value}
                         onChange={(e) => update(row.id, { value: e.target.value })}
+                        disabled={!canEdit}
                       />
                     )}
                   </td>
@@ -272,6 +281,7 @@ export function EntryGrid({
                       className={inputClass}
                       value={cell.basis}
                       onChange={(e) => update(row.id, { basis: e.target.value as Cell["basis"] })}
+                      disabled={!canEdit}
                     >
                       <option value="ACTUAL">Actual</option>
                       <option value="ESTIMATE">Estimate</option>
@@ -283,8 +293,9 @@ export function EntryGrid({
                       aria-label={`Note for ${row.name}`}
                       className={inputClass}
                       value={cell.note}
-                      placeholder="Optional"
+                      placeholder={canEdit ? "Optional" : "Not your department"}
                       onChange={(e) => update(row.id, { note: e.target.value })}
+                      disabled={!canEdit}
                     />
                   </td>
 

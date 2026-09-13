@@ -1,14 +1,14 @@
-// Shared-password access control.
+// Session token signing.
 //
-// There are no user accounts: one password opens the app. The cookie holds an
-// HMAC of a fixed marker plus an expiry — never the password itself — so a
-// stolen cookie reveals nothing and cannot be forged without SESSION_SECRET.
+// A session proves who is signed in: the cookie holds an HMAC of a userId
+// plus an expiry, never a password. A stolen cookie reveals a userId (already
+// visible in the app once signed in) but cannot be forged or extended without
+// SESSION_SECRET.
 //
 // Web Crypto rather than node:crypto, so the same code runs in proxy.ts
 // (which may execute on the Edge runtime) and in server actions.
 
 const COOKIE_NAME = "scorecard_session";
-const SESSION_MARKER = "authenticated";
 const SESSION_DAYS = 30;
 
 export const SESSION_COOKIE = COOKIE_NAME;
@@ -54,39 +54,36 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export async function checkPassword(candidate: string): Promise<boolean> {
-  const expected = process.env.APP_PASSWORD;
-  if (!expected) {
-    throw new Error(
-      "APP_PASSWORD is not set. Add it to your environment — see .env.example."
-    );
-  }
-  // Hash both sides first so the comparison is over equal-length strings and
-  // cannot leak the password's length.
-  const [a, b] = await Promise.all([sign(candidate), sign(expected)]);
-  return timingSafeEqual(a, b);
+/** HMAC of arbitrary text, hex-encoded. Reused as the rate limiter's IP hash. */
+export async function signText(value: string): Promise<string> {
+  return sign(value);
 }
 
-/** A signed "<expiry>.<hmac>" token. */
-export async function createSessionToken(now: Date = new Date()): Promise<string> {
+/** A signed "<userId>.<expiry>.<hmac>" token. */
+export async function createSessionToken(
+  userId: string,
+  now: Date = new Date()
+): Promise<string> {
   const expiresAt = now.getTime() + SESSION_MAX_AGE * 1000;
-  const payload = `${SESSION_MARKER}.${expiresAt}`;
-  return `${expiresAt}.${await sign(payload)}`;
+  const payload = `${userId}.${expiresAt}`;
+  return `${payload}.${await sign(payload)}`;
 }
 
 export async function verifySessionToken(
   token: string | undefined,
   now: Date = new Date()
-): Promise<boolean> {
-  if (!token) return false;
-  const [expiresRaw, signature] = token.split(".");
-  if (!expiresRaw || !signature) return false;
+): Promise<{ userId: string } | null> {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [userId, expiresRaw, signature] = parts;
+  if (!userId || !expiresRaw || !signature) return null;
 
   const expiresAt = Number(expiresRaw);
-  if (!Number.isFinite(expiresAt) || expiresAt < now.getTime()) return false;
+  if (!Number.isFinite(expiresAt) || expiresAt < now.getTime()) return null;
 
-  const expected = await sign(`${SESSION_MARKER}.${expiresAt}`);
-  return timingSafeEqual(signature, expected);
+  const expected = await sign(`${userId}.${expiresAt}`);
+  return timingSafeEqual(signature, expected) ? { userId } : null;
 }
 
 export const SESSION_COOKIE_OPTIONS = {
