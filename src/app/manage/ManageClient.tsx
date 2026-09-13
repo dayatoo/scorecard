@@ -116,6 +116,12 @@ function FiscalYearPanel({
               >
                 Open
               </Link>
+              <Link
+                href={`/manage/backups?fy=${fy.id}`}
+                className="text-sm text-blue-700 hover:underline"
+              >
+                Checkpoints
+              </Link>
               {!fy.isActive && (
                 <button
                   type="button"

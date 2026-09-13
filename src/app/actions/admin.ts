@@ -6,6 +6,11 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import { fiscalYearLabel, periodsOfFiscalYear } from "@/lib/fiscal";
 import { getScorecard } from "@/lib/data";
+import {
+  automaticCheckpointName,
+  serializeFiscalYear,
+  writeCheckpoint,
+} from "@/lib/backup";
 import type { ParsedKpi, ParsedValue } from "@/lib/workbook";
 import { assertFiscalYearOpen } from "@/lib/validation";
 import { attempt, type ActionResult } from "./result";
@@ -271,7 +276,7 @@ export async function applyImport(input: {
   values?: ParsedValue[];
   mode?: ImportMode;
 }): Promise<ImportSummary> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const mode: ImportMode = input.mode ?? "UPDATE";
 
   const { fiscalYearId, kpis } = input;
@@ -283,6 +288,22 @@ export async function applyImport(input: {
   });
   if (!targetYear) throw new Error("That fiscal year no longer exists.");
   assertFiscalYearOpen(targetYear);
+
+  // A restore point before anything is written, so an import that turns out
+  // to have been the wrong spreadsheet — a Replace run in particular, which
+  // removes KPIs and their figures — can be undone from /manage/backups.
+  const priorState = await serializeFiscalYear(fiscalYearId);
+  if (priorState.kpis.length > 0) {
+    await prisma.$transaction((tx) =>
+      writeCheckpoint(tx, {
+        fiscalYearId,
+        name: automaticCheckpointName("import"),
+        automatic: true,
+        createdById: admin.id,
+        backup: priorState,
+      })
+    );
+  }
 
   const existingDepartments = await prisma.department.findMany();
   const departmentIdByName = new Map(

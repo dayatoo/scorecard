@@ -127,12 +127,15 @@ export function HierarchyEditor({
                 aria-label={`Move ${node.name} down`} title="Move down" hidden={index >= siblings.length - 1}
               >↓</button>
               <button type="button" className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50"
+                aria-label={`Add a sub-KPI under ${node.name}`}
                 onClick={() => setAddingUnder(node.id)}
               >+ sub</button>
               <button type="button" className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50"
+                aria-label={`Move ${node.name} under a different parent`}
                 onClick={() => setMovingId(movingId === node.id ? null : node.id)}
               >Move</button>
               <button type="button" className="rounded border border-rose-200 px-2 py-0.5 text-xs text-rose-700 hover:bg-rose-50"
+                aria-label={`Delete ${node.name}`}
                 onClick={() => setConfirmDelete(node)}
               >Delete</button>
             </div>

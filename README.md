@@ -199,6 +199,39 @@ confirm a summary of exactly what is changing, old value to new. This is true
 of the KPI pages, the data-entry grid and the management screens alike. Status
 updates are the one exception: they post immediately, since they only ever add.
 
+## Checkpoints and recovery
+
+**Manage → Checkpoints** is the undo of last resort. A *checkpoint* is a
+complete copy of one fiscal year — hierarchy, targets, figures, calibrations,
+status updates and audit history — saved so it can be put back later.
+
+- **Save one** before anything risky: a bulk import, a round of target
+  revisions, a restructure.
+- **One is saved automatically** immediately before every import and every
+  restore, so an import that turns out to have used the wrong spreadsheet is
+  still undoable even if nobody thought to save first. Automatic checkpoints
+  can't be deleted — they are the record of what was overwritten.
+- **Download** any checkpoint (or the year exactly as it stands) as a `.json`
+  file to keep a copy outside the app, and **upload** it again to restore
+  from it — into this deployment or another one.
+
+Restoring replaces a year wholesale, so it goes through the same
+preview-then-confirm step as an import, and the current state is always
+checkpointed first — restoring the wrong file is itself undoable. A restore
+can also target a **new fiscal year** instead of overwriting one, which is
+the safe way to check a backup holds what you think it does. A restored year
+always comes back *open*, even if it was closed when the backup was taken;
+closing it again regenerates its frozen scores.
+
+A backup file contains no user accounts and no passwords — usernames appear
+only as attribution on the history it carries. Because KPIs are rebuilt on
+restore, saved links to individual KPI pages stop resolving afterwards.
+
+This is distinct from the snapshot taken when a year is **closed**: that one
+freezes the computed *scores* so a board-approved year can never move under a
+later change to the scoring engine, and is only ever read. A checkpoint holds
+the source data a year is rebuilt from.
+
 ## Development
 
 ```bash

@@ -33,15 +33,28 @@ export default async function ManagePage() {
               Hierarchy
             </Link>{" "}
             page, or import it from a spreadsheet; attributes are edited on each
-            KPI&rsquo;s own page.
+            KPI&rsquo;s own page. Save a year&rsquo;s data, or put a saved copy
+            back, from{" "}
+            <Link href="/manage/backups" className="text-blue-700 hover:underline">
+              Checkpoints
+            </Link>
+            .
           </p>
         </div>
-        <Link
-          href="/manage/hierarchy"
-          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Open Hierarchy →
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/manage/backups"
+            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Checkpoints
+          </Link>
+          <Link
+            href="/manage/hierarchy"
+            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Open Hierarchy →
+          </Link>
+        </div>
       </div>
 
       <ManageClient

@@ -90,10 +90,11 @@ model User {
   role            UserRole   @default(MEMBER)
   status          UserStatus @default(PENDING)
 
-  proposals         KpiChangeProposal[] @relation("ProposedBy")
-  reviewed          KpiChangeProposal[] @relation("ReviewedBy")
+  proposals         KpiChangeProposal[]    @relation("ProposedBy")
+  reviewed          KpiChangeProposal[]    @relation("ReviewedBy")
   scoreOverrides    ScoreOverride[]
-  closedFiscalYears FiscalYear[]        @relation("ClosedFiscalYears")
+  closedFiscalYears FiscalYear[]           @relation("ClosedFiscalYears")
+  checkpoints       FiscalYearCheckpoint[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -159,9 +160,10 @@ model FiscalYear {
   closedById String?
   closedBy   User?     @relation("ClosedFiscalYears", fields: [closedById], references: [id])
 
-  kpis     Kpi[]
-  snapshot FiscalYearSnapshot?
-  audits   FiscalYearAudit[]
+  kpis        Kpi[]
+  snapshot    FiscalYearSnapshot?
+  audits      FiscalYearAudit[]
+  checkpoints FiscalYearCheckpoint[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -202,6 +204,35 @@ model FiscalYearSnapshot {
   data String
 
   createdAt DateTime @default(now())
+}
+
+// A restore point: one fiscal year's complete source data, saved so it can
+// be put back later. Distinct from FiscalYearSnapshot above, which freezes
+// the *computed scores* of a closed year and is only ever read — this holds
+// the figures, targets, hierarchy and history a year is rebuilt from, and is
+// the same JSON document the download/upload file carries.
+model FiscalYearCheckpoint {
+  id           String     @id @default(cuid())
+  fiscalYearId String
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+
+  name String
+  // Taken by the app itself, immediately before an import or a restore
+  // overwrote this year, rather than saved deliberately by an admin.
+  automatic Boolean @default(false)
+
+  data String // the FiscalYearBackup JSON — see src/lib/backup.ts
+
+  // Denormalised so the checkpoint list can show scale without parsing
+  // every stored document.
+  kpiCount   Int
+  valueCount Int
+
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([fiscalYearId, createdAt])
 }
 
 // Fiscal-year-level events (closed / reopened) — the year-level analogue of
