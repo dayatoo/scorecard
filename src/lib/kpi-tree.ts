@@ -151,7 +151,7 @@ function toDefinition(kpi: KpiRecord): KpiDefinition {
 }
 
 /** A sibling group's local weight total, guarding against a group of zeros. */
-function groupTotal(kids: KpiRecord[]): number {
+export function groupTotal(kids: KpiRecord[]): number {
   const total = kids.reduce((sum, k) => sum + Math.max(0, k.weight), 0);
   return total > 0 ? total : 1;
 }
@@ -358,6 +358,62 @@ export function flattenTree(roots: ScoredNode[]): ScoredNode[] {
 
 export function leavesOf(roots: ScoredNode[]): ScoredNode[] {
   return flattenTree(roots).filter((n) => n.isLeaf);
+}
+
+/** The structural fields of a scored tree, with none of the scoring. */
+export type HierarchyNode = {
+  id: string;
+  code: string;
+  name: string;
+  level: number;
+  parentId: string | null;
+  isLeaf: boolean;
+  weight: number;
+  globalWeight: number;
+};
+
+/**
+ * Level, leaf-ness and global weight are all derived purely from a KPI's
+ * position in the hierarchy and its local weight — buildScoredTree computes
+ * them as a side effect of scoring, but a caller that only wants the
+ * structure (the hierarchy editor, in particular) shouldn't have to pay for
+ * the scoring engine to get them. Same shape and numbers as the equivalent
+ * fields on ScoredNode, computed the same way (see groupTotal above), just
+ * without a values array, an entriesByKpi map, or a rollup to build.
+ */
+export function buildHierarchyTree(kpis: KpiRecord[]): HierarchyNode[] {
+  const childrenOf = new Map<string | null, KpiRecord[]>();
+  for (const kpi of kpis) {
+    const list = childrenOf.get(kpi.parentId) ?? [];
+    list.push(kpi);
+    childrenOf.set(kpi.parentId, list);
+  }
+  for (const list of childrenOf.values()) {
+    list.sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
+  }
+
+  const out: HierarchyNode[] = [];
+  const walk = (kpi: KpiRecord, level: number, globalWeight: number) => {
+    const kids = childrenOf.get(kpi.id) ?? [];
+    out.push({
+      id: kpi.id,
+      code: kpi.code,
+      name: kpi.name,
+      level,
+      parentId: kpi.parentId,
+      isLeaf: kids.length === 0,
+      weight: kpi.weight,
+      globalWeight,
+    });
+    const total = groupTotal(kids);
+    for (const child of kids) walk(child, level + 1, (globalWeight * child.weight) / total);
+  };
+
+  const rootsTotal = groupTotal(childrenOf.get(null) ?? []);
+  for (const kpi of childrenOf.get(null) ?? []) {
+    walk(kpi, 1, (100 * kpi.weight) / rootsTotal);
+  }
+  return out;
 }
 
 /** The chain of ancestors from the Strategic Goal down to (not including) `node`. */

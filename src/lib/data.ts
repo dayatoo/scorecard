@@ -12,8 +12,10 @@ import {
   trailingPeriods,
 } from "./fiscal";
 import {
+  buildHierarchyTree,
   buildScoredTree,
   flattenTree,
+  type HierarchyNode,
   type KpiRecord,
   type ScoredNode,
   type ScoreOverrideRecord,
@@ -69,7 +71,7 @@ export async function listDepartments() {
   return prisma.department.findMany({ orderBy: { name: "asc" } });
 }
 
-async function loadKpiRecords(fiscalYearId: string): Promise<KpiRecord[]> {
+export async function loadKpiRecords(fiscalYearId: string): Promise<KpiRecord[]> {
   const rows = await prisma.kpi.findMany({
     where: { fiscalYearId },
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
@@ -98,6 +100,17 @@ async function loadKpiRecords(fiscalYearId: string): Promise<KpiRecord[]> {
       name: d.department.name,
     })),
   }));
+}
+
+/**
+ * The hierarchy alone — id, code, name, level, parentId, isLeaf and both
+ * weights — with none of a scorecard's figures or scoring. For pages like
+ * the hierarchy editor that only need the structure: one query, instead of
+ * getScorecard's KPI + values + overrides + departments queries and up to
+ * four full scored-tree builds for the trailing-months columns.
+ */
+export async function getHierarchyTree(fiscalYearId: string): Promise<HierarchyNode[]> {
+  return buildHierarchyTree(await loadKpiRecords(fiscalYearId));
 }
 
 /**

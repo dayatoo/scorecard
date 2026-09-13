@@ -3,11 +3,21 @@
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { requireAuth, type CurrentUser } from "@/lib/session";
+import { requireAdmin, requireAuth, type CurrentUser } from "@/lib/session";
 import { formatPeriodLabel, isPeriodInFiscalYear } from "@/lib/fiscal";
 import { formatDate } from "@/lib/dates";
 import { parseTargetConfig } from "@/lib/kpi-tree";
-import { BANDS, lastDayOfPeriod, type Band, type Frequency, type Phasing } from "@/lib/scoring";
+import {
+  BANDS,
+  lastDayOfPeriod,
+  type Band,
+  type Direction,
+  type Frequency,
+  type MetricType,
+  type Phasing,
+  type TargetConfig,
+  type TargetMode,
+} from "@/lib/scoring";
 import {
   crossesNumericMonthBoundary,
   metricColumns,
@@ -231,6 +241,56 @@ function loadExistingKpi(kpiId: string) {
       departments: true,
       fiscalYear: { select: { closedAt: true, label: true } },
     },
+  });
+}
+
+export type KpiAttributes = {
+  code: string;
+  name: string;
+  unit: string | null;
+  departmentIds: string[];
+  deadlineMonth: string | null;
+  scoreFinalAfterDeadline: boolean;
+  frequency: Frequency;
+  metricType: MetricType | null;
+  direction: Direction | null;
+  targetMode: TargetMode | null;
+  targetConfig: TargetConfig | null;
+  phasing: Phasing;
+  phaseConfig: string | null;
+};
+
+/**
+ * Everything the hierarchy page's edit panel needs to seed its form, for one
+ * KPI. The page's own node list (`getHierarchyTree` in `src/lib/data.ts`)
+ * deliberately carries only structural fields — weight, globalWeight,
+ * isLeaf are already known client-side and don't need refetching here.
+ */
+export async function getKpiAttributes(kpiId: string): Promise<ActionResult<KpiAttributes>> {
+  return attempt(async () => {
+    await requireAdmin();
+
+    const kpi = await prisma.kpi.findUnique({
+      where: { id: kpiId },
+      include: { departments: { select: { departmentId: true } } },
+    });
+    if (!kpi) throw new Error("That KPI no longer exists.");
+
+    return {
+      code: kpi.code,
+      name: kpi.name,
+      unit: kpi.unit,
+      departmentIds: kpi.departments.map((d) => d.departmentId),
+      deadlineMonth: kpi.deadlineMonth,
+      scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+      frequency: kpi.frequency,
+      metricType: kpi.metricType,
+      direction: kpi.direction,
+      targetMode: kpi.targetMode,
+      targetConfig: parseTargetConfig(kpi.targetConfig),
+      phasing: kpi.phasing,
+      phaseConfig: kpi.phaseConfig,
+    };
   });
 }
 
