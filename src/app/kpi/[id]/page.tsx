@@ -64,7 +64,7 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
   const scoreFor = (p: string) => {
     const cached = scorecard.scoresByPeriod.get(p)?.get(id);
     if (cached) return cached;
-    const scored = buildScoredTree(scorecard.kpiRecords, scorecard.values, p).byId.get(id);
+    const scored = buildScoredTree(scorecard.kpiRecords, scorecard.values, p, scorecard.overrides).byId.get(id);
     return {
       score: scored?.score ?? null,
       band: scored?.band ?? null,
@@ -118,6 +118,11 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
         <Link href={`/?fy=${scorecard.fiscalYear.id}&period=${scorecard.period}`} className="hover:text-blue-700">
           {scorecard.fiscalYear.label}
         </Link>
+        {scorecard.fiscalYear.closedAt && (
+          <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">
+            Closed
+          </span>
+        )}
         {ancestors.map((ancestor) => (
           <span key={ancestor.id} className="flex items-center gap-1">
             <span aria-hidden>/</span>
@@ -178,6 +183,7 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
         period={scorecard.period}
         periods={yearPeriods}
         fiscalYearLabel={scorecard.fiscalYear.label}
+        fiscalYearClosed={!!scorecard.fiscalYear.closedAt}
         currentUser={currentUser}
         pendingProposal={pendingProposal}
       />

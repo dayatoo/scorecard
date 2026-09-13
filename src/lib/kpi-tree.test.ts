@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildScoredTree, type KpiRecord, type ValueRecord } from "./kpi-tree";
+import { buildScoredTree, type KpiRecord, type ScoreOverrideRecord, type ValueRecord } from "./kpi-tree";
 
 function kpi(overrides: Partial<KpiRecord> & { id: string }): KpiRecord {
   return {
@@ -123,5 +123,94 @@ describe("global weight derivation", () => {
     const { byId } = buildScoredTree(kpis, [], "2026-04");
     assert.equal(byId.get("A")!.weight, 30);
     assert.equal(byId.get("B")!.weight, 70);
+  });
+});
+
+describe("score calibration overrides", () => {
+  const percentMetric = {
+    metricType: "PERCENTAGE" as const,
+    direction: "HIGHER_BETTER" as const,
+    targetMode: "FIXED" as const,
+    targetConfig: JSON.stringify({
+      POOR: 0, IMPROVEMENT_NEEDED: 25, MEET: 50, GOOD: 75, VERY_GOOD: 90, EXCELLENT: 100,
+    }),
+    unit: "%",
+  };
+
+  it("replaces a leaf's computed score and band, without touching the reported value", () => {
+    const kpis: KpiRecord[] = [
+      kpi({ id: "A", weight: 100, ...percentMetric }),
+    ];
+    const values: ValueRecord[] = [
+      { kpiId: "A", period: "2026-04", value: 50, basis: "ACTUAL", completionDate: null, note: null },
+    ];
+    const overrides = new Map<string, ScoreOverrideRecord[]>([
+      ["A", [{ period: "2026-04", score: 4.8, reason: "One-off windfall excluded", byUsername: "admin", createdAt: new Date("2026-05-01") }]],
+    ]);
+
+    const { byId } = buildScoredTree(kpis, values, "2026-04", overrides);
+    const a = byId.get("A")!;
+
+    assert.equal(a.score, 4.8);
+    assert.equal(a.band, "EXCELLENT");
+    assert.equal(a.leaf!.value, 50); // the real reported figure is untouched
+    assert.deepEqual(a.leaf!.override, {
+      score: 4.8,
+      reason: "One-off windfall excluded",
+      byUsername: "admin",
+      createdAt: new Date("2026-05-01").toISOString(),
+    });
+  });
+
+  it("flows into a parent's weighted average like any other score", () => {
+    const kpis: KpiRecord[] = [
+      kpi({ id: "Root", weight: 100 }),
+      kpi({ id: "A", parentId: "Root", weight: 50, ...percentMetric }),
+      kpi({ id: "B", parentId: "Root", weight: 50, ...percentMetric }),
+    ];
+    const values: ValueRecord[] = [
+      { kpiId: "A", period: "2026-04", value: 50, basis: "ACTUAL", completionDate: null, note: null }, // Meet -> 3.4
+      { kpiId: "B", period: "2026-04", value: 50, basis: "ACTUAL", completionDate: null, note: null }, // Meet -> 3.4
+    ];
+    const overrides = new Map<string, ScoreOverrideRecord[]>([
+      ["A", [{ period: "2026-04", score: 5, reason: "Calibrated up", byUsername: "admin", createdAt: new Date() }]],
+    ]);
+
+    const { byId } = buildScoredTree(kpis, values, "2026-04", overrides);
+    // (5*50 + 3.4*50)/100 = 4.2
+    assert.ok(Math.abs((byId.get("Root")!.exactScore as number) - 4.2) < 1e-9);
+  });
+
+  it("clears pendingReason so an overridden not-yet-due KPI counts as fully scored", () => {
+    const kpis: KpiRecord[] = [
+      kpi({
+        id: "A", weight: 100, metricType: "MONTH_COMPLETION",
+        targetConfig: JSON.stringify({ targetMonth: "2026-12" }),
+      }),
+    ];
+    const overrides = new Map<string, ScoreOverrideRecord[]>([
+      ["A", [{ period: "2026-04", score: 4, reason: "known to be on track", byUsername: "admin", createdAt: new Date() }]],
+    ]);
+
+    const { byId } = buildScoredTree(kpis, [], "2026-04", overrides);
+    const a = byId.get("A")!;
+    assert.equal(a.score, 4);
+    assert.equal(a.leaf!.pendingReason, null);
+    assert.equal(a.notYetDueWeight, 0);
+    assert.equal(a.coverage, 1);
+  });
+
+  it("does nothing for a different period than the one overridden", () => {
+    const kpis: KpiRecord[] = [kpi({ id: "A", weight: 100, ...percentMetric })];
+    const values: ValueRecord[] = [
+      { kpiId: "A", period: "2026-05", value: 50, basis: "ACTUAL", completionDate: null, note: null },
+    ];
+    const overrides = new Map<string, ScoreOverrideRecord[]>([
+      ["A", [{ period: "2026-04", score: 5, reason: "x", byUsername: "admin", createdAt: new Date() }]],
+    ]);
+
+    const { byId } = buildScoredTree(kpis, values, "2026-05", overrides);
+    assert.equal(byId.get("A")!.leaf!.override, null);
+    assert.equal(byId.get("A")!.score, 3.4); // the plain Meet score, not the override
   });
 });

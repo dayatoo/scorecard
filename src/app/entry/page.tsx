@@ -71,6 +71,11 @@ export default async function EntryPage({ searchParams }: PageProps<"/entry">) {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">
             Enter data — {formatPeriodLabel(scorecard.period)}
+            {scorecard.fiscalYear.closedAt && (
+              <span className="ml-2 align-middle rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">
+                Closed
+              </span>
+            )}
           </h1>
           <p className="mt-0.5 text-sm text-gray-600">
             Year-to-date figures. Nothing is saved until you press Save and confirm.
@@ -89,6 +94,7 @@ export default async function EntryPage({ searchParams }: PageProps<"/entry">) {
         period={scorecard.period}
         departments={scorecard.departments.map((d) => d.name)}
         currentUser={currentUser}
+        fiscalYearClosed={!!scorecard.fiscalYear.closedAt}
       />
     </div>
   );

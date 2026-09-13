@@ -49,14 +49,17 @@ export function EntryGrid({
   period,
   departments,
   currentUser,
+  fiscalYearClosed = false,
 }: {
   rows: EntryRow[];
   period: string;
   departments: string[];
   currentUser: { role: "MEMBER" | "ADMIN"; departmentId: string };
+  fiscalYearClosed?: boolean;
 }) {
   const owns = (row: EntryRow) =>
-    currentUser.role === "ADMIN" || row.departmentIds.includes(currentUser.departmentId);
+    !fiscalYearClosed &&
+    (currentUser.role === "ADMIN" || row.departmentIds.includes(currentUser.departmentId));
 
   const router = useRouter();
   const [goal, setGoal] = useState("");
@@ -190,6 +193,11 @@ export function EntryGrid({
 
   return (
     <div className="space-y-3">
+      {fiscalYearClosed && (
+        <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">
+          This year is closed. An admin can reopen it to make changes.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-white px-3 py-2.5">
         <select aria-label="Strategic Goal" className={selectClass} value={goal} onChange={(e) => setGoal(e.target.value)}>
           <option value="">All Strategic Goals</option>

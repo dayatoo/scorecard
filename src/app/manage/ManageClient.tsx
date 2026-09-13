@@ -7,8 +7,10 @@ import { useMemo, useState, useTransition } from "react";
 import { ConfirmSaveDialog, SaveBar } from "@/components/ConfirmSaveDialog";
 import { fiscalYearLabel } from "@/lib/fiscal";
 import {
+  closeFiscalYear,
   createFiscalYear,
   deleteFiscalYear,
+  reopenFiscalYear,
   saveDepartments,
   setActiveFiscalYear,
 } from "@/app/actions/admin";
@@ -19,6 +21,7 @@ type FiscalYear = {
   startYear: number;
   label: string;
   isActive: boolean;
+  closedAt: string | null;
   kpiCount: number;
 };
 
@@ -57,6 +60,9 @@ function FiscalYearPanel({
   // match by code and remove whatever isn't in that file.
   const [copyFromId, setCopyFromId] = useState<string>("");
   const [confirmDelete, setConfirmDelete] = useState<FiscalYear | null>(null);
+  const [confirmClose, setConfirmClose] = useState<FiscalYear | null>(null);
+  const [reopening, setReopening] = useState<FiscalYear | null>(null);
+  const [reopenReason, setReopenReason] = useState("");
 
   const run = (action: () => Promise<ActionResult>) =>
     startTransition(async () => {
@@ -93,6 +99,11 @@ function FiscalYearPanel({
                   active
                 </span>
               )}
+              {fy.closedAt && (
+                <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">
+                  Closed
+                </span>
+              )}
               <span className="ml-2 text-xs text-gray-500">
                 April {fy.startYear} – March {fy.startYear + 1} · {fy.kpiCount} KPI
                 {fy.kpiCount === 1 ? "" : "s"}
@@ -115,10 +126,30 @@ function FiscalYearPanel({
                   Make active
                 </button>
               )}
+              {fy.closedAt ? (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => { setReopening(fy); setReopenReason(""); }}
+                  className="rounded border border-gray-300 px-2.5 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Reopen
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setConfirmClose(fy)}
+                  className="rounded border border-gray-300 px-2.5 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Close year
+                </button>
+              )}
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending || !!fy.closedAt}
                 onClick={() => setConfirmDelete(fy)}
+                title={fy.closedAt ? "Reopen this year first to delete it." : undefined}
                 className="rounded border border-rose-200 px-2.5 py-1 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
               >
                 Delete
@@ -200,6 +231,94 @@ function FiscalYearPanel({
           if (target) run(() => deleteFiscalYear(target.id));
         }}
       />
+
+      <ConfirmSaveDialog
+        open={confirmClose !== null}
+        isSaving={pending}
+        title={`Close ${confirmClose?.label}?`}
+        warnings={[
+          "Every KPI in this year becomes read-only for everyone, including admins.",
+          "A final snapshot of every month's scores is taken now — reopening it later keeps that snapshot until you close it again.",
+        ]}
+        changes={
+          confirmClose
+            ? [
+                {
+                  field: "year",
+                  label: confirmClose.label,
+                  from: "open — figures and settings can be edited",
+                  to: "closed and frozen",
+                },
+              ]
+            : []
+        }
+        onCancel={() => setConfirmClose(null)}
+        onConfirm={() => {
+          const target = confirmClose;
+          setConfirmClose(null);
+          if (target) run(() => closeFiscalYear(target.id));
+        }}
+      />
+
+      {reopening && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !pending) setReopening(null);
+          }}
+        >
+          <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-lg bg-white shadow-xl">
+            <div className="border-b px-5 py-4">
+              <h2 className="text-base font-semibold text-gray-900">
+                Reopen {reopening.label}?
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                This lets figures and settings for this year be edited again. Explain why.
+              </p>
+            </div>
+            <div className="px-5 py-4">
+              <label className="block text-xs font-medium text-gray-700">
+                Reason
+                <textarea
+                  rows={3}
+                  className={`mt-1 w-full ${inputClass}`}
+                  placeholder="Why is this year being reopened?"
+                  value={reopenReason}
+                  onChange={(e) => setReopenReason(e.target.value)}
+                />
+              </label>
+              {error && <p className="mt-2 text-sm font-medium text-rose-700">{error}</p>}
+            </div>
+            <div className="flex justify-end gap-2 border-t bg-gray-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setReopening(null)}
+                disabled={pending}
+                className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={pending || !reopenReason.trim()}
+                onClick={() => {
+                  const target = reopening;
+                  const reason = reopenReason.trim();
+                  run(async () => {
+                    const result = await reopenFiscalYear(target!.id, reason);
+                    if (result.ok) setReopening(null);
+                    return result;
+                  });
+                }}
+                className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {pending ? "Reopening…" : "Reopen"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

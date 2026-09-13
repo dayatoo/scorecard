@@ -10,6 +10,7 @@
 
 import {
   bandForScore,
+  roundScore,
   rollup,
   scoreLeaf,
   type Band,
@@ -45,6 +46,15 @@ export type KpiRecord = {
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
   departments: { id: string; name: string }[];
+};
+
+/** A manual score calibration for one KPI in one period. Keyed by kpiId; a KPI may carry several, one per period. */
+export type ScoreOverrideRecord = {
+  period: string;
+  score: number;
+  reason: string;
+  byUsername: string;
+  createdAt: Date;
 };
 
 export function parsePhaseConfig(raw: string | null): number[] | null {
@@ -161,7 +171,8 @@ function groupTotal(kids: KpiRecord[]): number {
 export function buildScoredTree(
   kpis: KpiRecord[],
   values: ValueRecord[],
-  period: string
+  period: string,
+  overrides?: Map<string, ScoreOverrideRecord[]>
 ): { roots: ScoredNode[]; total: Rollup; byId: Map<string, ScoredNode> } {
   const entriesByKpi = new Map<string, Entry[]>();
   for (const v of values) {
@@ -228,7 +239,31 @@ export function buildScoredTree(
     };
 
     if (isLeaf) {
-      const leaf = scoreLeaf(toDefinition(kpi), entriesByKpi.get(kpi.id) ?? [], period);
+      let leaf = scoreLeaf(toDefinition(kpi), entriesByKpi.get(kpi.id) ?? [], period);
+
+      // A calibrated score replaces the computed score/band for display and
+      // for every rollup above it — the reported value/basis are left
+      // untouched, so the real figure stays visible alongside the
+      // calibration. pendingReason is cleared too: a calibrated score is a
+      // real score now, so it must not also still read as "not yet due" or
+      // "no data" (which would double-count it against coverage).
+      const override = overrides?.get(kpi.id)?.find((o) => o.period === period);
+      if (override) {
+        const score = roundScore(override.score);
+        leaf = {
+          ...leaf,
+          score,
+          band: bandForScore(score),
+          pendingReason: null,
+          override: {
+            score,
+            reason: override.reason,
+            byUsername: override.byUsername,
+            createdAt: override.createdAt.toISOString(),
+          },
+        };
+      }
+
       const scored = leaf.score !== null;
       const notYetDue = leaf.pendingReason === "NOT_YET_DUE";
       node.leaf = leaf;

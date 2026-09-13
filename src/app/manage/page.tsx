@@ -50,6 +50,7 @@ export default async function ManagePage() {
           startYear: fy.startYear,
           label: fy.label,
           isActive: fy.isActive,
+          closedAt: fy.closedAt ? fy.closedAt.toISOString() : null,
           kpiCount: kpiCount.get(fy.id) ?? 0,
         }))}
         departments={departments.map((d) => ({ id: d.id, name: d.name }))}

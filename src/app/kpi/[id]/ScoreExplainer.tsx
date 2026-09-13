@@ -105,6 +105,24 @@ function phasingNote(kpi: KpiProps, period: string): string | null {
   return `This target is phased (${kpi.phasing === "EVEN" ? "evenly across the year" : "custom monthly shares"}): by ${monthLabel}, ${(fraction * 100).toFixed(1)}% of the annual target applies.`;
 }
 
+function OverrideNotice({ override }: { override: NonNullable<KpiProps["leaf"]>["override"] }) {
+  if (!override) return null;
+  return (
+    <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+      <p className="font-medium">
+        An admin calibrated this score to <strong>{fmt(override.score)}</strong>.
+      </p>
+      <p className="mt-1">
+        {override.byUsername}, {formatDate(new Date(override.createdAt))}: &ldquo;{override.reason}&rdquo;
+      </p>
+      <p className="mt-2 text-xs text-amber-800">
+        The explanation below is what the formula alone would have scored — the calibration
+        doesn&rsquo;t hide the math, it sits alongside it.
+      </p>
+    </div>
+  );
+}
+
 function DeadlineLayer({ kpi, period }: { kpi: KpiProps; period: string }) {
   const deadline = kpi.leaf?.deadline;
   if (!deadline || deadline.monthsLate <= 0) return null;
@@ -420,9 +438,20 @@ export function ScoreExplainer({
         How was this score calculated?
       </summary>
       <div className="space-y-4 bg-white px-5 py-4">
+        {kpi.leaf?.override && <OverrideNotice override={kpi.leaf.override} />}
         {!kpi.isLeaf ? (
           <RollupExplainer subKpis={subKpis} />
-        ) : kpi.leaf?.pendingReason ? (
+        ) : kpi.leaf?.pendingReason ||
+          // A calibrated score clears pendingReason so it counts fully
+          // toward coverage — but there's still no real formula to walk
+          // through if nothing was ever reported (a milestone not yet due,
+          // or a numeric KPI with no figure at all), so re-check the
+          // underlying data directly rather than trust the cleared
+          // pendingReason for those cases.
+          (kpi.metricType === "MONTH_COMPLETION"
+            ? !completionDate &&
+              monthsBetween((kpi.targetConfig as { targetMonth: string } | null)?.targetMonth ?? period, period) > 0
+            : kpi.leaf?.value === null) ? (
           <NoScoreExplainer kpi={kpi} period={period} />
         ) : kpi.metricType === "MONTH_COMPLETION" ? (
           <MonthCompletionExplainer

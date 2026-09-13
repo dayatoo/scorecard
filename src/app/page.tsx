@@ -175,6 +175,11 @@ function Header({
       <div>
         <h1 className="text-xl font-semibold tracking-tight">
           {scorecard.fiscalYear.label} scorecard
+          {scorecard.fiscalYear.closedAt && (
+            <span className="ml-2 align-middle rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">
+              Closed
+            </span>
+          )}
         </h1>
         <p className="mt-0.5 text-sm text-gray-600">
           Reporting {formatPeriodLabel(scorecard.period)} · year-to-date figures

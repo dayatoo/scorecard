@@ -448,6 +448,13 @@ export type LeafScore = {
   prorated: boolean;
   /** The phased target actually used, when prorated — for showing the derivation. */
   phasedTarget: TargetConfig | null;
+  /**
+   * Set when an admin has manually calibrated this KPI's score for this
+   * period. Applied outside this module (see kpi-tree.ts) — scoring.ts stays
+   * a pure function of the reported figures, so this field is always null
+   * here and only ever populated by the caller that knows about overrides.
+   */
+  override: { score: number; reason: string; byUsername: string; createdAt: string } | null;
 };
 
 const NO_SCORE = (pendingReason: LeafScore["pendingReason"]): LeafScore => ({
@@ -460,6 +467,7 @@ const NO_SCORE = (pendingReason: LeafScore["pendingReason"]): LeafScore => ({
   pendingReason,
   prorated: false,
   phasedTarget: null,
+  override: null,
 });
 
 /**
@@ -543,6 +551,7 @@ export function scoreLeaf(
     pendingReason: null,
     prorated,
     phasedTarget: prorated ? phasedConfig : null,
+    override: null,
   };
 }
 
@@ -591,6 +600,7 @@ function scoreMilestoneLeaf(
       pendingReason: null,
       prorated: false,
       phasedTarget: null,
+      override: null,
     };
   }
 
@@ -610,6 +620,7 @@ function scoreMilestoneLeaf(
     pendingReason: null,
     prorated: false,
     phasedTarget: null,
+    override: null,
   };
 }
 

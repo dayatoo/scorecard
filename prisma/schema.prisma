@@ -90,8 +90,10 @@ model User {
   role            UserRole   @default(MEMBER)
   status          UserStatus @default(PENDING)
 
-  proposals KpiChangeProposal[] @relation("ProposedBy")
-  reviewed  KpiChangeProposal[] @relation("ReviewedBy")
+  proposals         KpiChangeProposal[] @relation("ProposedBy")
+  reviewed          KpiChangeProposal[] @relation("ReviewedBy")
+  scoreOverrides    ScoreOverride[]
+  closedFiscalYears FiscalYear[]        @relation("ClosedFiscalYears")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -150,10 +152,72 @@ model FiscalYear {
   label     String
   isActive  Boolean @default(false)
 
-  kpis Kpi[]
+  // Set once the year's numbers are board-approved and frozen. While set,
+  // every write action on this year's KPIs (figures, settings, structure)
+  // is refused — see assertFiscalYearOpen in src/lib/validation.ts.
+  closedAt   DateTime?
+  closedById String?
+  closedBy   User?     @relation("ClosedFiscalYears", fields: [closedById], references: [id])
+
+  kpis     Kpi[]
+  snapshot FiscalYearSnapshot?
+  audits   FiscalYearAudit[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// One row per KPI per month a score was manually calibrated by an admin.
+// Applied at scoring time (kpi-tree.ts), layered on top of the computed
+// leaf score — the computed value is never discarded, just overridden for
+// display and for every rollup above it.
+model ScoreOverride {
+  id        String   @id @default(cuid())
+  kpiId     String
+  kpi       Kpi      @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  period    String // "YYYY-MM"
+  score     Float // 0-5, replaces the computed score for this KPI/period
+  reason    String
+  byId      String
+  by        User     @relation(fields: [byId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([kpiId, period])
+  @@index([kpiId])
+}
+
+// The full computed scorecard at the moment a fiscal year is closed, so a
+// closed year renders from this instead of recomputing live — protecting a
+// board-approved historical year from ever moving under a future change to
+// the scoring engine itself. One row per fiscal year; overwritten if the
+// year is reopened and re-closed.
+model FiscalYearSnapshot {
+  id           String     @id @default(cuid())
+  fiscalYearId String     @unique
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+
+  // JSON: { [period]: { [kpiId]: { score, exactScore, band, coverage,
+  // provisional, prorated, weight, globalWeight } } } for every period of
+  // the year.
+  data String
+
+  createdAt DateTime @default(now())
+}
+
+// Fiscal-year-level events (closed / reopened) — the year-level analogue of
+// KpiAudit, which is keyed to a specific KPI and doesn't fit here.
+model FiscalYearAudit {
+  id           String     @id @default(cuid())
+  fiscalYearId String
+  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+
+  action String // "closed" | "reopened"
+  reason String?
+  author String // username, server-derived
+
+  createdAt DateTime @default(now())
+
+  @@index([fiscalYearId, createdAt])
 }
 
 // Owner of a KPI. Departments, not individuals — picked from a managed dropdown.
@@ -236,8 +300,9 @@ model Kpi {
   audits      KpiAudit[]
   proposals   KpiChangeProposal[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  scoreOverrides ScoreOverride[]
 
   @@unique([fiscalYearId, code])
   @@index([fiscalYearId])

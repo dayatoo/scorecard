@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
-import { fiscalYearLabel } from "@/lib/fiscal";
+import { fiscalYearLabel, periodsOfFiscalYear } from "@/lib/fiscal";
+import { getScorecard } from "@/lib/data";
 import type { ParsedKpi, ParsedValue } from "@/lib/workbook";
+import { assertFiscalYearOpen } from "@/lib/validation";
 import { attempt, type ActionResult } from "./result";
 
 export async function createFiscalYear(input: {
@@ -109,10 +111,96 @@ export async function setActiveFiscalYear(id: string): Promise<ActionResult> {
 export async function deleteFiscalYear(id: string): Promise<ActionResult> {
   return attempt(async () => {
     await requireAdmin();
+    const fiscalYear = await prisma.fiscalYear.findUnique({
+      where: { id },
+      select: { closedAt: true, label: true },
+    });
+    if (!fiscalYear) throw new Error("That fiscal year no longer exists.");
+    if (fiscalYear.closedAt) {
+      throw new Error(`${fiscalYear.label} is closed. Reopen it first if you want to delete it.`);
+    }
     // Cascades to KPIs, their values and their updates.
     await prisma.fiscalYear.delete({ where: { id } });
     revalidatePath("/");
     revalidatePath("/manage");
+  });
+}
+
+/**
+ * Freezes a fiscal year: takes an immutable snapshot of every month's
+ * computed scorecard, then blocks every further write to its KPIs. A future
+ * change to the scoring engine itself can never move a year once closed —
+ * the closed year always renders from this snapshot, not a live recompute.
+ */
+export async function closeFiscalYear(fiscalYearId: string): Promise<ActionResult> {
+  return attempt(async () => {
+    const admin = await requireAdmin();
+
+    const fiscalYear = await prisma.fiscalYear.findUnique({ where: { id: fiscalYearId } });
+    if (!fiscalYear) throw new Error("That fiscal year no longer exists.");
+    if (fiscalYear.closedAt) throw new Error(`${fiscalYear.label} is already closed.`);
+
+    const scorecard = await getScorecard({ fiscalYearId });
+    if (!scorecard) throw new Error("Could not load this year's scorecard.");
+
+    const { buildScoredTree } = await import("@/lib/kpi-tree");
+    const yearPeriods = periodsOfFiscalYear(fiscalYear.startYear);
+    const data: Record<string, { roots: unknown; total: unknown }> = {};
+    for (const p of yearPeriods) {
+      const { roots, total } = buildScoredTree(scorecard.kpiRecords, scorecard.values, p, scorecard.overrides);
+      data[p] = { roots, total };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.fiscalYearSnapshot.upsert({
+        where: { fiscalYearId },
+        create: { fiscalYearId, data: JSON.stringify(data) },
+        update: { data: JSON.stringify(data) },
+      });
+      await tx.fiscalYear.update({
+        where: { id: fiscalYearId },
+        data: { closedAt: new Date(), closedById: admin.id },
+      });
+      await tx.fiscalYearAudit.create({
+        data: { fiscalYearId, action: "closed", author: admin.username },
+      });
+    });
+
+    revalidatePath("/");
+    revalidatePath("/manage");
+    revalidatePath("/kpis");
+    revalidatePath("/milestones");
+  });
+}
+
+export async function reopenFiscalYear(fiscalYearId: string, reason: string): Promise<ActionResult> {
+  return attempt(async () => {
+    const admin = await requireAdmin();
+
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) throw new Error("Explain why this year is being reopened.");
+
+    const fiscalYear = await prisma.fiscalYear.findUnique({ where: { id: fiscalYearId } });
+    if (!fiscalYear) throw new Error("That fiscal year no longer exists.");
+    if (!fiscalYear.closedAt) throw new Error(`${fiscalYear.label} is not closed.`);
+
+    await prisma.$transaction(async (tx) => {
+      // The snapshot is kept, not deleted — what the board actually
+      // approved stays inspectable even after a reopen for correction.
+      // Re-closing later overwrites it with a fresh one.
+      await tx.fiscalYear.update({
+        where: { id: fiscalYearId },
+        data: { closedAt: null, closedById: null },
+      });
+      await tx.fiscalYearAudit.create({
+        data: { fiscalYearId, action: "reopened", reason: trimmedReason, author: admin.username },
+      });
+    });
+
+    revalidatePath("/");
+    revalidatePath("/manage");
+    revalidatePath("/kpis");
+    revalidatePath("/milestones");
   });
 }
 
@@ -188,6 +276,13 @@ export async function applyImport(input: {
 
   const { fiscalYearId, kpis } = input;
   if (kpis.length === 0) throw new Error("That workbook has no KPI rows.");
+
+  const targetYear = await prisma.fiscalYear.findUnique({
+    where: { id: fiscalYearId },
+    select: { closedAt: true, label: true },
+  });
+  if (!targetYear) throw new Error("That fiscal year no longer exists.");
+  assertFiscalYearOpen(targetYear);
 
   const existingDepartments = await prisma.department.findMany();
   const departmentIdByName = new Map(

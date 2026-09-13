@@ -6,7 +6,7 @@ import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
-import { MAX_KPI_DEPTH } from "@/lib/validation";
+import { assertFiscalYearOpen, MAX_KPI_DEPTH } from "@/lib/validation";
 import { attempt, type ActionResult } from "./result";
 
 // Structural operations on the hierarchy — create, delete, move, re-order.
@@ -73,6 +73,13 @@ export async function createKpi(input: {
     if (!code) throw new Error("A KPI needs a code.");
     if (!name) throw new Error("A KPI needs a name.");
 
+    const fiscalYear = await prisma.fiscalYear.findUnique({
+      where: { id: input.fiscalYearId },
+      select: { closedAt: true, label: true },
+    });
+    if (!fiscalYear) throw new Error("That fiscal year no longer exists.");
+    assertFiscalYearOpen(fiscalYear);
+
     const clash = await prisma.kpi.findFirst({
       where: { fiscalYearId: input.fiscalYearId, code },
     });
@@ -124,9 +131,13 @@ export async function deleteKpi(input: { kpiId: string }): Promise<ActionResult>
 
     const kpi = await prisma.kpi.findUnique({
       where: { id: input.kpiId },
-      include: { _count: { select: { children: true, values: true } } },
+      include: {
+        _count: { select: { children: true, values: true } },
+        fiscalYear: { select: { closedAt: true, label: true } },
+      },
     });
     if (!kpi) throw new Error("That KPI no longer exists.");
+    assertFiscalYearOpen(kpi.fiscalYear);
 
     await prisma.$transaction(async (tx) => {
       if (kpi.parentId) {
@@ -157,8 +168,12 @@ export async function moveKpi(input: {
   return attempt(async () => {
     const user = await requireAdmin();
 
-    const kpi = await prisma.kpi.findUnique({ where: { id: input.kpiId } });
+    const kpi = await prisma.kpi.findUnique({
+      where: { id: input.kpiId },
+      include: { fiscalYear: { select: { closedAt: true, label: true } } },
+    });
     if (!kpi) throw new Error("That KPI no longer exists.");
+    assertFiscalYearOpen(kpi.fiscalYear);
     if (input.newParentId === input.kpiId) throw new Error("A KPI cannot be its own parent.");
 
     if (input.newParentId) {
@@ -217,8 +232,12 @@ export async function reorderKpi(input: {
   return attempt(async () => {
     await requireAdmin();
 
-    const kpi = await prisma.kpi.findUnique({ where: { id: input.kpiId } });
+    const kpi = await prisma.kpi.findUnique({
+      where: { id: input.kpiId },
+      include: { fiscalYear: { select: { closedAt: true, label: true } } },
+    });
     if (!kpi) throw new Error("That KPI no longer exists.");
+    assertFiscalYearOpen(kpi.fiscalYear);
 
     const siblings = await prisma.kpi.findMany({
       where: { fiscalYearId: kpi.fiscalYearId, parentId: kpi.parentId },

@@ -16,6 +16,7 @@ import {
   flattenTree,
   type KpiRecord,
   type ScoredNode,
+  type ScoreOverrideRecord,
   type ValueRecord,
 } from "./kpi-tree";
 import { validateHierarchy, type Issue } from "./validation";
@@ -34,7 +35,7 @@ export type PeriodScores = Map<
 >;
 
 export type Scorecard = {
-  fiscalYear: { id: string; startYear: number; label: string };
+  fiscalYear: { id: string; startYear: number; label: string; closedAt: string | null };
   /** The month being reported on. */
   period: string;
   /** That month plus up to three before it, oldest first. */
@@ -49,6 +50,7 @@ export type Scorecard = {
   issues: Issue[];
   kpiRecords: KpiRecord[];
   values: ValueRecord[];
+  overrides: Map<string, ScoreOverrideRecord[]>;
 };
 
 /** The year marked active, else the most recent one. */
@@ -117,12 +119,23 @@ export async function getScorecard(options?: {
   const yearPeriods = periodsOfFiscalYear(fiscalYear.startYear);
   const period = resolvePeriod(options?.period, fiscalYear.startYear);
 
-  const [kpiRecords, valueRows, departments] = await Promise.all([
+  if (fiscalYear.closedAt) {
+    const closed = await getClosedScorecard(fiscalYear, period, yearPeriods);
+    if (closed) return closed;
+    // No snapshot somehow exists for a closed year — fall through to a live
+    // read rather than show nothing; this should not normally happen.
+  }
+
+  const [kpiRecords, valueRows, departments, overrideRows] = await Promise.all([
     loadKpiRecords(fiscalYear.id),
     prisma.kpiValue.findMany({
       where: { kpi: { fiscalYearId: fiscalYear.id }, period: { in: yearPeriods } },
     }),
     listDepartments(),
+    prisma.scoreOverride.findMany({
+      where: { kpi: { fiscalYearId: fiscalYear.id } },
+      include: { by: { select: { username: true } } },
+    }),
   ]);
 
   const values: ValueRecord[] = valueRows.map((v) => ({
@@ -134,15 +147,28 @@ export async function getScorecard(options?: {
     note: v.note,
   }));
 
+  const overrides = new Map<string, ScoreOverrideRecord[]>();
+  for (const o of overrideRows) {
+    const list = overrides.get(o.kpiId) ?? [];
+    list.push({
+      period: o.period,
+      score: o.score,
+      reason: o.reason,
+      byUsername: o.by.username,
+      createdAt: o.createdAt,
+    });
+    overrides.set(o.kpiId, list);
+  }
+
   const periods = trailingPeriods(period);
-  const { roots, total, byId } = buildScoredTree(kpiRecords, values, period);
+  const { roots, total, byId } = buildScoredTree(kpiRecords, values, period, overrides);
 
   // Recompute the tree for each trailing month so the columns show what the
   // scorecard actually said then, not today's numbers back-dated.
   const scoresByPeriod = new Map<string, PeriodScores>();
   const totalsByPeriod = new Map<string, Rollup>();
   for (const p of periods) {
-    const snapshot = p === period ? { roots, total, byId } : buildScoredTree(kpiRecords, values, p);
+    const snapshot = p === period ? { roots, total, byId } : buildScoredTree(kpiRecords, values, p, overrides);
     const lookup: PeriodScores = new Map();
     for (const node of flattenTree(snapshot.roots)) {
       lookup.set(node.id, {
@@ -163,6 +189,7 @@ export async function getScorecard(options?: {
       id: fiscalYear.id,
       startYear: fiscalYear.startYear,
       label: fiscalYear.label || fiscalYearLabel(fiscalYear.startYear),
+      closedAt: fiscalYear.closedAt ? fiscalYear.closedAt.toISOString() : null,
     },
     period,
     periods,
@@ -175,6 +202,83 @@ export async function getScorecard(options?: {
     issues: validateHierarchy(kpiRecords),
     kpiRecords,
     values,
+    overrides,
+  };
+}
+
+/**
+ * Renders a closed fiscal year from its immutable snapshot instead of
+ * recomputing live — so a board-approved historical year can never move
+ * under a future change to the scoring engine itself. Returns null if
+ * somehow no snapshot exists (the caller falls back to a live read).
+ */
+async function getClosedScorecard(
+  fiscalYear: { id: string; startYear: number; label: string; closedAt: Date | null },
+  period: string,
+  yearPeriods: string[]
+): Promise<Scorecard | null> {
+  const snapshotRow = await prisma.fiscalYearSnapshot.findUnique({
+    where: { fiscalYearId: fiscalYear.id },
+  });
+  if (!snapshotRow) return null;
+
+  const data = JSON.parse(snapshotRow.data) as Record<
+    string,
+    { roots: ScoredNode[]; total: Rollup }
+  >;
+  const current = data[period];
+  if (!current) return null;
+
+  const [kpiRecords, departments] = await Promise.all([
+    loadKpiRecords(fiscalYear.id),
+    listDepartments(),
+  ]);
+
+  const byId = new Map(flattenTree(current.roots).map((n) => [n.id, n]));
+
+  // Every month of the year, not just the trailing window — the KPI detail
+  // page's month-by-month history reads any period directly from this map,
+  // never falling back to a live recompute (which would need KpiValue rows
+  // this branch deliberately doesn't load).
+  const scoresByPeriod = new Map<string, PeriodScores>();
+  const totalsByPeriod = new Map<string, Rollup>();
+  for (const p of yearPeriods) {
+    const snap = data[p];
+    if (!snap) continue;
+    const lookup: PeriodScores = new Map();
+    for (const node of flattenTree(snap.roots)) {
+      lookup.set(node.id, {
+        score: node.score,
+        band: node.band,
+        coverage: node.coverage,
+        provisional: node.provisional,
+        prorated: node.prorated,
+        notYetDueShare: node.notYetDueShare,
+      });
+    }
+    scoresByPeriod.set(p, lookup);
+    totalsByPeriod.set(p, snap.total);
+  }
+
+  return {
+    fiscalYear: {
+      id: fiscalYear.id,
+      startYear: fiscalYear.startYear,
+      label: fiscalYear.label || fiscalYearLabel(fiscalYear.startYear),
+      closedAt: fiscalYear.closedAt ? fiscalYear.closedAt.toISOString() : null,
+    },
+    period,
+    periods: trailingPeriods(period),
+    roots: current.roots,
+    byId,
+    total: current.total,
+    scoresByPeriod,
+    totalsByPeriod,
+    departments,
+    issues: validateHierarchy(kpiRecords),
+    kpiRecords,
+    values: [],
+    overrides: new Map(),
   };
 }
 

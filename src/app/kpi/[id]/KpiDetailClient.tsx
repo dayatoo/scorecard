@@ -28,6 +28,7 @@ import {
   type TargetMode,
 } from "@/lib/scoring";
 import { addKpiUpdate, saveEntry, saveKpiSettings } from "@/app/actions/kpi";
+import { clearOverride, overrideScore } from "@/app/actions/calibration";
 import {
   crossesNumericMonthBoundary,
   draftToMetricInput,
@@ -122,6 +123,7 @@ export function KpiDetailClient({
   period,
   periods,
   fiscalYearLabel,
+  fiscalYearClosed,
   currentUser,
   pendingProposal,
 }: {
@@ -138,6 +140,7 @@ export function KpiDetailClient({
   period: string;
   periods: string[];
   fiscalYearLabel: string;
+  fiscalYearClosed: boolean;
   currentUser: { id: string; username: string; role: "MEMBER" | "ADMIN"; departmentId: string };
   pendingProposal: PendingProposal | null;
 }) {
@@ -311,10 +314,11 @@ export function KpiDetailClient({
   };
 
   const ownsKpi = currentUser.role === "ADMIN" || kpi.departmentIds.includes(currentUser.departmentId);
-  const canEditFigures = ownsKpi;
+  const canEditFigures = ownsKpi && !fiscalYearClosed;
   const canEditSettings =
-    currentUser.role === "ADMIN" ||
-    (kpi.isLeaf && ownsKpi && !pendingProposal);
+    !fiscalYearClosed &&
+    (currentUser.role === "ADMIN" ||
+      (kpi.isLeaf && ownsKpi && !pendingProposal));
   const submittingProposal =
     currentUser.role !== "ADMIN" && changes.some((c) => settingsFields.has(c.field));
 
@@ -337,7 +341,20 @@ export function KpiDetailClient({
 
   return (
     <div className="space-y-6 pb-4">
-      <Header kpi={kpi} period={period} periods={periods} fiscalYearLabel={fiscalYearLabel} />
+      <Header
+        kpi={kpi}
+        period={period}
+        periods={periods}
+        fiscalYearLabel={fiscalYearLabel}
+        isAdmin={currentUser.role === "ADMIN"}
+        fiscalYearClosed={fiscalYearClosed}
+      />
+
+      {fiscalYearClosed && (
+        <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">
+          This year is closed. An admin can reopen it to make changes.
+        </p>
+      )}
 
       {kpi.leaf?.deadline && kpi.leaf.deadline.monthsLate > 0 && (
         <DeadlineNotice deadline={kpi.leaf.deadline} deadlineMonth={kpi.deadlineMonth} />
@@ -374,6 +391,7 @@ export function KpiDetailClient({
           setField={setField}
           period={period}
           readOnly={!canEditFigures}
+          fiscalYearClosed={fiscalYearClosed}
         />
       )}
 
@@ -388,6 +406,7 @@ export function KpiDetailClient({
         departments={departments}
         crossesMetricBoundary={crossesMetricBoundary}
         readOnly={!canEditSettings}
+        fiscalYearClosed={fiscalYearClosed}
       />
 
       {kpi.isLeaf && (
@@ -440,9 +459,10 @@ export function KpiDetailClient({
 // --------------------------------------------------------------------------
 
 function Header({
-  kpi, period, periods, fiscalYearLabel,
+  kpi, period, periods, fiscalYearLabel, isAdmin, fiscalYearClosed,
 }: {
-  kpi: KpiProps; period: string; periods: string[]; fiscalYearLabel: string;
+  kpi: KpiProps; period: string; periods: string[]; fiscalYearLabel: string; isAdmin: boolean;
+  fiscalYearClosed: boolean;
 }) {
   const router = useRouter();
 
@@ -496,6 +516,7 @@ function Header({
             score={kpi.score}
             band={kpi.band}
             provisional={kpi.provisional}
+            calibrated={!!kpi.leaf?.override}
             size="lg"
             showBandLabel
             placeholder={kpi.leaf?.pendingReason === "NOT_YET_DUE" ? "not due" : "no data"}
@@ -514,9 +535,131 @@ function Header({
               <option key={p} value={p}>{formatPeriodLabel(p)}</option>
             ))}
           </select>
+          {isAdmin && kpi.isLeaf && !fiscalYearClosed && (
+            <CalibrateControl kpiId={kpi.id} period={period} override={kpi.leaf?.override ?? null} />
+          )}
         </div>
       </div>
       <p className="sr-only">{fiscalYearLabel}</p>
+    </div>
+  );
+}
+
+function CalibrateControl({
+  kpiId, period, override,
+}: {
+  kpiId: string;
+  period: string;
+  override: { score: number; reason: string; byUsername: string; createdAt: string } | null;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [score, setScore] = useState(override ? String(override.score) : "");
+  const [reason, setReason] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = () => {
+    const parsed = Number(score);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 5) {
+      setError("Enter a score between 0 and 5.");
+      return;
+    }
+    if (!reason.trim()) {
+      setError("Explain why this score is being calibrated.");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await overrideScore({ kpiId, period, score: parsed, reason: reason.trim() });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setOpen(false);
+      setReason("");
+      router.refresh();
+    });
+  };
+
+  const clear = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await clearOverride(kpiId, period);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setOpen(false);
+      router.refresh();
+    });
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-2 block w-full text-right text-xs text-blue-700 hover:underline"
+      >
+        {override ? "Edit calibration" : "Calibrate score"}
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 w-56 rounded border border-gray-300 bg-white p-3 text-left shadow-sm">
+      <label className="block text-xs font-medium text-gray-700">
+        Calibrated score (0–5)
+        <input
+          type="number"
+          step="0.1"
+          min="0"
+          max="5"
+          className={`mt-1 ${inputClass}`}
+          value={score}
+          onChange={(e) => setScore(e.target.value)}
+        />
+      </label>
+      <label className="mt-2 block text-xs font-medium text-gray-700">
+        Reason
+        <textarea
+          rows={2}
+          className={`mt-1 ${inputClass}`}
+          placeholder="Why is this being calibrated?"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+        />
+      </label>
+      {error && <p className="mt-1 text-xs font-medium text-rose-700">{error}</p>}
+      <div className="mt-2 flex justify-end gap-2">
+        {override && (
+          <button
+            type="button"
+            onClick={clear}
+            disabled={pending}
+            className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Remove
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          disabled={pending}
+          className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={pending}
+          className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {pending ? "Saving…" : "Save"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -630,13 +773,14 @@ function BasisToggle({
 }
 
 function EntryPanel({
-  kpi, draft, setField, period, readOnly,
+  kpi, draft, setField, period, readOnly, fiscalYearClosed,
 }: {
   kpi: KpiProps;
   draft: Draft;
   setField: <K extends keyof Draft>(field: K, value: Draft[K]) => void;
   period: string;
   readOnly?: boolean;
+  fiscalYearClosed?: boolean;
 }) {
   const isMilestone = draft.metricType === "MONTH_COMPLETION";
 
@@ -644,7 +788,9 @@ function EntryPanel({
     <Panel title={`Report for ${formatPeriodLabel(period)}`}>
       {readOnly && (
         <p className="mb-3 text-xs text-amber-700">
-          Read-only — this KPI isn&apos;t owned by your department.
+          {fiscalYearClosed
+            ? "Read-only — this year is closed."
+            : "Read-only — this KPI isn't owned by your department."}
         </p>
       )}
       <fieldset disabled={readOnly} className="flex flex-wrap items-start gap-x-8 gap-y-3">
@@ -699,7 +845,7 @@ function EntryPanel({
 }
 
 function SettingsPanel({
-  kpi, draft, setField, departments, crossesMetricBoundary, readOnly,
+  kpi, draft, setField, departments, crossesMetricBoundary, readOnly, fiscalYearClosed,
 }: {
   kpi: KpiProps;
   draft: Draft;
@@ -707,6 +853,7 @@ function SettingsPanel({
   departments: { id: string; name: string }[];
   crossesMetricBoundary: boolean;
   readOnly?: boolean;
+  fiscalYearClosed?: boolean;
 }) {
   const toggleDepartment = (id: string) => {
     const next = draft.departmentIds.includes(id)
@@ -722,7 +869,9 @@ function SettingsPanel({
     <Panel title="Definition" description="Metric type, target mode and direction are editable here — changing any of them recalculates every month's score from the new definition.">
       {readOnly && (
         <p className="mb-3 text-xs text-amber-700">
-          Read-only — only an admin, or your department if it owns this KPI, can change these settings.
+          {fiscalYearClosed
+            ? "Read-only — this year is closed."
+            : "Read-only — only an admin, or your department if it owns this KPI, can change these settings."}
         </p>
       )}
       <fieldset disabled={readOnly} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

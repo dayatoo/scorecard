@@ -50,6 +50,7 @@ export default async function HierarchyPage({
         <HierarchyEditor
           fiscalYears={fiscalYears.map((fy) => ({ id: fy.id, label: fy.label }))}
           selectedFiscalYearId={scorecard?.fiscalYear.id ?? fiscalYears[0].id}
+          fiscalYearClosed={!!scorecard?.fiscalYear.closedAt}
           nodes={
             scorecard
               ? flattenTree(scorecard.roots).map((n) => ({

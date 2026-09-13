@@ -21,10 +21,12 @@ type Node = {
 export function HierarchyEditor({
   fiscalYears,
   selectedFiscalYearId,
+  fiscalYearClosed = false,
   nodes,
 }: {
   fiscalYears: { id: string; label: string }[];
   selectedFiscalYearId: string;
+  fiscalYearClosed?: boolean;
   nodes: Node[];
 }) {
   const router = useRouter();
@@ -114,25 +116,27 @@ export function HierarchyEditor({
           <span className="tabular ml-auto text-xs text-gray-500">
             {node.weight.toFixed(1)}% of group · {node.globalWeight.toFixed(1)}% global
           </span>
-          <div className="flex items-center gap-1">
-            <button type="button" className="rounded border px-1.5 py-0.5 text-xs hover:bg-gray-50" disabled={pending}
-              onClick={() => run(() => reorderKpi({ kpiId: node.id, direction: "up" }))}
-              aria-label={`Move ${node.name} up`} title="Move up" hidden={index <= 0}
-            >↑</button>
-            <button type="button" className="rounded border px-1.5 py-0.5 text-xs hover:bg-gray-50" disabled={pending}
-              onClick={() => run(() => reorderKpi({ kpiId: node.id, direction: "down" }))}
-              aria-label={`Move ${node.name} down`} title="Move down" hidden={index >= siblings.length - 1}
-            >↓</button>
-            <button type="button" className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50"
-              onClick={() => setAddingUnder(node.id)}
-            >+ sub</button>
-            <button type="button" className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50"
-              onClick={() => setMovingId(movingId === node.id ? null : node.id)}
-            >Move</button>
-            <button type="button" className="rounded border border-rose-200 px-2 py-0.5 text-xs text-rose-700 hover:bg-rose-50"
-              onClick={() => setConfirmDelete(node)}
-            >Delete</button>
-          </div>
+          {!fiscalYearClosed && (
+            <div className="flex items-center gap-1">
+              <button type="button" className="rounded border px-1.5 py-0.5 text-xs hover:bg-gray-50" disabled={pending}
+                onClick={() => run(() => reorderKpi({ kpiId: node.id, direction: "up" }))}
+                aria-label={`Move ${node.name} up`} title="Move up" hidden={index <= 0}
+              >↑</button>
+              <button type="button" className="rounded border px-1.5 py-0.5 text-xs hover:bg-gray-50" disabled={pending}
+                onClick={() => run(() => reorderKpi({ kpiId: node.id, direction: "down" }))}
+                aria-label={`Move ${node.name} down`} title="Move down" hidden={index >= siblings.length - 1}
+              >↓</button>
+              <button type="button" className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50"
+                onClick={() => setAddingUnder(node.id)}
+              >+ sub</button>
+              <button type="button" className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50"
+                onClick={() => setMovingId(movingId === node.id ? null : node.id)}
+              >Move</button>
+              <button type="button" className="rounded border border-rose-200 px-2 py-0.5 text-xs text-rose-700 hover:bg-rose-50"
+                onClick={() => setConfirmDelete(node)}
+              >Delete</button>
+            </div>
+          )}
         </div>
 
         {movingId === node.id && (
@@ -220,14 +224,22 @@ export function HierarchyEditor({
             ))}
           </select>
         </label>
-        <button
-          type="button"
-          onClick={() => setAddingUnder("ROOT")}
-          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          + Strategic Goal
-        </button>
+        {!fiscalYearClosed && (
+          <button
+            type="button"
+            onClick={() => setAddingUnder("ROOT")}
+            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            + Strategic Goal
+          </button>
+        )}
       </div>
+
+      {fiscalYearClosed && (
+        <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">
+          This year is closed. An admin can reopen it to make changes.
+        </p>
+      )}
 
       {error && <p className="text-sm font-medium text-rose-700">{error}</p>}
 

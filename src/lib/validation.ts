@@ -228,3 +228,14 @@ export function validateHierarchy(kpis: KpiRecord[]): Issue[] {
 export function hasErrors(issues: Issue[]): boolean {
   return issues.some((i) => i.severity === "error");
 }
+
+/**
+ * Throws unless a fiscal year is still open for editing. Once a year is
+ * closed (board-approved and snapshotted), every write to its KPIs —
+ * figures, settings, structure — is refused until an admin reopens it.
+ */
+export function assertFiscalYearOpen(fiscalYear: { closedAt: Date | null; label: string }): void {
+  if (fiscalYear.closedAt) {
+    throw new Error(`${fiscalYear.label} is closed. Ask an admin to reopen it before recording changes.`);
+  }
+}

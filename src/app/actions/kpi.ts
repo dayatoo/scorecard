@@ -14,6 +14,7 @@ import {
   validateMetric,
   type MetricInput,
 } from "@/lib/targets";
+import { assertFiscalYearOpen } from "@/lib/validation";
 import { attempt, type ActionResult } from "./result";
 
 // Every action re-checks authentication: a server action is a POST endpoint
@@ -36,12 +37,13 @@ async function assertPeriodValid(kpiId: string, period: string) {
   }
   const kpi = await prisma.kpi.findUnique({
     where: { id: kpiId },
-    select: { fiscalYear: { select: { startYear: true } } },
+    select: { fiscalYear: { select: { startYear: true, closedAt: true, label: true } } },
   });
   if (!kpi) throw new Error("That KPI no longer exists.");
   if (!isPeriodInFiscalYear(period, kpi.fiscalYear.startYear)) {
     throw new Error(`${period} is outside the fiscal year this KPI belongs to.`);
   }
+  assertFiscalYearOpen(kpi.fiscalYear);
 }
 
 /** Throws unless the user is an admin or their department owns this KPI. */
@@ -227,6 +229,7 @@ function loadExistingKpi(kpiId: string) {
       _count: { select: { children: true, values: true } },
       values: { select: { period: true, value: true, completionDate: true } },
       departments: true,
+      fiscalYear: { select: { closedAt: true, label: true } },
     },
   });
 }
@@ -251,6 +254,7 @@ export async function prepareKpiSettings(input: SaveKpiSettingsInput): Promise<P
 
   const existing = await loadExistingKpi(input.kpiId);
   if (!existing) throw new Error("That KPI no longer exists.");
+  assertFiscalYearOpen(existing.fiscalYear);
   const isLeaf = existing._count.children === 0;
 
   // Code uniqueness, checked ourselves rather than left to Prisma's raw P2002
