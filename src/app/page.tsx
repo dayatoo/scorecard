@@ -118,7 +118,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             </>
           }
         />
-        {scorecard.roots.slice(0, 3).map((goal) => (
+        {/* Every Strategic Goal, not a fixed few: the grid wraps to as many rows
+            as the scorecard needs. Truncating here once hid goals entirely, since
+            the summary is the only place a goal's score is shown unexpanded. */}
+        {scorecard.roots.map((goal) => (
           <SummaryCard
             key={goal.id}
             label={goal.name}

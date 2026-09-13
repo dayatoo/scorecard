@@ -40,6 +40,71 @@ test("the dashboard shows the scored hierarchy and a total", async ({ page }) =>
   await expect(totalRow).toContainText("90%");
 });
 
+/**
+ * The summary row once carried a hardcoded `slice(0, 3)`, sized for a scorecard
+ * with exactly three Strategic Goals, so a fourth and beyond were silently
+ * dropped — and the summary is the only place a goal's score is shown without
+ * expanding the tree. The seeded year has just two goals, so this builds its own
+ * five-goal year rather than relying on the sample data to be wide enough.
+ */
+test("every Strategic Goal gets a summary card, not just the first few", async ({ page }) => {
+  const ExcelJS = (await import("exceljs")).default;
+  const { KPI_COLUMNS } = await import("../src/lib/workbook");
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("KPIs");
+  sheet.addRow([...KPI_COLUMNS]);
+  const GOALS = 5;
+  for (let n = 1; n <= GOALS; n++) {
+    sheet.addRow([
+      `WIDE${n}`, `Wide Goal ${n}`, null, 100 / GOALS, null, "QUANTITY", "units",
+      "HIGHER_BETTER", "FIXED", 1, 2, 3, 4, 5, 6, null, "No",
+    ]);
+  }
+  const written = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
+
+  await page.goto("/manage");
+  await page.getByLabel("Starting year").fill("2029");
+  await page.getByRole("button", { name: "Create year" }).click();
+  const year = page.getByRole("listitem").filter({ hasText: "FY2029/30" });
+  await expect(year).toBeVisible();
+
+  await page.goto("/import");
+  await page.locator('select[name="fiscalYearId"]').selectOption({ label: "FY2029/30" });
+  await page.setInputFiles('input[type="file"]', {
+    name: "wide.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: Buffer.from(written),
+  });
+  await page.getByRole("button", { name: "Check file" }).click();
+  await page.getByRole("button", { name: /^Import into/ }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+  await expect(page.getByText("Import complete.")).toBeVisible();
+
+  // One card per goal, plus the total — every goal, not the first three.
+  await page.goto(`/?fy=${await yearId(page)}`);
+  for (let n = 1; n <= GOALS; n++) {
+    await expect(page.getByText(`Wide Goal ${n}`, { exact: true })).toBeVisible();
+  }
+
+  // Clean up, so the suite can be re-run.
+  await page.goto("/manage");
+  await year.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: "FY2029/30" })).toHaveCount(0);
+});
+
+/** The new year's id, read off its "Open" link on the Manage page. */
+async function yearId(page: import("@playwright/test").Page): Promise<string> {
+  await page.goto("/manage");
+  const href = await page
+    .getByRole("listitem")
+    .filter({ hasText: "FY2029/30" })
+    .getByRole("link", { name: "Open" })
+    .getAttribute("href");
+  return (href ?? "").replace("/?fy=", "");
+}
+
 test("a sub-KPI appears only once its parent is expanded", async ({ page }) => {
   await page.goto(`/?period=${PERIOD}`);
   const child = page.getByRole("link", { name: /SG1.1.1 New customer revenue/ });
@@ -185,6 +250,10 @@ test("the entry grid saves several KPIs at once", async ({ page }) => {
   await expect(page.getByText("2 KPIs with unsaved figures")).toBeVisible();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByRole("button", { name: "Confirm and save" }).click();
+  // Wait for the save to land before reloading. The grid writes its entries one
+  // at a time, so navigating while the action is still in flight can read a
+  // half-applied state — one figure updated and the other not.
+  await expect(page.getByText("2 KPIs with unsaved figures")).toBeHidden();
 
   await page.goto(`/entry?period=${PERIOD}`);
   await expect(days).toHaveValue(newDays);
@@ -196,6 +265,7 @@ test("the entry grid saves several KPIs at once", async ({ page }) => {
   await turnover.fill(originalTurnover);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByRole("button", { name: "Confirm and save" }).click();
+  await expect(page.getByText("2 KPIs with unsaved figures")).toBeHidden();
   await page.goto(`/entry?period=${PERIOD}`);
   await expect(days).toHaveValue(originalDays);
 });
