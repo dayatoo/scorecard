@@ -529,6 +529,54 @@ function Field({ label, hint, children }: {
   );
 }
 
+/**
+ * A two-option Actual/Estimate pill pair, standing in for what used to be a
+ * `<select>`. Placed right beside the value or date it qualifies rather than
+ * in its own grid cell, so the two read as one figure-plus-qualifier decision
+ * instead of two unrelated fields that happen to be near each other.
+ */
+function BasisToggle({
+  value, onChange, label, hint,
+}: {
+  value: "ACTUAL" | "ESTIMATE";
+  onChange: (value: "ACTUAL" | "ESTIMATE") => void;
+  label: string;
+  hint?: string;
+}) {
+  // Deliberately not built on the shared `Field` component: `Field` wraps its
+  // children in a `<label>`, and a `<label>` wrapping a group of `<button>`s
+  // pollutes each button's accessible name with the label's own text on top
+  // of its visible content. A plain `<span>` for the visible label, matching
+  // the pattern the department picker elsewhere on this page already uses
+  // for a pill group, keeps each button's name exactly what it displays.
+  return (
+    <div>
+      <span className="block text-xs font-medium text-gray-700">{label}</span>
+      <div role="radiogroup" aria-label={label} className="mt-1 inline-flex rounded border border-gray-300 bg-white p-0.5">
+        {(["ACTUAL", "ESTIMATE"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={value === option}
+            onClick={() => onChange(option)}
+            className={`rounded px-2.5 py-1 text-sm font-medium transition-colors ${
+              value === option
+                ? option === "ESTIMATE"
+                  ? "bg-amber-600 text-white"
+                  : "bg-gray-900 text-white"
+                : "text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            {option === "ACTUAL" ? "Actual" : "Estimate"}
+          </button>
+        ))}
+      </div>
+      {hint && <span className="mt-1 block text-xs text-gray-500">{hint}</span>}
+    </div>
+  );
+}
+
 function EntryPanel({
   kpi, draft, setField, period,
 }: {
@@ -540,15 +588,8 @@ function EntryPanel({
   const isMilestone = draft.metricType === "MONTH_COMPLETION";
 
   return (
-    <Panel
-      title={`Figures for ${formatPeriodLabel(period)}`}
-      description={
-        isMilestone
-          ? "Record the date this was actually completed."
-          : "Year-to-date figure, compared against the full-year target."
-      }
-    >
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <Panel title={`Report for ${formatPeriodLabel(period)}`}>
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
         {isMilestone ? (
           <Field label="Completion date" hint="Leave blank until it is finished.">
             <DateField
@@ -558,48 +599,42 @@ function EntryPanel({
             />
           </Field>
         ) : (
-          <>
-            <Field label={`Year-to-date value${kpi.unit ? ` (${kpi.unit})` : ""}`}>
-              <input
-                type="number"
-                step="any"
-                inputMode="decimal"
-                className={`mt-1 ${inputClass}`}
-                value={draft.value}
-                onChange={(e) => setField("value", e.target.value)}
-              />
-            </Field>
-            <Field
-              label="This figure is"
-              hint={
-                draft.basis === "ESTIMATE"
-                  ? "Scores from estimates are flagged as provisional."
-                  : undefined
-              }
-            >
-              <select
-                className={`mt-1 ${inputClass}`}
-                value={draft.basis}
-                onChange={(e) => setField("basis", e.target.value as Draft["basis"])}
-              >
-                <option value="ACTUAL">An actual</option>
-                <option value="ESTIMATE">An estimate</option>
-              </select>
-            </Field>
-          </>
-        )}
-
-        <div className="sm:col-span-2">
-          <Field label="Note for this month">
-            <textarea
-              rows={2}
+          <Field label={`Year-to-date value${kpi.unit ? ` (${kpi.unit})` : ""}`}>
+            <input
+              type="number"
+              step="any"
+              inputMode="decimal"
               className={`mt-1 ${inputClass}`}
-              value={draft.note}
-              placeholder="Explain a variance, or leave blank."
-              onChange={(e) => setField("note", e.target.value)}
+              value={draft.value}
+              onChange={(e) => setField("value", e.target.value)}
             />
           </Field>
-        </div>
+        )}
+
+        <BasisToggle
+          label={isMilestone ? "This date is" : "This figure is"}
+          hint={
+            draft.basis === "ESTIMATE"
+              ? isMilestone
+                ? "An estimated date scores provisionally, exactly like an estimated year-to-date figure."
+                : "Scores from estimates are flagged as provisional."
+              : undefined
+          }
+          value={draft.basis}
+          onChange={(basis) => setField("basis", basis)}
+        />
+      </div>
+
+      <div className="mt-4 border-t pt-4">
+        <Field label="Note for this month">
+          <textarea
+            rows={2}
+            className={`mt-1 ${inputClass}`}
+            value={draft.note}
+            placeholder="Explain a variance, or leave blank."
+            onChange={(e) => setField("note", e.target.value)}
+          />
+        </Field>
       </div>
     </Panel>
   );

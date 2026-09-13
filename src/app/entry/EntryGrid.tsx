@@ -267,17 +267,15 @@ export function EntryGrid({
                   </td>
 
                   <td className="px-3 py-1.5">
-                    {!isMilestone && (
-                      <select
-                        aria-label={`Basis for ${row.name}`}
-                        className={inputClass}
-                        value={cell.basis}
-                        onChange={(e) => update(row.id, { basis: e.target.value as Cell["basis"] })}
-                      >
-                        <option value="ACTUAL">Actual</option>
-                        <option value="ESTIMATE">Estimate</option>
-                      </select>
-                    )}
+                    <select
+                      aria-label={`Basis for ${row.name}`}
+                      className={inputClass}
+                      value={cell.basis}
+                      onChange={(e) => update(row.id, { basis: e.target.value as Cell["basis"] })}
+                    >
+                      <option value="ACTUAL">Actual</option>
+                      <option value="ESTIMATE">Estimate</option>
+                    </select>
                   </td>
 
                   <td className="px-3 py-1.5">
@@ -344,6 +342,7 @@ function describeCell(cell: Cell, row: EntryRow): string {
 
   if (row.metricType === "MONTH_COMPLETION") {
     parts.push(cell.completionDate ? `completed ${formatDate(cell.completionDate)}` : "not completed");
+    if (cell.completionDate && cell.basis === "ESTIMATE") parts.push("estimate");
   } else if (cell.value.trim() === "") {
     parts.push("not reported");
   } else {

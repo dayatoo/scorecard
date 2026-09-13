@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 
 import { expect, test } from "@playwright/test";
 
-import { signIn } from "./helpers";
+import { PERIOD, signIn } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await signIn(page);
@@ -60,4 +60,49 @@ test("switching between a numeric metric and month-completion requires clearing 
   await page.getByRole("button", { name: "Save" }).click();
   await page.getByRole("button", { name: "Confirm and save" }).click();
   await expect(page.getByLabel("Metric type")).toHaveValue("MONTH_COMPLETION");
+});
+
+test("a milestone's completion date can be marked Actual or Estimate, on both the detail page and the entry grid", async ({ page }) => {
+  // "Complete ERP rollout" (SG2.2) has no completion date in the seed, so the
+  // toggle defaults to Actual with nothing recorded yet. Pin the reporting
+  // month explicitly — the KPI table's links carry whatever period is in the
+  // URL, and without one the detail page defaults to the real current month.
+  await page.goto(`/kpis?period=${PERIOD}`);
+  await page.getByRole("link", { name: "Complete ERP rollout" }).click();
+  await expect(page.getByRole("heading", { name: "Complete ERP rollout" })).toBeVisible();
+
+  const basis = page.getByRole("radiogroup", { name: "This date is" });
+  await expect(basis.getByRole("radio", { name: "Actual" })).toHaveAttribute("aria-checked", "true");
+
+  // Record it as an estimate — the score should carry the same provisional
+  // marker an estimated year-to-date figure gets. Dated within the reporting
+  // month itself, since a completion after the month being viewed is refused.
+  await page.getByLabel("Completion date").fill("03/08/2026");
+  await basis.getByRole("radio", { name: "Estimate" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+
+  await expect(page.getByRole("radiogroup", { name: "This date is" }).getByRole("radio", { name: "Estimate" })).toHaveAttribute("aria-checked", "true");
+  // ScoreCell puts "provisional, scored from an estimate" in the chip's title —
+  // a more specific target than the "est" superscript, which the score chart's
+  // SVG can also emit off-screen copies of.
+  await expect(page.locator('[title*="provisional"]').first()).toBeVisible();
+
+  // The same toggle is available from the bulk entry grid, not just here.
+  await page.goto(`/entry?period=${PERIOD}`);
+  await expect(page.getByLabel("Basis for Complete ERP rollout")).toHaveValue("ESTIMATE");
+
+  // Marking it Actual from the detail page clears the provisional marker.
+  await page.goto(`/kpis?period=${PERIOD}`);
+  await page.getByRole("link", { name: "Complete ERP rollout" }).click();
+  await page.getByRole("radiogroup", { name: "This date is" }).getByRole("radio", { name: "Actual" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+  await expect(page.locator('[title*="provisional"]')).toHaveCount(0);
+
+  // Restore the seed's baseline (no completion date) for other specs.
+  await page.getByLabel("Completion date").fill("");
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+  await expect(page.getByLabel("Completion date")).toHaveValue("");
 });
