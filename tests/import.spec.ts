@@ -32,15 +32,15 @@ test("exporting and re-importing the scorecard preserves it", async ({ page }) =
   await expect(page.getByText(/problem.? reading the file/)).toHaveCount(0);
   // The round-trip must come back complete: a file that needed fixing up
   // would mean the export and import formats have drifted apart.
-  await expect(page.locator('dt:text-is("Leaf weights total") + dd')).toHaveText("100.00%");
-  await expect(page.locator('dt:text-is("KPIs in file") + dd')).toHaveText("11");
+  await expect(page.locator('dt:text-is("Strategic Goals total") + dd')).toHaveText("100.00%");
+  await expect(page.locator('dt:text-is("KPIs in file") + dd')).toHaveText("15");
 
   await page.getByRole("button", { name: /^Import into/ }).click();
   await page.getByRole("button", { name: "Confirm and save" }).click();
 
   await expect(page.getByText("Import complete.")).toBeVisible();
   // Matched on code, so everything is an update and nothing is removed.
-  await expect(page.getByText(/0 KPIs added, 11 updated/)).toBeVisible();
+  await expect(page.getByText(/0 KPIs added, 15 updated/)).toBeVisible();
 
   // The hierarchy is unchanged.
   await page.goto(`/kpis?period=${PERIOD}`);
@@ -76,7 +76,7 @@ test("a new fiscal year can be started from the current one", async ({ page }) =
   const newYear = page.getByRole("listitem").filter({ hasText: "FY2027/28" });
   await expect(newYear).toBeVisible();
   // The hierarchy came across; the figures deliberately did not.
-  await expect(newYear).toContainText("11 KPIs");
+  await expect(newYear).toContainText("15 KPIs");
 
   await newYear.getByRole("link", { name: "Open" }).click();
   await expect(page.getByRole("heading", { name: /FY2027\/28 scorecard/ })).toBeVisible();

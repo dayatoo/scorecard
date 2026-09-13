@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { KpiDetailClient } from "./KpiDetailClient";
 import { getKpiDetail, listDepartments } from "@/lib/data";
+import { prisma } from "@/lib/prisma";
 import { requireAuthPage } from "@/lib/session";
 import { ancestorsOf } from "@/lib/kpi-tree";
 import { periodsOfFiscalYear } from "@/lib/fiscal";
@@ -23,9 +24,10 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
   const query = await searchParams;
   const period = typeof query.period === "string" ? query.period : undefined;
 
-  const [detail, departments] = await Promise.all([
+  const [detail, departments, audits] = await Promise.all([
     getKpiDetail(id, period),
     listDepartments(),
+    prisma.kpiAudit.findMany({ where: { kpiId: id }, orderBy: { createdAt: "desc" }, take: 30 }),
   ]);
   if (!detail) notFound();
 
@@ -53,6 +55,8 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
       band: scored?.band ?? null,
       coverage: scored?.coverage ?? 0,
       provisional: scored?.provisional ?? false,
+      prorated: scored?.prorated ?? false,
+      notYetDueShare: scored?.notYetDueShare ?? 0,
     };
   };
 
@@ -115,6 +119,10 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
           level: node.level,
           isLeaf: node.isLeaf,
           weight: node.weight,
+          globalWeight: node.globalWeight,
+          frequency: node.frequency,
+          phasing: node.phasing,
+          phaseConfig: node.phaseConfig,
           metricType: node.metricType,
           direction: node.direction,
           targetMode: node.targetMode,
@@ -137,6 +145,15 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
           body: u.body,
           author: u.author,
           createdAt: u.createdAt.toISOString(),
+        }))}
+        audits={audits.map((a) => ({
+          id: a.id,
+          field: a.field,
+          label: a.label,
+          from: a.from,
+          to: a.to,
+          author: a.author,
+          createdAt: a.createdAt.toISOString(),
         }))}
         departments={departments.map((d) => ({ id: d.id, name: d.name }))}
         period={scorecard.period}

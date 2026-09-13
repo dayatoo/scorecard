@@ -6,6 +6,8 @@ export type ScoreCellProps = {
   band: Band | null;
   /** Marks a score derived from an estimate rather than a settled actual. */
   provisional?: boolean;
+  /** Marks a score derived from a phased (pro-rated) target. */
+  prorated?: boolean;
   /** Why there is no score, shown in place of one. */
   placeholder?: string;
   size?: "sm" | "md" | "lg";
@@ -27,6 +29,7 @@ export function ScoreCell({
   score,
   band,
   provisional = false,
+  prorated = false,
   placeholder = "—",
   size = "md",
   showBandLabel = false,
@@ -48,10 +51,11 @@ export function ScoreCell({
     <span className="inline-flex items-center gap-1.5">
       <span
         className={`tabular inline-flex items-center justify-center rounded font-semibold ${style.chip} ${SIZES[size]}`}
-        title={`${style.label}${provisional ? " — provisional, scored from an estimate" : ""}`}
+        title={`${style.label}${provisional ? " — provisional, scored from an estimate" : ""}${prorated ? " — pro-rated against a phased target" : ""}`}
       >
         {score.toFixed(1)}
         {provisional && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">est</sup>}
+        {prorated && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">pro</sup>}
       </span>
       {showBandLabel && (
         <span className="text-xs text-gray-600">{style.label}</span>
@@ -60,30 +64,37 @@ export function ScoreCell({
   );
 }
 
-/** "82% of weight scored" — how complete a rolled-up score is. */
+/** "82% reported · 8% not yet due" — how complete a rolled-up score is. */
 export function CoverageBadge({
   coverage,
   provisionalShare = 0,
+  notYetDueShare = 0,
 }: {
-  /** Share of weight with a figure behind it, 0..1. */
+  /** Share of *due* weight with a figure behind it, 0..1. */
   coverage: number;
   /** Share of weight whose figure is an estimate, 0..1. */
   provisionalShare?: number;
+  /** Share of total weight not yet due to be reported, 0..1. */
+  notYetDueShare?: number;
 }) {
   const percent = Math.round(coverage * 100);
   const tone =
     percent >= 95 ? "text-gray-500" : percent >= 60 ? "text-amber-700" : "text-rose-700";
+  const notDuePercent = Math.round(notYetDueShare * 100);
+
+  const title = [
+    notYetDueShare > 0
+      ? `${percent}% of this score's due weight has a figure recorded; ${notDuePercent}% of its weight is not yet due.`
+      : `${percent}% of this score's weight has a figure recorded.`,
+    provisionalShare > 0 ? `${Math.round(provisionalShare * 100)}% of it is estimated.` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <span
-      className={`tabular text-xs ${tone}`}
-      title={
-        provisionalShare > 0
-          ? `${percent}% of this score's weight has a figure recorded; ${Math.round(provisionalShare * 100)}% of it is estimated.`
-          : `${percent}% of this score's weight has a figure recorded.`
-      }
-    >
+    <span className={`tabular text-xs ${tone}`} title={title}>
       {percent}%{provisionalShare > 0 && <span className="ml-0.5 opacity-70">est</span>}
+      {notYetDueShare > 0 && <span className="ml-1 text-gray-400"> · {notDuePercent}% not due</span>}
     </span>
   );
 }

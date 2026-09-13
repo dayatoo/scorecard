@@ -20,17 +20,20 @@ import {
   bandLabel,
   type Band,
   type Direction,
+  type Frequency,
   type LeafScore,
   type MetricType,
+  type Phasing,
   type TargetConfig,
   type TargetMode,
 } from "@/lib/scoring";
+import { addKpiUpdate, saveEntry, saveKpiSettings } from "@/app/actions/kpi";
 import {
-  addKpiUpdate,
-  saveEntry,
-  saveKpiSettings,
-  type TargetConfigInput,
-} from "@/app/actions/kpi";
+  crossesNumericMonthBoundary,
+  draftToMetricInput,
+  metricToDraft,
+  type MetricDraft,
+} from "@/lib/targets";
 
 type HistoryRow = {
   period: string;
@@ -53,6 +56,10 @@ type KpiProps = {
   level: number;
   isLeaf: boolean;
   weight: number;
+  globalWeight: number;
+  frequency: Frequency;
+  phasing: Phasing;
+  phaseConfig: number[] | null;
   metricType: MetricType | null;
   direction: Direction | null;
   targetMode: TargetMode | null;
@@ -68,15 +75,29 @@ type KpiProps = {
   leaf: LeafScore | null;
 };
 
-/** One draft object for the whole page, so a single Save covers every edit. */
+/**
+ * One draft object for the whole page, so a single Save covers every edit.
+ * Field order matters: `changes` is emitted in `Object.keys` order, so the
+ * metric fields sit immediately before `targets`/`targetMonth` and the
+ * confirmation dialog reads in causal order (what changed, then its targets).
+ */
 type Draft = {
+  code: string;
   name: string;
   weight: string;
   unit: string;
   departmentIds: string[];
   deadlineMonth: string;
   scoreFinalAfterDeadline: boolean;
+  frequency: Frequency;
+  metricType: MetricType | "";
+  targetMode: TargetMode | "";
+  direction: Direction | "";
+  phasing: Phasing;
+  phaseShares: string; // 12 comma-separated shares, CUSTOM only
   targets: Record<string, string>;
+  targetMonth: string;
+  clearFigures: boolean;
   value: string;
   basis: "ACTUAL" | "ESTIMATE";
   completionDate: string;
@@ -88,6 +109,7 @@ export function KpiDetailClient({
   subKpis,
   history,
   updates,
+  audits,
   departments,
   period,
   periods,
@@ -100,6 +122,7 @@ export function KpiDetailClient({
   }[];
   history: HistoryRow[];
   updates: { id: string; period: string; body: string; author: string | null; createdAt: string }[];
+  audits: { id: string; field: string; label: string; from: string; to: string; author: string | null; createdAt: string }[];
   departments: { id: string; name: string }[];
   period: string;
   periods: string[];
@@ -109,25 +132,34 @@ export function KpiDetailClient({
   const [confirming, setConfirming] = useState(false);
   const current = history.find((h) => h.period === period);
 
-  const initial = useMemo<Draft>(
-    () => ({
+  const initial = useMemo<Draft>(() => {
+    const metric = metricToDraft(kpi);
+    return {
+      code: kpi.code,
       name: kpi.name,
-      weight: kpi.isLeaf ? String(kpi.weight) : "",
+      weight: String(kpi.weight),
       unit: kpi.unit ?? "",
       departmentIds: [...kpi.departmentIds].sort(),
       deadlineMonth: kpi.deadlineMonth ?? "",
       scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
-      targets: targetsToDraft(kpi),
+      frequency: kpi.frequency,
+      metricType: metric.metricType,
+      targetMode: metric.targetMode,
+      direction: metric.direction,
+      phasing: kpi.phasing,
+      phaseShares: (kpi.phaseConfig ?? []).join(", "),
+      targets: metric.targets,
+      targetMonth: metric.targetMonth,
+      clearFigures: false,
       value: current?.value !== null && current?.value !== undefined ? String(current.value) : "",
       basis: current?.basis ?? "ACTUAL",
       completionDate: current?.completionDate ?? "",
       note: current?.note ?? "",
-    }),
+    };
     // Re-seeds when the month changes, which is the only time the server sends
     // a materially different record for the same KPI.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [kpi.id, period]
-  );
+  }, [kpi.id, period]);
 
   const departmentName = (id: string) =>
     departments.find((d) => d.id === id)?.name ?? id;
@@ -140,11 +172,16 @@ export function KpiDetailClient({
       }
       if (field === "targets" && value && typeof value === "object") {
         const targets = value as Record<string, string>;
-        return BANDS.map((b) => {
-          const raw = targets[b] || "";
-          const shown = kpi.metricType === "MONTH_COMPLETION" && b === "MEET" ? formatMonth(raw) : raw;
-          return `${bandLabel(b)} ${shown || "—"}`;
-        }).join("; ");
+        return BANDS.map((b) => `${bandLabel(b)} ${targets[b] || "—"}`).join("; ");
+      }
+      if (field === "targetMonth") {
+        return value ? formatMonth(String(value)) : "empty";
+      }
+      if (field === "metricType") {
+        return value ? String(value).replace(/_/g, " ").toLowerCase() : "no metric (rollup)";
+      }
+      if (field === "clearFigures") {
+        return value ? "figures cleared" : "figures kept";
       }
       if (field === "scoreFinalAfterDeadline") {
         return value ? "score freezes at the deadline" : "partial credit after the deadline";
@@ -159,9 +196,15 @@ export function KpiDetailClient({
       return String(value);
     },
     {
-      name: "Name", weight: "Weight %", unit: "Unit", departmentIds: "Departments",
+      code: "Code", name: "Name", weight: "Weight % (of group)", unit: "Unit",
+      departmentIds: "Departments",
       deadlineMonth: "Deadline month", scoreFinalAfterDeadline: "After the deadline",
-      targets: "Targets", value: `Value for ${formatPeriodLabel(period)}`,
+      frequency: "Reporting frequency",
+      metricType: "Metric type", targetMode: "Target mode", direction: "Direction",
+      phasing: "Phasing", phaseShares: "Phase shares",
+      targets: "Targets", targetMonth: "Target month",
+      clearFigures: "Figures on a metric change",
+      value: `Value for ${formatPeriodLabel(period)}`,
       basis: "Figure is", completionDate: "Completion date",
       note: `Note for ${formatPeriodLabel(period)}`,
     }
@@ -169,7 +212,35 @@ export function KpiDetailClient({
 
   const { draft, setField, changes, isDirty, isSaving, error, reset, commit } = form;
 
-  const entryFields = new Set(["value", "basis", "completionDate", "note"]);
+  const crossesMetricBoundary = crossesNumericMonthBoundary(
+    kpi.metricType,
+    draft.metricType === "" ? null : draft.metricType
+  );
+
+  const settingsFields = new Set([
+    "code", "name", "weight", "unit", "departmentIds", "deadlineMonth",
+    "scoreFinalAfterDeadline", "frequency", "metricType", "targetMode",
+    "direction", "phasing", "phaseShares", "targets", "targetMonth", "clearFigures",
+  ]);
+  const warnings = (() => {
+    const out: string[] = [];
+    if (["metricType", "targetMode", "direction", "targets", "targetMonth"].some((f) => changes.some((c) => c.field === f))) {
+      out.push("Scores for every month of the year are recalculated from the new definition.");
+    }
+    if (changes.some((c) => c.field === "code")) {
+      out.push("A spreadsheet still using the old code will treat this as a different KPI on the next import.");
+    }
+    if (
+      draft.metricType === "MONTH_COMPLETION" &&
+      draft.targetMonth &&
+      draft.targetMonth <= period &&
+      changes.some((c) => c.field === "targetMonth" || c.field === "metricType")
+    ) {
+      out.push("That month has already passed, so this KPI is scored as overdue from now on.");
+    }
+    return out;
+  })();
+
   const save = async () => {
     const ok = await commit(async (d) => {
       const touched = new Set(changes.map((c) => c.field));
@@ -186,16 +257,35 @@ export function KpiDetailClient({
         if (!result.ok) throw new Error(result.error);
       }
 
-      if ([...touched].some((f) => !entryFields.has(f))) {
+      if ([...touched].some((f) => settingsFields.has(f))) {
+        const metricDraft: MetricDraft = {
+          metricType: d.metricType,
+          targetMode: d.targetMode,
+          direction: d.direction,
+          targets: d.targets as Record<Band, string>,
+          targetMonth: d.targetMonth,
+        };
+        const parsed = draftToMetricInput(metricDraft, kpi.isLeaf);
+        if (!parsed.ok) throw new Error(parsed.error);
+
+        const phaseConfig = d.phasing === "CUSTOM"
+          ? d.phaseShares.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n))
+          : null;
+
         const result = await saveKpiSettings({
           kpiId: kpi.id,
+          code: d.code,
           name: d.name,
-          weight: kpi.isLeaf ? Number(d.weight || 0) : 0,
+          weight: Number(d.weight || 0),
           unit: d.unit || null,
           departmentIds: d.departmentIds,
           deadlineMonth: d.deadlineMonth || null,
           scoreFinalAfterDeadline: d.scoreFinalAfterDeadline,
-          targetConfig: draftToTargets(kpi, d.targets),
+          frequency: d.frequency,
+          metric: parsed.metric,
+          clearFiguresForMetricChange: d.clearFigures,
+          phasing: d.phasing,
+          phaseConfig,
         });
         if (!result.ok) throw new Error(result.error);
       }
@@ -259,6 +349,7 @@ export function KpiDetailClient({
         draft={draft}
         setField={setField}
         departments={departments}
+        crossesMetricBoundary={crossesMetricBoundary}
       />
 
       {kpi.isLeaf && <TargetsPanel kpi={kpi} draft={draft} setField={setField} />}
@@ -268,6 +359,8 @@ export function KpiDetailClient({
       <HistoryTable history={history} kpi={kpi} currentPeriod={period} />
 
       <UpdatesPanel kpiId={kpi.id} period={period} updates={updates} />
+
+      <AuditPanel audits={audits} />
 
       <SaveBar
         isDirty={isDirty}
@@ -281,6 +374,8 @@ export function KpiDetailClient({
       <ConfirmSaveDialog
         open={confirming}
         changes={changes}
+        warnings={warnings}
+        error={error}
         isSaving={isSaving}
         title={`Save changes to ${kpi.name}?`}
         onConfirm={save}
@@ -442,7 +537,7 @@ function EntryPanel({
   setField: <K extends keyof Draft>(field: K, value: Draft[K]) => void;
   period: string;
 }) {
-  const isMilestone = kpi.metricType === "MONTH_COMPLETION";
+  const isMilestone = draft.metricType === "MONTH_COMPLETION";
 
   return (
     <Panel
@@ -511,12 +606,13 @@ function EntryPanel({
 }
 
 function SettingsPanel({
-  kpi, draft, setField, departments,
+  kpi, draft, setField, departments, crossesMetricBoundary,
 }: {
   kpi: KpiProps;
   draft: Draft;
   setField: <K extends keyof Draft>(field: K, value: Draft[K]) => void;
   departments: { id: string; name: string }[];
+  crossesMetricBoundary: boolean;
 }) {
   const toggleDepartment = (id: string) => {
     const next = draft.departmentIds.includes(id)
@@ -525,9 +621,20 @@ function SettingsPanel({
     setField("departmentIds", next.sort());
   };
 
+  const isMilestone = draft.metricType === "MONTH_COMPLETION";
+  const isNumericMetric = draft.metricType !== "" && draft.metricType !== "MONTH_COMPLETION";
+
   return (
-    <Panel title="Definition">
+    <Panel title="Definition" description="Metric type, target mode and direction are editable here — changing any of them recalculates every month's score from the new definition.">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Code" hint="Unique within the year. A spreadsheet still using the old code will treat this as a different KPI.">
+          <input
+            className={`mt-1 ${inputClass} font-mono`}
+            value={draft.code}
+            onChange={(e) => setField("code", e.target.value)}
+          />
+        </Field>
+
         <Field label="Name">
           <input
             className={`mt-1 ${inputClass}`}
@@ -536,55 +643,170 @@ function SettingsPanel({
           />
         </Field>
 
+        <Field label="Weight % (of its group)" hint="Its share of its own siblings — every group should add to 100%.">
+          <input
+            type="number" step="any" min="0"
+            className={`mt-1 ${inputClass}`}
+            value={draft.weight}
+            onChange={(e) => setField("weight", e.target.value)}
+          />
+        </Field>
+
+        <Field label="Global %" hint="Derived — this KPI's share of the whole company. Read-only.">
+          <input
+            disabled
+            className={`mt-1 ${inputClass} bg-gray-50 text-gray-500`}
+            value={`${kpi.globalWeight.toFixed(2)}%`}
+          />
+        </Field>
+
+        <Field label="Reporting frequency">
+          <select
+            className={`mt-1 ${inputClass}`}
+            value={draft.frequency}
+            onChange={(e) => setField("frequency", e.target.value as Frequency)}
+          >
+            <option value="MONTHLY">Monthly</option>
+            <option value="QUARTERLY">Quarterly (Jun / Sep / Dec / Mar)</option>
+            <option value="ANNUAL">Annual (March)</option>
+          </select>
+        </Field>
+
         {kpi.isLeaf && (
           <>
-            <Field label="Weight %" hint="All lowest-level KPIs should add to 100%.">
-              <input
-                type="number" step="any" min="0"
+            <Field label="Metric type">
+              <select
                 className={`mt-1 ${inputClass}`}
-                value={draft.weight}
-                onChange={(e) => setField("weight", e.target.value)}
-              />
+                value={draft.metricType}
+                onChange={(e) => setField("metricType", e.target.value as Draft["metricType"])}
+              >
+                <option value="">No metric (make this a rollup)</option>
+                <option value="PERCENTAGE">Percentage</option>
+                <option value="DOLLAR">Money</option>
+                <option value="QUANTITY">Quantity</option>
+                <option value="DAYS">Days</option>
+                <option value="MONTH_COMPLETION">Month of completion</option>
+              </select>
             </Field>
-            <Field label="Unit">
-              <input
-                className={`mt-1 ${inputClass}`}
-                value={draft.unit}
-                placeholder={`e.g. ${DEFAULT_CURRENCY}, %, days`}
-                onChange={(e) => setField("unit", e.target.value)}
-              />
-            </Field>
+
+            {isMilestone && (
+              <Field label="Target month (Meet)">
+                <MonthField
+                  className={`mt-1 ${inputClass}`}
+                  value={draft.targetMonth}
+                  onChange={(yearMonth) => setField("targetMonth", yearMonth)}
+                />
+              </Field>
+            )}
+
+            {isNumericMetric && (
+              <>
+                <Field label="Unit">
+                  <input
+                    className={`mt-1 ${inputClass}`}
+                    value={draft.unit}
+                    placeholder={`e.g. ${DEFAULT_CURRENCY}, %, days`}
+                    onChange={(e) => setField("unit", e.target.value)}
+                  />
+                </Field>
+                <Field label="Direction">
+                  <select
+                    className={`mt-1 ${inputClass}`}
+                    value={draft.direction}
+                    onChange={(e) => setField("direction", e.target.value as Draft["direction"])}
+                  >
+                    <option value="">Choose one</option>
+                    <option value="HIGHER_BETTER">Higher is better</option>
+                    <option value="LOWER_BETTER">Lower is better</option>
+                  </select>
+                </Field>
+                <Field label="Target mode">
+                  <select
+                    className={`mt-1 ${inputClass}`}
+                    value={draft.targetMode}
+                    onChange={(e) => setField("targetMode", e.target.value as Draft["targetMode"])}
+                  >
+                    <option value="">Choose one</option>
+                    <option value="FIXED">Fixed — one number per band</option>
+                    <option value="RANGE">Range — a window per band</option>
+                  </select>
+                </Field>
+                <Field
+                  label="Phasing"
+                  hint="Pro-rates the annual target by how much of the year has elapsed. For cumulative measures only — never rates or stocks."
+                >
+                  <select
+                    className={`mt-1 ${inputClass}`}
+                    value={draft.phasing}
+                    onChange={(e) => setField("phasing", e.target.value as Phasing)}
+                  >
+                    <option value="NONE">None — full-year target every month</option>
+                    <option value="EVEN">Even — divided evenly across 12 months</option>
+                    <option value="CUSTOM">Custom — month-by-month shares</option>
+                  </select>
+                </Field>
+                {draft.phasing === "CUSTOM" && (
+                  <Field label="Phase shares" hint="12 monthly shares (April first), comma-separated, summing to 100.">
+                    <input
+                      className={`mt-1 ${inputClass}`}
+                      value={draft.phaseShares}
+                      placeholder="5, 5, 10, 10, 10, 10, 10, 10, 10, 10, 5, 5"
+                      onChange={(e) => setField("phaseShares", e.target.value)}
+                    />
+                  </Field>
+                )}
+              </>
+            )}
+
           </>
         )}
 
-        {kpi.isLeaf && kpi.metricType !== "MONTH_COMPLETION" && (
-          <>
-            <Field label="Deadline month" hint="Optional. Means the last day of that month.">
-              <MonthField
-                className={`mt-1 ${inputClass}`}
-                value={draft.deadlineMonth}
-                onChange={(yearMonth) => setField("deadlineMonth", yearMonth)}
-              />
-            </Field>
-            <Field
-              label="After the deadline"
-              hint={
-                draft.scoreFinalAfterDeadline
-                  ? "Later achievement is recorded but does not change the score."
-                  : "Capped at 2.9 one month late, 2.4 two months late, then 0."
-              }
+        {kpi.isLeaf && !isMilestone && draft.metricType !== "" && (
+          <Field label="Deadline month" hint="Optional. Means the last day of that month.">
+            <MonthField
+              className={`mt-1 ${inputClass}`}
+              value={draft.deadlineMonth}
+              onChange={(yearMonth) => setField("deadlineMonth", yearMonth)}
+            />
+          </Field>
+        )}
+        {kpi.isLeaf && !isMilestone && draft.metricType !== "" && (
+          <Field
+            label="After the deadline"
+            hint={
+              draft.scoreFinalAfterDeadline
+                ? "Later achievement is recorded but does not change the score."
+                : "Capped at 2.9 one month late, 2.4 two months late, then 0."
+            }
+          >
+            <select
+              className={`mt-1 ${inputClass}`}
+              disabled={!draft.deadlineMonth}
+              value={draft.scoreFinalAfterDeadline ? "final" : "partial"}
+              onChange={(e) => setField("scoreFinalAfterDeadline", e.target.value === "final")}
             >
-              <select
-                className={`mt-1 ${inputClass}`}
-                disabled={!draft.deadlineMonth}
-                value={draft.scoreFinalAfterDeadline ? "final" : "partial"}
-                onChange={(e) => setField("scoreFinalAfterDeadline", e.target.value === "final")}
-              >
-                <option value="partial">Award partial credit</option>
-                <option value="final">Freeze the score</option>
-              </select>
-            </Field>
-          </>
+              <option value="partial">Award partial credit</option>
+              <option value="final">Freeze the score</option>
+            </select>
+          </Field>
+        )}
+
+        {crossesMetricBoundary && (
+          <div className="sm:col-span-2 lg:col-span-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={draft.clearFigures}
+                onChange={(e) => setField("clearFigures", e.target.checked)}
+              />
+              <span>
+                Switching between a numeric metric and month-of-completion cannot keep the
+                figures already recorded — they cannot be read the new way. Tick this to clear
+                them as part of this save; otherwise the save is refused.
+              </span>
+            </label>
+          </div>
         )}
 
         <div className="sm:col-span-2 lg:col-span-3">
@@ -633,25 +855,18 @@ function TargetsPanel({
   draft: Draft;
   setField: <K extends keyof Draft>(field: K, value: Draft[K]) => void;
 }) {
-  const isMilestone = kpi.metricType === "MONTH_COMPLETION";
+  const isMilestone = draft.metricType === "MONTH_COMPLETION";
   const currentValue = kpi.leaf?.value ?? null;
+
+  if (!draft.metricType) return null;
 
   if (isMilestone) {
     return (
       <Panel
         title="Target"
-        description="Completing early climbs a band per month; completing late drops one."
+        description="Completing early climbs a band per month; completing late drops one. The target month itself is set above, under Definition."
       >
-        <div className="max-w-xs">
-          <Field label="Target month (Meet)">
-            <MonthField
-              className={`mt-1 ${inputClass}`}
-              value={draft.targets.MEET ?? ""}
-              onChange={(yearMonth) => setField("targets", { ...draft.targets, MEET: yearMonth })}
-            />
-          </Field>
-        </div>
-        <ul className="mt-4 space-y-1 text-sm text-gray-600">
+        <ul className="mt-1 space-y-1 text-sm text-gray-600">
           {BANDS.slice().reverse().map((band, index) => {
             const offset = 3 - index;
             return (
@@ -679,7 +894,7 @@ function TargetsPanel({
     );
   }
 
-  const isRange = kpi.targetMode === "RANGE";
+  const isRange = draft.targetMode === "RANGE";
 
   return (
     <Panel
@@ -994,53 +1209,33 @@ function UpdatesPanel({
   );
 }
 
-// --- target draft <-> config -----------------------------------------------
+function AuditPanel({
+  audits,
+}: {
+  audits: { id: string; field: string; label: string; from: string; to: string; author: string | null; createdAt: string }[];
+}) {
+  if (audits.length === 0) return null;
 
-function targetsToDraft(kpi: KpiProps): Record<string, string> {
-  const config = kpi.targetConfig;
-  if (!config) return {};
-
-  if (kpi.metricType === "MONTH_COMPLETION") {
-    return { MEET: (config as { targetMonth?: string }).targetMonth ?? "" };
-  }
-
-  const out: Record<string, string> = {};
-  for (const band of BANDS) {
-    const value = (config as Record<Band, unknown>)[band];
-    if (value === undefined || value === null) out[band] = "";
-    else if (Array.isArray(value)) out[band] = `${value[0]}-${value[1]}`;
-    else out[band] = String(value);
-  }
-  return out;
-}
-
-function draftToTargets(kpi: KpiProps, targets: Record<string, string>): TargetConfigInput | null {
-  if (kpi.metricType === "MONTH_COMPLETION") {
-    const targetMonth = targets.MEET?.trim();
-    return targetMonth ? { kind: "MONTH", targetMonth } : null;
-  }
-
-  if (kpi.targetMode === "RANGE") {
-    const bands = {} as Record<Band, [number, number]>;
-    for (const band of BANDS) {
-      const match = (targets[band] ?? "").trim().match(/^(-?[\d.]+)\s*-\s*(-?[\d.]+)$/);
-      if (!match) throw new Error(`The ${bandLabel(band)} window should look like "50-69".`);
-      bands[band] = [Number(match[1]), Number(match[2])];
-    }
-    return { kind: "RANGE", bands };
-  }
-
-  if (kpi.targetMode === "FIXED") {
-    const bands = {} as Record<Band, number>;
-    for (const band of BANDS) {
-      const value = Number((targets[band] ?? "").replace(/[,\s$£€%]/g, ""));
-      if (!Number.isFinite(value)) throw new Error(`The ${bandLabel(band)} target is not a number.`);
-      bands[band] = value;
-    }
-    return { kind: "FIXED", bands };
-  }
-
-  return null;
+  return (
+    <Panel title="Changes to this KPI" description="A record of definition changes — who changed what, and from what.">
+      <ul className="space-y-3">
+        {audits.map((a) => (
+          <li key={a.id} className="text-sm">
+            <div className="flex flex-wrap items-baseline gap-2 text-xs text-gray-500">
+              <span className="font-medium text-gray-700">{a.author || "Anonymous"}</span>
+              <span>{formatDate(new Date(a.createdAt))}</span>
+            </div>
+            <div className="mt-0.5 font-medium text-gray-900">{a.label}</div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-gray-600">
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 line-through decoration-gray-400">{a.from}</span>
+              <span aria-hidden>→</span>
+              <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-900">{a.to}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
 }
 
 function targetPoint(kpi: KpiProps, band: Band): number | null {

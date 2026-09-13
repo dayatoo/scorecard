@@ -310,8 +310,9 @@ describe("column dropdowns", () => {
     const ranges = (await validationsOf(await buildTemplateWorkbook([]))).map((v) => v.sqref);
 
     assert.equal(new Set(ranges).size, ranges.length);
-    // One range per validated column, not one per cell.
-    assert.equal(ranges.length, 5);
+    // One range per validated column, not one per cell: Metric Type, Unit,
+    // Direction, Target Mode, Score Final After Deadline, Frequency, Phasing.
+    assert.equal(ranges.length, 7);
   });
 
   it("leaves the sheet empty, so exported rows start at row 2", async () => {

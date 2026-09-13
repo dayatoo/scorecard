@@ -19,7 +19,14 @@ export type TreeRow = {
   /** Score per period, keyed by period. */
   scores: Record<
     string,
-    { score: number | null; band: Band | null; coverage: number; provisional: boolean }
+    {
+      score: number | null;
+      band: Band | null;
+      coverage: number;
+      provisional: boolean;
+      prorated: boolean;
+      notYetDueShare: number;
+    }
   >;
   pendingReason: string | null;
 };
@@ -42,7 +49,17 @@ export function ScoreTree({
   periods: string[];
   currentPeriod: string;
   total: {
-    scores: Record<string, { score: number | null; band: Band | null; coverage: number; provisional: boolean }>;
+    scores: Record<
+      string,
+      {
+        score: number | null;
+        band: Band | null;
+        coverage: number;
+        provisional: boolean;
+        prorated: boolean;
+        notYetDueShare: number;
+      }
+    >;
   };
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(
@@ -162,6 +179,7 @@ export function ScoreTree({
                           score={entry?.score ?? null}
                           band={entry?.band ?? null}
                           provisional={entry?.provisional}
+                          prorated={entry?.prorated}
                           size="sm"
                           placeholder={
                             period === currentPeriod && row.pendingReason === "NOT_YET_DUE"
@@ -174,7 +192,7 @@ export function ScoreTree({
                   })}
 
                   <td className="px-3 py-1.5 text-right">
-                    <CoverageBadge coverage={current?.coverage ?? 0} />
+                    <CoverageBadge coverage={current?.coverage ?? 0} notYetDueShare={current?.notYetDueShare} />
                   </td>
                 </tr>
               );
@@ -194,13 +212,17 @@ export function ScoreTree({
                       score={entry?.score ?? null}
                       band={entry?.band ?? null}
                       provisional={entry?.provisional}
+                      prorated={entry?.prorated}
                       size="sm"
                     />
                   </td>
                 );
               })}
               <td className="px-3 py-2.5 text-right">
-                <CoverageBadge coverage={total.scores[currentPeriod]?.coverage ?? 0} />
+                <CoverageBadge
+                  coverage={total.scores[currentPeriod]?.coverage ?? 0}
+                  notYetDueShare={total.scores[currentPeriod]?.notYetDueShare}
+                />
               </td>
             </tr>
           </tfoot>

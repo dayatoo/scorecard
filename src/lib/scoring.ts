@@ -59,6 +59,8 @@ export type MetricType =
   | "MONTH_COMPLETION";
 export type TargetMode = "FIXED" | "RANGE";
 export type ValueBasis = "ACTUAL" | "ESTIMATE";
+export type Frequency = "MONTHLY" | "QUARTERLY" | "ANNUAL";
+export type Phasing = "NONE" | "EVEN" | "CUSTOM";
 
 /** One number per band. Targets step by 1 unit in practice. */
 export type FixedTargetConfig = Record<Band, number>;
@@ -335,6 +337,63 @@ export function applyDeadline(params: {
 }
 
 // --------------------------------------------------------------------------
+// Phased (pro-rated) targets
+// --------------------------------------------------------------------------
+
+/**
+ * The fraction of the annual target expected by the reporting month, where
+ * month 1 is the first month of the fiscal year. `EVEN` divides evenly across
+ * the year; `CUSTOM` cumulates the KPI's own monthly shares (0-100 each);
+ * `NONE` is always 1 — the whole annual target, every month, which is today's
+ * behaviour for every existing KPI.
+ */
+export function phaseFraction(
+  phasing: Phasing,
+  monthOfYear: number,
+  phaseConfig: number[] | null
+): number {
+  if (phasing === "NONE") return 1;
+  if (phasing === "EVEN") return clamp(monthOfYear, 0, 12) / 12;
+
+  const shares = phaseConfig ?? [];
+  const upTo = shares.slice(0, clamp(monthOfYear, 0, 12));
+  return upTo.reduce((sum, s) => sum + s, 0) / 100;
+}
+
+/**
+ * Scales a target config by `fraction` before it reaches the band-comparison
+ * functions above — the only place phasing enters the engine. Every band
+ * target, and both edges of every range window, are scaled by the same
+ * positive factor, which preserves band ordering in both directions.
+ *
+ * `MONTH_COMPLETION` has no annual quantity to phase, so it is returned
+ * unchanged. For `fraction === 1` (the `NONE` case, and month 12 under
+ * `EVEN`/a complete `CUSTOM` schedule) the input is returned by reference,
+ * so a KPI that has never used phasing scores identically to before this
+ * feature existed.
+ */
+export function scalePhasedTarget(
+  config: TargetConfig,
+  targetMode: TargetMode | null,
+  fraction: number
+): TargetConfig {
+  if (!targetMode || fraction === 1) return config;
+
+  if (targetMode === "FIXED") {
+    const scaled = {} as FixedTargetConfig;
+    for (const band of BANDS) scaled[band] = (config as FixedTargetConfig)[band] * fraction;
+    return scaled;
+  }
+
+  const scaled = {} as RangeTargetConfig;
+  for (const band of BANDS) {
+    const [a, b] = (config as RangeTargetConfig)[band];
+    scaled[band] = [a * fraction, b * fraction];
+  }
+  return scaled;
+}
+
+// --------------------------------------------------------------------------
 // Leaf scoring
 // --------------------------------------------------------------------------
 
@@ -345,7 +404,26 @@ export type KpiDefinition = {
   targetConfig: TargetConfig | null;
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
+  /** Leaf reporting frequency; only decides whether a period is "due". */
+  frequency?: Frequency;
+  phasing?: Phasing;
+  /** CUSTOM only: 12 monthly shares (0-100), April first. */
+  phaseConfig?: number[] | null;
 };
+
+/** Which months of a fiscal year a KPI at this frequency is due in (1-12, April first). */
+export function dueMonths(frequency: Frequency): number[] {
+  if (frequency === "MONTHLY") return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  if (frequency === "QUARTERLY") return [3, 6, 9, 12];
+  return [12]; // ANNUAL — due once, at fiscal year end (March)
+}
+
+/** 1-based month-of-fiscal-year for a "YYYY-MM" period, given the FY start year. */
+export function monthOfFiscalYear(period: string): number {
+  const { month } = parsePeriod(period);
+  // Fiscal months run April(1)..March(12).
+  return ((month - 4 + 12) % 12) + 1;
+}
 
 export type Entry = {
   period: string;
@@ -366,6 +444,10 @@ export type LeafScore = {
   deadline: DeadlineOutcome | null;
   /** Why there is no score, when there isn't one. */
   pendingReason: "NO_DATA" | "NOT_YET_DUE" | null;
+  /** True when this score was computed against a phased (pro-rated) target. */
+  prorated: boolean;
+  /** The phased target actually used, when prorated — for showing the derivation. */
+  phasedTarget: TargetConfig | null;
 };
 
 const NO_SCORE = (pendingReason: LeafScore["pendingReason"]): LeafScore => ({
@@ -376,6 +458,8 @@ const NO_SCORE = (pendingReason: LeafScore["pendingReason"]): LeafScore => ({
   provisional: false,
   deadline: null,
   pendingReason,
+  prorated: false,
+  phasedTarget: null,
 });
 
 /**
@@ -420,15 +504,23 @@ export function scoreLeaf(
   }
 
   const entry = selectEntry(entries, period);
-  if (!entry || entry.value === null) return NO_SCORE("NO_DATA");
+  if (!entry || entry.value === null) {
+    const frequency = kpi.frequency ?? "MONTHLY";
+    const notDue = frequency !== "MONTHLY" && !dueMonths(frequency).includes(monthOfFiscalYear(period));
+    return NO_SCORE(notDue ? "NOT_YET_DUE" : "NO_DATA");
+  }
   if (!kpi.direction || !kpi.targetMode || !kpi.targetConfig) {
     return NO_SCORE("NO_DATA");
   }
 
+  const fraction = phaseFraction(kpi.phasing ?? "NONE", monthOfFiscalYear(period), kpi.phaseConfig ?? null);
+  const phasedConfig = scalePhasedTarget(kpi.targetConfig, kpi.targetMode, fraction);
+  const prorated = fraction < 1;
+
   const raw =
     kpi.targetMode === "FIXED"
-      ? scoreFixedTarget(entry.value, kpi.targetConfig as FixedTargetConfig, kpi.direction)
-      : scoreRangeTarget(entry.value, kpi.targetConfig as RangeTargetConfig, kpi.direction);
+      ? scoreFixedTarget(entry.value, phasedConfig as FixedTargetConfig, kpi.direction)
+      : scoreRangeTarget(entry.value, phasedConfig as RangeTargetConfig, kpi.direction);
 
   const deadline = applyDeadline({
     rawScore: roundScore(raw),
@@ -449,6 +541,8 @@ export function scoreLeaf(
     provisional: entry.basis === "ESTIMATE",
     deadline: kpi.deadlineMonth ? deadline : null,
     pendingReason: null,
+    prorated,
+    phasedTarget: prorated ? phasedConfig : null,
   };
 }
 
@@ -462,10 +556,13 @@ function scoreFrozenAtDeadline(
   if (!entry || entry.value === null) return 0; // nothing achieved by the deadline
   if (!kpi.direction || !kpi.targetMode || !kpi.targetConfig) return null;
 
+  const fraction = phaseFraction(kpi.phasing ?? "NONE", monthOfFiscalYear(deadlineMonth), kpi.phaseConfig ?? null);
+  const phasedConfig = scalePhasedTarget(kpi.targetConfig, kpi.targetMode, fraction);
+
   const raw =
     kpi.targetMode === "FIXED"
-      ? scoreFixedTarget(entry.value, kpi.targetConfig as FixedTargetConfig, kpi.direction)
-      : scoreRangeTarget(entry.value, kpi.targetConfig as RangeTargetConfig, kpi.direction);
+      ? scoreFixedTarget(entry.value, phasedConfig as FixedTargetConfig, kpi.direction)
+      : scoreRangeTarget(entry.value, phasedConfig as RangeTargetConfig, kpi.direction);
   return roundScore(raw);
 }
 
@@ -492,6 +589,8 @@ function scoreMilestoneLeaf(
       provisional: completed.basis === "ESTIMATE",
       deadline: null,
       pendingReason: null,
+      prorated: false,
+      phasedTarget: null,
     };
   }
 
@@ -509,6 +608,8 @@ function scoreMilestoneLeaf(
     provisional: false,
     deadline: null,
     pendingReason: null,
+    prorated: false,
+    phasedTarget: null,
   };
 }
 
@@ -536,6 +637,10 @@ export type RollupInput = {
   scoredWeight: number;
   /** How much of the scored weight rests on an estimate. */
   provisionalWeight: number;
+  /** How much of the (unscored) weight is not yet due, rather than missing. */
+  notYetDueWeight?: number;
+  /** How much of the scored weight rests on a phased (pro-rated) target. */
+  proratedWeight?: number;
 };
 
 export type Rollup = {
@@ -548,8 +653,14 @@ export type Rollup = {
   coverage: number;
   /** Share of total weight whose score came from an estimate, 0..1. */
   provisionalShare: number;
+  /** Share of total weight not yet due, excluded from both scored and coverage denominators. */
+  notYetDueShare: number;
+  /** Share of total weight whose score rests on a phased (pro-rated) target. */
+  proratedShare: number;
   scoredWeight: number;
   provisionalWeight: number;
+  notYetDueWeight: number;
+  proratedWeight: number;
   totalWeight: number;
 };
 
@@ -572,6 +683,17 @@ export function rollup(children: RollupInput[]): Rollup {
     (sum, c) => sum + Math.max(0, c.provisionalWeight),
     0
   );
+  const notYetDueWeight = children.reduce(
+    (sum, c) => sum + Math.max(0, c.notYetDueWeight ?? 0),
+    0
+  );
+  const proratedWeight = children.reduce(
+    (sum, c) => sum + Math.max(0, c.proratedWeight ?? 0),
+    0
+  );
+  // The denominator for coverage: total weight, minus what isn't due yet — a
+  // KPI that can't have been reported on shouldn't read as a gap.
+  const dueWeight = Math.max(0, totalWeight - notYetDueWeight);
 
   const contributing = children.filter((c) => c.score !== null && c.scoredWeight > 0);
 
@@ -582,8 +704,12 @@ export function rollup(children: RollupInput[]): Rollup {
       band: null,
       coverage: 0,
       provisionalShare: 0,
+      notYetDueShare: dueWeight > 0 || totalWeight === 0 ? 0 : 1,
+      proratedShare: 0,
       scoredWeight: 0,
       provisionalWeight: 0,
+      notYetDueWeight,
+      proratedWeight: 0,
       totalWeight,
     };
   }
@@ -599,10 +725,14 @@ export function rollup(children: RollupInput[]): Rollup {
     score,
     exactScore,
     band: bandForScore(score),
-    coverage: totalWeight > 0 ? scoredWeight / totalWeight : 0,
+    coverage: dueWeight > 0 ? scoredWeight / dueWeight : 0,
     provisionalShare: totalWeight > 0 ? provisionalWeight / totalWeight : 0,
+    notYetDueShare: totalWeight > 0 ? notYetDueWeight / totalWeight : 0,
+    proratedShare: totalWeight > 0 ? proratedWeight / totalWeight : 0,
     scoredWeight,
     provisionalWeight,
+    notYetDueWeight,
+    proratedWeight,
     totalWeight,
   };
 }

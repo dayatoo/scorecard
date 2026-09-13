@@ -12,13 +12,16 @@ import { DEFAULT_CURRENCY } from "./config";
 import type { KpiRecord, ScoredNode } from "./kpi-tree";
 import { flattenTree } from "./kpi-tree";
 import { formatPeriodLabel } from "./fiscal";
+import { parseNumberInput, parseRangeInput } from "./targets";
 import {
   BANDS,
   BAND_BOUNDS,
   bandLabel,
   type Band,
   type Direction,
+  type Frequency,
   type MetricType,
+  type Phasing,
   type TargetMode,
 } from "./scoring";
 
@@ -37,11 +40,18 @@ const BAND_COLUMNS: Record<Band, string> = {
   EXCELLENT: "Excellent",
 };
 
+// "Weight %" was renamed to "Weight % (of group)" when weights changed from a
+// company-wide share to a share of a KPI's own siblings. The rename matters
+// more than it looks: the parser checks headers and refuses a missing one, so
+// an old global-weight workbook is rejected outright rather than silently
+// misread — a leaf whose global weight of 0.3 sat among siblings totalling 5
+// would otherwise be read as a *local* 0.3 and normalised to 6% of its group,
+// a twentyfold distortion with no warning at all.
 export const KPI_COLUMNS = [
   "Code",
   "Name",
   "Parent Code",
-  "Weight %",
+  "Weight % (of group)",
   "Departments",
   "Metric Type",
   "Unit",
@@ -50,7 +60,13 @@ export const KPI_COLUMNS = [
   ...BANDS.map((b) => BAND_COLUMNS[b]),
   "Deadline Month",
   "Score Final After Deadline",
+  "Frequency",
+  "Phasing",
+  "Phase Shares",
 ] as const;
+
+/** Export-only, informational: mirrors the detail page's derived Global % field. Ignored on import. */
+const GLOBAL_WEIGHT_COLUMN = "Global %";
 
 const METRIC_TYPES: MetricType[] = [
   "PERCENTAGE",
@@ -62,6 +78,8 @@ const METRIC_TYPES: MetricType[] = [
 
 const DIRECTIONS: Direction[] = ["HIGHER_BETTER", "LOWER_BETTER"];
 const TARGET_MODES: TargetMode[] = ["FIXED", "RANGE"];
+const FREQUENCIES: Frequency[] = ["MONTHLY", "QUARTERLY", "ANNUAL"];
+const PHASINGS: Phasing[] = ["NONE", "EVEN", "CUSTOM"];
 
 /**
  * Units seen on most scorecards. Unlike the columns above this is only a
@@ -81,6 +99,8 @@ const LIST_COLUMNS: { column: string; values: string[]; strict: boolean }[] = [
   { column: "Direction", values: DIRECTIONS, strict: true },
   { column: "Target Mode", values: TARGET_MODES, strict: true },
   { column: "Score Final After Deadline", values: ["Yes", "No"], strict: true },
+  { column: "Frequency", values: FREQUENCIES, strict: true },
+  { column: "Phasing", values: PHASINGS, strict: true },
 ];
 
 /**
@@ -98,6 +118,7 @@ export type ParsedKpi = {
   code: string;
   name: string;
   parentCode: string | null;
+  /** Local weight — this row's share of its own siblings. */
   weight: number;
   departments: string[];
   metricType: MetricType | null;
@@ -107,6 +128,9 @@ export type ParsedKpi = {
   targetConfig: string | null;
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
+  frequency: Frequency;
+  phasing: Phasing;
+  phaseConfig: string | null;
   /** Spreadsheet row number, so errors can point at it. */
   row: number;
 };
@@ -191,24 +215,9 @@ function parseMonth(text: string): string | null {
   return `${yearText}-${String(monthIndex + 1).padStart(2, "0")}`;
 }
 
-/** A range cell: "50-69", "50 – 69", or "50 to 69". */
-function parseRange(text: string): [number, number] | null {
-  const cleaned = text.replace(/\s*(?:to|–|—)\s*/gi, "-").trim();
-  const match = cleaned.match(/^(-?[\d.]+)\s*-\s*(-?[\d.]+)$/);
-  if (!match) return null;
-  const lo = Number(match[1]);
-  const hi = Number(match[2]);
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
-  return [lo, hi];
-}
-
-function parseNumber(text: string): number | null {
-  if (!text) return null;
-  // Tolerate figures pasted with thousands separators, currency or a % sign.
-  const cleaned = text.replace(/[,\s$£€%]/g, "");
-  const value = Number(cleaned);
-  return Number.isFinite(value) ? value : null;
-}
+// Parsing shared with the KPI detail page's editors — see targets.ts.
+const parseRange = parseRangeInput;
+const parseNumber = parseNumberInput;
 
 /**
  * Reads an uploaded workbook into KPI rows. Never throws on bad content: every
@@ -286,10 +295,44 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
     }
     seenCodes.set(code.toLowerCase(), rowNumber);
 
-    const weightText = get(row, "Weight %");
+    const weightText = get(row, "Weight % (of group)");
     const weight = weightText ? parseNumber(weightText) : 0;
     if (weightText && weight === null) {
       issues.push({ row: rowNumber, message: `${code}: "${weightText}" is not a valid weight.` });
+    }
+
+    const frequencyText = get(row, "Frequency").toUpperCase().replace(/[\s-]+/g, "_");
+    const frequency: Frequency = FREQUENCIES.includes(frequencyText as Frequency)
+      ? (frequencyText as Frequency)
+      : "MONTHLY";
+    if (frequencyText && !FREQUENCIES.includes(frequencyText as Frequency)) {
+      issues.push({
+        row: rowNumber,
+        message: `${code}: "${get(row, "Frequency")}" is not a frequency. Use one of ${FREQUENCIES.join(", ")}.`,
+      });
+    }
+
+    const phasingText = get(row, "Phasing").toUpperCase();
+    const phasing: Phasing = PHASINGS.includes(phasingText as Phasing) ? (phasingText as Phasing) : "NONE";
+    if (phasingText && !PHASINGS.includes(phasingText as Phasing)) {
+      issues.push({
+        row: rowNumber,
+        message: `${code}: "${get(row, "Phasing")}" is not a phasing option. Use one of ${PHASINGS.join(", ")}.`,
+      });
+    }
+
+    let phaseConfig: string | null = null;
+    if (phasing === "CUSTOM") {
+      const sharesText = get(row, "Phase Shares");
+      const shares = sharesText.split(";").map((s) => parseNumber(s.trim()));
+      if (shares.length !== 12 || shares.some((s) => s === null)) {
+        issues.push({
+          row: rowNumber,
+          message: `${code}: Phase Shares needs 12 numbers separated by semicolons when Phasing is Custom.`,
+        });
+      } else {
+        phaseConfig = JSON.stringify(shares);
+      }
     }
 
     const departments = get(row, "Departments")
@@ -352,6 +395,9 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
       targetConfig,
       deadlineMonth,
       scoreFinalAfterDeadline: parseYesNo(get(row, "Score Final After Deadline")),
+      frequency,
+      phasing,
+      phaseConfig,
       row: rowNumber,
     });
   });
@@ -619,7 +665,11 @@ function addReadmeSheet(workbook: ExcelJS.Workbook) {
     ["Deadline Month", "Optional, YYYY-MM. Use it for a KPI that is time-bound even though its metric is not. It means the last day of that month."],
     ["Score Final After Deadline", 'Yes — the score freezes at whatever it was in the deadline month; later achievement is recorded but does not change it. No (the default) — later achievement still earns partial credit, capped at 2.9 one month late, 2.4 two months late, and 0 after that.'],
     ["Departments", "Who owns the KPI. Separate several with a semicolon, e.g. Finance; Operations. Names should match the Departments sheet."],
-    ["Dropdowns", `Metric Type, Direction, Target Mode and Score Final After Deadline are dropdowns — pick from the list rather than typing, and Excel will refuse anything else. Unit offers ${UNIT_SUGGESTIONS.join(", ")} as a shortcut but accepts any label, so a KPI counted in something else can still be typed in. Every one of them may be left blank on a KPI that has children.`],
+    ["Frequency", "How often the KPI is reported: Monthly (the default), Quarterly (due Jun/Sep/Dec/Mar) or Annual (due in March). A KPI not yet due in a month doesn't count as a reporting gap."],
+    ["Phasing", 'None (the default) scores the year-to-date figure against the full-year target every month. Even divides the annual target evenly across 12 months. Custom uses the Phase Shares column. Only for cumulative measures — never for rates or stocks.'],
+    ["Phase Shares", 'Custom phasing only: 12 monthly shares (April first), summing to 100, separated by semicolons — e.g. "5;5;10;10;10;10;10;10;10;10;5;5".'],
+    ["Global %", "Export only, derived and read-only: this KPI's share of the whole company. Ignored on import — edit Weight % (of group) instead."],
+    ["Dropdowns", `Metric Type, Direction, Target Mode, Score Final After Deadline, Frequency and Phasing are dropdowns — pick from the list rather than typing, and Excel will refuse anything else. Unit offers ${UNIT_SUGGESTIONS.join(", ")} as a shortcut but accepts any label, so a KPI counted in something else can still be typed in. Every one of them may be left blank on a KPI that has children.`],
     ["Values sheet (optional)", 'Add a sheet named "Values" to load monthly figures alongside the hierarchy, instead of typing them in. Columns: Code, Period, Value, Basis, Completion Date, Note. Period is YYYY-MM. Basis is Actual or Estimate. Completion Date (dd/mm/yyyy) is only for month-of-completion KPIs. A row overwrites whatever is recorded for that KPI and month.'],
   ];
 
@@ -641,9 +691,14 @@ function addDepartmentSheet(workbook: ExcelJS.Workbook, departments: string[]) {
   return sheet;
 }
 
-function addKpiSheet(workbook: ExcelJS.Workbook) {
+function addKpiSheet(workbook: ExcelJS.Workbook, options?: { includeGlobalWeight?: boolean }) {
   const sheet = workbook.addWorksheet(KPI_SHEET);
-  sheet.columns = KPI_COLUMNS.map((header) => ({
+  const headers: string[] = [...KPI_COLUMNS];
+  // Appended at the end, never inserted, so it never shifts the positions
+  // addListValidation and formatTargetCell rely on KPI_COLUMNS for.
+  if (options?.includeGlobalWeight) headers.push(GLOBAL_WEIGHT_COLUMN);
+
+  sheet.columns = headers.map((header) => ({
     header,
     width:
       header === "Name" ? 42 : header === "Departments" ? 26 : header === "Score Final After Deadline" ? 24 : 16,
@@ -738,14 +793,27 @@ export type ExportKpi = Pick<
   departments: string[];
   targetConfig: unknown;
   isLeaf: boolean;
+  frequency?: Frequency;
+  phasing?: Phasing;
+  phaseConfig?: number[] | string | null;
+  /** Export only — this KPI's derived share of the whole company. */
+  globalWeight?: number;
 };
 
 function kpiRow(kpi: ExportKpi): (string | number | null)[] {
-  return [
+  const phaseShares = Array.isArray(kpi.phaseConfig)
+    ? kpi.phaseConfig.join(";")
+    : typeof kpi.phaseConfig === "string"
+      ? (JSON.parse(kpi.phaseConfig) as number[]).join(";")
+      : null;
+
+  const row: (string | number | null)[] = [
     kpi.code,
     kpi.name,
     kpi.parentCode,
-    kpi.isLeaf ? kpi.weight : null,
+    // Every node now carries a meaningful local weight — its share of its own
+    // siblings — parents included, not just leaves.
+    kpi.weight,
     kpi.departments.join("; ") || null,
     kpi.metricType,
     kpi.unit,
@@ -756,7 +824,12 @@ function kpiRow(kpi: ExportKpi): (string | number | null)[] {
     ),
     kpi.deadlineMonth,
     kpi.scoreFinalAfterDeadline ? "Yes" : "No",
+    kpi.frequency && kpi.frequency !== "MONTHLY" ? kpi.frequency : null,
+    kpi.phasing && kpi.phasing !== "NONE" ? kpi.phasing : null,
+    kpi.phasing === "CUSTOM" ? phaseShares : null,
   ];
+  if (kpi.globalWeight !== undefined) row.push(Number(kpi.globalWeight.toFixed(2)));
+  return row;
 }
 
 /** A blank workbook with the headers, the rules, and the department list. */
@@ -847,7 +920,7 @@ export async function buildExportWorkbook(params: {
 
   addReadmeSheet(workbook);
 
-  const kpiSheet = addKpiSheet(workbook);
+  const kpiSheet = addKpiSheet(workbook, { includeGlobalWeight: true });
   params.kpis.forEach((kpi) => kpiSheet.addRow(kpiRow(kpi)));
 
   addDepartmentSheet(workbook, params.departments);

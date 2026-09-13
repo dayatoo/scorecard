@@ -75,6 +75,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           band: null,
           coverage: 0,
           provisional: false,
+          prorated: false,
+          notYetDueShare: 0,
         },
       ])
     ),
@@ -91,6 +93,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             band: t?.band ?? null,
             coverage: t?.coverage ?? 0,
             provisional: (t?.provisionalShare ?? 0) > 0,
+            prorated: (t?.proratedWeight ?? 0) > 0,
+            notYetDueShare: t?.notYetDueShare ?? 0,
           },
         ];
       })
@@ -108,13 +112,20 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           score={scorecard.total.score}
           band={scorecard.total.band}
           provisional={scorecard.total.provisionalShare > 0}
+          prorated={scorecard.total.proratedWeight > 0}
           footer={
             <>
               <CoverageBadge
                 coverage={scorecard.total.coverage}
                 provisionalShare={scorecard.total.provisionalShare}
+                notYetDueShare={scorecard.total.notYetDueShare}
               />
               <span className="ml-1 text-xs text-gray-500">of weight scored</span>
+              {scorecard.total.proratedShare > 0 && (
+                <span className="ml-1 text-xs text-gray-500">
+                  · {Math.round(scorecard.total.proratedShare * 100)}% pro-rated
+                </span>
+              )}
             </>
           }
         />
@@ -129,9 +140,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             score={goal.score}
             band={goal.band}
             provisional={goal.provisional}
+            prorated={goal.prorated}
             footer={
               <>
-                <CoverageBadge coverage={goal.coverage} />
+                <CoverageBadge coverage={goal.coverage} notYetDueShare={goal.notYetDueShare} />
                 <span className="ml-1 text-xs text-gray-500">
                   of {goal.weight.toFixed(0)}% weight
                 </span>
@@ -193,6 +205,7 @@ function SummaryCard({
   score,
   band,
   provisional,
+  prorated,
   footer,
   href,
 }: {
@@ -200,6 +213,7 @@ function SummaryCard({
   score: number | null;
   band: Parameters<typeof ScoreCell>[0]["band"];
   provisional?: boolean;
+  prorated?: boolean;
   footer?: React.ReactNode;
   href?: string;
 }) {
@@ -213,6 +227,7 @@ function SummaryCard({
           score={score}
           band={band}
           provisional={provisional}
+          prorated={prorated}
           size="lg"
           showBandLabel
         />

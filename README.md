@@ -2,19 +2,29 @@
 
 Tracks a company's KPIs for a financial year and scores them 0–5.
 
-KPIs form a hierarchy up to four levels deep — Strategic Goal → KPI → sub-KPI →
-sub-sub-KPI. Only the lowest-level KPIs carry a metric and a weight; everything
-above is the weighted average of what sits beneath it, up to a single combined
-score for the company.
+KPIs form a hierarchy up to five levels deep — Strategic Goal → KPI → sub-KPI →
+sub-sub-KPI → sub-sub-sub-KPI. Only the lowest-level KPIs carry a metric,
+targets and a weight; everything above is the weighted average of what sits
+beneath it, up to a single combined score for the company.
+
+Weight is a share of a KPI's own siblings, not of the whole company — the
+company-wide ("global") share is derived and shown read-only. Every group
+(Strategic Goals included) should sum to 100; a group that doesn't is warned
+about, never blocked, and its shares are applied proportionally.
 
 - **Dashboard** — the hierarchy for the current month and the three before it,
   with the total combined score.
 - **KPIs** — every lowest-level KPI in one sortable, filterable table, or one
   hierarchy level at a time.
-- **KPI pages** — score history, charts, targets, status updates, and editing.
+- **KPI pages** — score history, charts, targets, status updates, editing
+  every attribute (including metric type, target mode and direction), and a
+  record of past changes.
+- **Hierarchy** — add, move, re-order or delete KPIs directly, without
+  needing to import a spreadsheet.
 - **Deadlines** — what is due in the next three months, and what is overdue.
 - **Enter Data** — the month's figures for every KPI in one screen.
-- **Import / Export** — the whole scorecard as an Excel workbook.
+- **Import / Export** — the whole scorecard as an Excel workbook, with an
+  Update-only mode so an import can't silently remove what was built in the app.
 
 ## How scoring works
 

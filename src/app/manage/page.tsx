@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { ManageClient } from "./ManageClient";
 import { listDepartments, listFiscalYears } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
@@ -22,12 +24,24 @@ export default async function ManagePage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Manage</h1>
-        <p className="mt-0.5 text-sm text-gray-600">
-          Fiscal years and the department list. KPIs themselves are edited on
-          their own pages, or imported from a spreadsheet.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Manage</h1>
+          <p className="mt-0.5 text-sm text-gray-600">
+            Fiscal years and the department list. Build structure on the{" "}
+            <Link href="/manage/hierarchy" className="text-blue-700 hover:underline">
+              Hierarchy
+            </Link>{" "}
+            page, or import it from a spreadsheet; attributes are edited on each
+            KPI&rsquo;s own page.
+          </p>
+        </div>
+        <Link
+          href="/manage/hierarchy"
+          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Open Hierarchy →
+        </Link>
       </div>
 
       <ManageClient

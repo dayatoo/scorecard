@@ -33,6 +33,7 @@ export async function GET(request: Request) {
     name: node.name,
     parentCode: node.parentId ? (codeById.get(node.parentId) ?? null) : null,
     weight: node.weight,
+    globalWeight: node.globalWeight,
     departments: node.departments.map((d) => d.name),
     metricType: node.metricType,
     unit: node.unit,
@@ -41,6 +42,9 @@ export async function GET(request: Request) {
     targetConfig: node.targetConfig,
     deadlineMonth: node.deadlineMonth,
     scoreFinalAfterDeadline: node.scoreFinalAfterDeadline,
+    frequency: node.frequency,
+    phasing: node.phasing,
+    phaseConfig: node.phaseConfig,
     isLeaf: node.isLeaf,
   }));
 

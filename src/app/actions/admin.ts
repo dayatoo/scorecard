@@ -154,6 +154,8 @@ export async function saveDepartments(
   });
 }
 
+export type ImportMode = "REPLACE" | "UPDATE";
+
 export type ImportSummary = {
   created: number;
   updated: number;
@@ -164,20 +166,25 @@ export type ImportSummary = {
 };
 
 /**
- * Replaces a fiscal year's hierarchy with the contents of a parsed workbook.
+ * Writes the contents of a parsed workbook into a fiscal year.
  *
  * Matching is by code, so re-importing an edited sheet updates KPIs in place
- * and keeps their recorded values. A KPI whose code has disappeared from the
- * sheet is removed, along with its values — which is why the import screen
- * shows a diff and asks for confirmation first.
+ * and keeps their recorded values. Under `REPLACE`, a KPI whose code has
+ * disappeared from the sheet is removed, along with its values — which is why
+ * the import screen shows a diff and asks for confirmation first. Under
+ * `UPDATE` (the default), anything absent from the sheet is left alone —
+ * correct once any part of the hierarchy is created or edited in the app,
+ * since the spreadsheet is no longer the sole source of truth.
  */
 export async function applyImport(input: {
   fiscalYearId: string;
   kpis: ParsedKpi[];
   departments: string[];
   values?: ParsedValue[];
+  mode?: ImportMode;
 }): Promise<ImportSummary> {
   await requireAuth();
+  const mode: ImportMode = input.mode ?? "UPDATE";
 
   const { fiscalYearId, kpis } = input;
   if (kpis.length === 0) throw new Error("That workbook has no KPI rows.");
@@ -219,6 +226,9 @@ export async function applyImport(input: {
       unit: kpi.unit,
       deadlineMonth: kpi.deadlineMonth,
       scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+      frequency: kpi.frequency,
+      phasing: kpi.phasing,
+      phaseConfig: kpi.phaseConfig,
       parentId: null as string | null,
     };
 
@@ -259,9 +269,10 @@ export async function applyImport(input: {
     });
   }
 
-  const toRemove = existing.filter(
-    (k) => !incomingCodes.has(k.code.toLowerCase()),
-  );
+  const toRemove =
+    mode === "REPLACE"
+      ? existing.filter((k) => !incomingCodes.has(k.code.toLowerCase()))
+      : [];
   if (toRemove.length > 0) {
     await prisma.kpi.deleteMany({
       where: { id: { in: toRemove.map((k) => k.id) } },

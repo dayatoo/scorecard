@@ -36,8 +36,10 @@ test("the dashboard shows the scored hierarchy and a total", async ({ page }) =>
   await expect(totalRow).toBeVisible();
   await expect(totalRow).toContainText("100%");
 
-  // Coverage is reported honestly: one milestone is not yet due.
-  await expect(totalRow).toContainText("90%");
+  // Coverage is reported honestly: one milestone is not yet due, and doesn't
+  // count against the reported share.
+  await expect(totalRow).toContainText("88%");
+  await expect(totalRow).toContainText("20% not due");
 });
 
 /**

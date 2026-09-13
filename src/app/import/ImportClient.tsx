@@ -7,7 +7,7 @@ import { useRef, useState, useTransition } from "react";
 import { ConfirmSaveDialog } from "@/components/ConfirmSaveDialog";
 import { hasErrors } from "@/lib/validation";
 import { commitImport, previewImport, type ImportPreview } from "./actions";
-import type { ImportSummary } from "@/app/actions/admin";
+import type { ImportMode, ImportSummary } from "@/app/actions/admin";
 
 /**
  * Upload, then preview, then confirm. The preview is deliberately a separate
@@ -24,6 +24,11 @@ export function ImportClient({
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
   const [fiscalYearId, setFiscalYearId] = useState(defaultFiscalYearId ?? "");
+  // Update only is the safe default: it upserts what is in the sheet and
+  // leaves everything else alone, which is correct the moment any part of
+  // the hierarchy is created or edited in the app rather than solely
+  // maintained in the spreadsheet. Replace is a deliberate, riskier choice.
+  const [mode, setMode] = useState<ImportMode>("UPDATE");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -34,7 +39,7 @@ export function ImportClient({
     startTransition(async () => {
       try {
         setSummary(null);
-        const result = await previewImport(formData);
+        const result = await previewImport(formData, fiscalYearId || undefined);
         if (!result.ok) {
           setPreview(null);
           setError(result.error);
@@ -58,6 +63,7 @@ export function ImportClient({
           kpis: preview.kpis,
           departments: preview.departments,
           values: preview.values,
+          mode,
         });
         if (!result.ok) {
           setError(result.error);
@@ -132,6 +138,30 @@ export function ImportClient({
           </button>
         </div>
 
+        <fieldset className="mt-3">
+          <legend className="block text-xs font-medium text-gray-700">How to apply this file</legend>
+          <div className="mt-1.5 flex flex-wrap gap-4 text-sm">
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="mode"
+                checked={mode === "UPDATE"}
+                onChange={() => setMode("UPDATE")}
+              />
+              Update only — leave anything not in the file alone
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="mode"
+                checked={mode === "REPLACE"}
+                onChange={() => setMode("REPLACE")}
+              />
+              Replace the year — remove anything not in the file
+            </label>
+          </div>
+        </fieldset>
+
         {error && <p className="mt-3 text-sm font-medium text-rose-700">{error}</p>}
       </form>
 
@@ -161,7 +191,7 @@ export function ImportClient({
             <Stat label="Lowest-level KPIs" value={String(preview.counts.leaves)} />
             <Stat label="Levels deep" value={String(preview.counts.levels)} />
             <Stat
-              label="Leaf weights total"
+              label="Strategic Goals total"
               value={`${preview.counts.weightTotal.toFixed(2)}%`}
               tone={Math.abs(preview.counts.weightTotal - 100) > 0.01 ? "warn" : "ok"}
             />
@@ -177,6 +207,22 @@ export function ImportClient({
               tone="error"
               items={preview.parseIssues.map((i) => ({
                 text: i.row ? `Row ${i.row}: ${i.message}` : i.message,
+              }))}
+            />
+          )}
+
+          {preview.wouldRemove.length > 0 && (
+            <IssueList
+              title={`${preview.wouldRemove.length} KPI${preview.wouldRemove.length === 1 ? "" : "s"} in this year ${preview.wouldRemove.length === 1 ? "is" : "are"} not in this file`}
+              description={
+                mode === "REPLACE"
+                  ? "Replace mode will remove these, along with any figures recorded against them."
+                  : "Update only leaves these exactly as they are — nothing about them changes."
+              }
+              tone={mode === "REPLACE" ? "error" : "warn"}
+              items={preview.wouldRemove.map((k) => ({
+                text: `${k.code} — ${k.name}${k.figuresRecorded > 0 ? ` (${k.figuresRecorded} month${k.figuresRecorded === 1 ? "" : "s"} recorded)` : ""}`,
+                severity: mode === "REPLACE" ? "error" : "warning",
               }))}
             />
           )}
@@ -281,7 +327,10 @@ export function ImportClient({
                   field: "removal",
                   label: "KPIs not in the file",
                   from: "kept",
-                  to: "removed, along with the figures recorded against them",
+                  to:
+                    mode === "REPLACE"
+                      ? `removed (${preview.wouldRemove.length}), along with the figures recorded against them`
+                      : "kept — Update only never removes a KPI",
                 },
                 {
                   field: "figures",

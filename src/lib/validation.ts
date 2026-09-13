@@ -18,30 +18,45 @@ export type Issue = {
 const WEIGHT_TOLERANCE = 0.01;
 
 /**
- * Leaf weights must add to 100%. Checked to two decimal places so ordinary
+ * Every sibling group (roots included) must add to 100%, since a weight is
+ * now a share of its own siblings. Checked to two decimal places so ordinary
  * rounding in a spreadsheet (33.33 x 3) does not read as an error.
+ *
+ * This is a warning, never a block: a group is legitimately incomplete while
+ * it is being built up one KPI at a time, and scoring normalises within the
+ * group regardless — the message says so, since that is the counter-intuitive
+ * part. A group that doesn't sum to 100 does not lose the missing share; the
+ * parent's own weight is always fully distributed across whichever children
+ * it has.
  */
 export function checkWeights(kpis: KpiRecord[]): Issue[] {
-  const parentIds = new Set(kpis.map((k) => k.parentId).filter(Boolean));
-  const leaves = kpis.filter((k) => !parentIds.has(k.id));
-  if (leaves.length === 0) return [];
+  const byParent = new Map<string | null, KpiRecord[]>();
+  for (const kpi of kpis) {
+    const list = byParent.get(kpi.parentId) ?? [];
+    list.push(kpi);
+    byParent.set(kpi.parentId, list);
+  }
 
-  const total = leaves.reduce((sum, k) => sum + k.weight, 0);
-  if (Math.abs(total - 100) <= WEIGHT_TOLERANCE) return [];
+  const issues: Issue[] = [];
+  for (const [parentId, group] of byParent) {
+    const total = group.reduce((sum, k) => sum + k.weight, 0);
+    if (Math.abs(total - 100) <= WEIGHT_TOLERANCE) continue;
 
-  return [
-    {
+    const parent = parentId ? kpis.find((k) => k.id === parentId) : null;
+    const groupName = parent ? `The sub-KPIs under "${parent.name}"` : "The Strategic Goals";
+    issues.push({
       severity: "warning",
-      message: `Leaf KPI weights add up to ${total.toFixed(2)}%, not 100%. Scores are still calculated, but each KPI's influence on the total is not what you intended.`,
-    },
-  ];
+      kpiCode: parent?.code,
+      message: `${groupName} add up to ${total.toFixed(2)}%, not 100%. Their shares are applied proportionally, so scoring still works, but each one's influence may not be what you intended.`,
+    });
+  }
+  return issues;
 }
 
-/** A leaf with no weight can never affect the total, which is usually a mistake. */
+/** A node with no weight can never affect its parent's score, which is usually a mistake. */
 export function checkZeroWeights(kpis: KpiRecord[]): Issue[] {
-  const parentIds = new Set(kpis.map((k) => k.parentId).filter(Boolean));
   return kpis
-    .filter((k) => !parentIds.has(k.id) && k.weight <= 0)
+    .filter((k) => k.weight <= 0)
     .map((k) => ({
       severity: "warning" as const,
       kpiCode: k.code,
@@ -105,7 +120,7 @@ export function checkTargetOrder(kpis: KpiRecord[]): Issue[] {
   return issues;
 }
 
-function orderingIssue(
+export function orderingIssue(
   config: Record<Band, number | [number, number]>,
   mode: TargetMode,
   direction: Direction
@@ -144,11 +159,11 @@ function orderingIssue(
 export function checkParentsHaveNoMetric(kpis: KpiRecord[]): Issue[] {
   const parentIds = new Set(kpis.map((k) => k.parentId).filter(Boolean));
   return kpis
-    .filter((k) => parentIds.has(k.id) && (k.metricType !== null || k.weight > 0))
+    .filter((k) => parentIds.has(k.id) && k.metricType !== null)
     .map((k) => ({
       severity: "warning" as const,
       kpiCode: k.code,
-      message: `"${k.name}" has sub-KPIs, so its own metric and weight are ignored — its score is the weighted average of its children.`,
+      message: `"${k.name}" has sub-KPIs, so its own metric is ignored — its score is the weighted average of its children.`,
     }));
 }
 
@@ -175,8 +190,10 @@ export function checkNoCycles(kpis: KpiRecord[]): Issue[] {
   return [];
 }
 
-/** Depth beyond four levels is out of spec and usually an import mistake. */
-export function checkDepth(kpis: KpiRecord[], maxDepth = 4): Issue[] {
+/** The scorecard is designed for five levels; deeper than that is usually a mistake. */
+export const MAX_KPI_DEPTH = 5;
+
+export function checkDepth(kpis: KpiRecord[], maxDepth = MAX_KPI_DEPTH): Issue[] {
   const byId = new Map(kpis.map((k) => [k.id, k]));
   const issues: Issue[] = [];
   for (const kpi of kpis) {

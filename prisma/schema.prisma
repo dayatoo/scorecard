@@ -1,9 +1,9 @@
 // Company KPI Scorecard — data model.
 //
 // A scorecard is scoped to a FiscalYear (April 1 -> March 31). Within a year the
-// KPIs form a hierarchy up to 4 levels deep: Strategic Goal -> KPI -> sub-KPI ->
-// sub-sub-KPI. Only leaf nodes carry a metric, targets and a weight; parents are
-// pure rollups of their children.
+// KPIs form a hierarchy up to 5 levels deep: Strategic Goal -> KPI -> sub-KPI ->
+// sub-sub-KPI -> sub-sub-sub-KPI. Only leaf nodes carry a metric, targets and a
+// weight; parents are pure rollups of their children.
 
 generator client {
   provider = "prisma-client-js"
@@ -31,6 +31,24 @@ enum Direction {
 enum TargetMode {
   FIXED
   RANGE
+}
+
+// How often a KPI is expected to be reported. Determines only which months it
+// is "due" in — a KPI not yet due in a given month joins the not-yet-due
+// coverage bucket instead of reading as a reporting gap.
+enum Frequency {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+// Whether a KPI's annual target is broken into monthly phases so a
+// year-to-date figure can be judged against the part of the year that has
+// actually elapsed, rather than the full-year target every month.
+enum Phasing {
+  NONE
+  EVEN
+  CUSTOM
 }
 
 // Whether a recorded figure is settled or still a forecast. An estimate scores
@@ -85,10 +103,25 @@ model Kpi {
 
   sortOrder Int @default(0)
 
-  // Global weight as a percentage. Leaves only; across a fiscal year every
-  // leaf weight should sum to 100. A parent's effective weight is derived at
-  // read time as the sum of its descendant leaves.
+  // Local weight: a KPI's share of its own siblings, summing to 100 within
+  // each sibling group (roots included). Every node carries one, parents
+  // included — a parent's local weight is its share of its own siblings, not
+  // a rollup. The company-wide ("global") weight is derived top-down from
+  // these at read time (see kpi-tree.ts) and is never stored.
   weight Float @default(0)
+
+  // How often this KPI is expected to be reported. Leaf-only; determines only
+  // which months it counts as "due" in.
+  frequency Frequency @default(MONTHLY)
+
+  // Whether this KPI's annual target is phased across the year for pro-rating.
+  // Leaf-only, and only meaningful for a numeric metric — always NONE for
+  // MONTH_COMPLETION.
+  phasing Phasing @default(NONE)
+
+  // CUSTOM only: JSON array of 12 monthly shares (April first), summing to
+  // ~100. Warned, never blocked, when they don't — same tolerance as weights.
+  phaseConfig String?
 
   // --- Leaf-only fields. Null on rollup nodes, whose score is the weighted
   // average of their children. ---
@@ -118,6 +151,7 @@ model Kpi {
   departments KpiDepartment[]
   values      KpiValue[]
   updates     KpiUpdate[]
+  audits      KpiAudit[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -125,6 +159,29 @@ model Kpi {
   @@unique([fiscalYearId, code])
   @@index([fiscalYearId])
   @@index([parentId])
+}
+
+// A time-stamped record of a definition change: a target, metric type,
+// weight, code or structural move. Written in the same transaction as the
+// change it records, so a row can never claim something that did not happen.
+// A deleted KPI's own audits cascade away with it, so structural actions
+// (move, delete) that concern a KPI's place in the tree are recorded against
+// its *parent* as well, so there is still a trace once the child is gone.
+model KpiAudit {
+  id    String @id @default(cuid())
+  kpiId String
+  kpi   Kpi    @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+
+  field String // "targets", "metricType", "weight", "code", "parentId", "deleted"…
+  label String // the human label already shown in the confirmation dialog
+  from  String
+  to    String
+
+  author String? // free text, as KpiUpdate already does — there are no user accounts
+
+  createdAt DateTime @default(now())
+
+  @@index([kpiId, createdAt])
 }
 
 // Many-to-many: a KPI can be owned by several departments.

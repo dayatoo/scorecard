@@ -6,7 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/session";
 import { formatPeriodLabel, isPeriodInFiscalYear } from "@/lib/fiscal";
 import { formatDate } from "@/lib/dates";
-import { BANDS, lastDayOfPeriod, type Band } from "@/lib/scoring";
+import { parseTargetConfig } from "@/lib/kpi-tree";
+import { BANDS, lastDayOfPeriod, type Band, type Frequency, type Phasing } from "@/lib/scoring";
+import {
+  crossesNumericMonthBoundary,
+  metricColumns,
+  validateMetric,
+  type MetricInput,
+} from "@/lib/targets";
 import { attempt, type ActionResult } from "./result";
 
 // Every action re-checks authentication: a server action is a POST endpoint
@@ -101,22 +108,39 @@ export async function saveEntries(inputs: SaveEntryInput[]): Promise<ActionResul
   });
 }
 
-/** Targets as the editor sends them: band numbers, band windows, or a month. */
-export type TargetConfigInput =
-  | { kind: "FIXED"; bands: Record<Band, number> }
-  | { kind: "RANGE"; bands: Record<Band, [number, number]> }
-  | { kind: "MONTH"; targetMonth: string };
-
 export type SaveKpiSettingsInput = {
   kpiId: string;
+  code: string;
   name: string;
   weight: number;
   unit: string | null;
   departmentIds: string[];
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
-  targetConfig: TargetConfigInput | null;
+  metric: MetricInput;
+  /** Confirms clearing figures that would otherwise block a numeric <-> month-completion change. */
+  clearFiguresForMetricChange?: boolean;
+  frequency: Frequency;
+  phasing: Phasing;
+  /** CUSTOM only: 12 monthly shares (0-100). */
+  phaseConfig: number[] | null;
+  author?: string | null;
 };
+
+type AuditEntry = { field: string; label: string; from: string; to: string };
+
+function describeMetric(metricType: string | null, targetMode: string | null, direction: string | null, targetConfig: string | null): string {
+  if (!metricType) return "no metric (rollup)";
+  const config = parseTargetConfig(targetConfig);
+  if (metricType === "MONTH_COMPLETION") {
+    return `month completion, target ${(config as { targetMonth?: string } | null)?.targetMonth ?? "—"}`;
+  }
+  const bands = BANDS.map((b) => {
+    const v = (config as Record<Band, unknown> | null)?.[b];
+    return Array.isArray(v) ? `${v[0]}-${v[1]}` : String(v ?? "—");
+  }).join(", ");
+  return `${metricType} ${targetMode ?? ""} ${direction ?? ""}: ${bands}`;
+}
 
 /** Updates a KPI's definition from the detail page. */
 export async function saveKpiSettings(input: SaveKpiSettingsInput): Promise<ActionResult> {
@@ -128,6 +152,8 @@ async function writeKpiSettings(input: SaveKpiSettingsInput): Promise<void> {
 
   const name = input.name.trim();
   if (!name) throw new Error("A KPI needs a name.");
+  const code = input.code.trim();
+  if (!code) throw new Error("A KPI needs a code.");
   if (!Number.isFinite(input.weight) || input.weight < 0) {
     throw new Error("Weight must be zero or more.");
   }
@@ -135,67 +161,145 @@ async function writeKpiSettings(input: SaveKpiSettingsInput): Promise<void> {
     throw new Error("A deadline must be a month in YYYY-MM form.");
   }
 
-  validateTargets(input.targetConfig);
+  const existing = await prisma.kpi.findUnique({
+    where: { id: input.kpiId },
+    include: {
+      _count: { select: { children: true, values: true } },
+      values: { select: { period: true, value: true, completionDate: true } },
+      departments: true,
+    },
+  });
+  if (!existing) throw new Error("That KPI no longer exists.");
+  const isLeaf = existing._count.children === 0;
 
-  await prisma.$transaction([
-    prisma.kpi.update({
+  // Code uniqueness, checked ourselves rather than left to Prisma's raw P2002
+  // error, so the message names the actual problem.
+  if (code.toLowerCase() !== existing.code.toLowerCase()) {
+    const clash = await prisma.kpi.findFirst({
+      where: { fiscalYearId: existing.fiscalYearId, code, id: { not: input.kpiId } },
+    });
+    if (clash) throw new Error(`Code "${code}" is already used by "${clash.name}" in this year.`);
+  }
+
+  // A parent's metric would be silently ignored, so a non-NONE metric on one
+  // is rejected outright rather than coerced — a stale tab could otherwise
+  // wipe a leaf's targets with no warning by resubmitting an old form.
+  let metric = input.metric;
+  if (!isLeaf && metric.kind !== "NONE") {
+    throw new Error(`"${name}" has sub-KPIs, so it cannot carry its own metric.`);
+  }
+
+  const nextColumns = metricColumns(metric);
+
+  // The only transition that truly orphans data: a numeric KPI stores a
+  // value, a month-completion KPI stores a completion date, and neither is
+  // readable as the other.
+  const figuresAtRisk = existing.values.filter(
+    (v) => v.value !== null || v.completionDate !== null
+  );
+  const crossesBoundary = crossesNumericMonthBoundary(existing.metricType, nextColumns.metricType);
+  let clearedValueCount = 0;
+  if (crossesBoundary && figuresAtRisk.length > 0) {
+    if (!input.clearFiguresForMetricChange) {
+      const months = figuresAtRisk.map((v) => formatPeriodLabel(v.period)).join(", ");
+      throw new Error(
+        `${months} ${figuresAtRisk.length === 1 ? "has a figure" : "have figures"} recorded against this KPI. They cannot be read the new way — tick "Clear these figures" to change the metric anyway.`
+      );
+    }
+    clearedValueCount = figuresAtRisk.length;
+  }
+
+  const metricChanged =
+    existing.metricType !== nextColumns.metricType ||
+    existing.targetMode !== nextColumns.targetMode ||
+    existing.direction !== nextColumns.direction ||
+    existing.targetConfig !== nextColumns.targetConfig;
+  if (metricChanged) metric = validateMetric(metric);
+
+  // Phasing only means anything for a phase-able numeric target; forced off
+  // server-side so a stale form can't leave it set on a milestone.
+  const phasing: Phasing = nextColumns.metricType && nextColumns.metricType !== "MONTH_COMPLETION" ? input.phasing : "NONE";
+  const phaseConfig = phasing === "CUSTOM" ? JSON.stringify(input.phaseConfig ?? []) : null;
+
+  const audits: AuditEntry[] = [];
+  const push = (field: string, label: string, from: string, to: string) => {
+    if (from !== to) audits.push({ field, label, from, to });
+  };
+  push("name", "Name", existing.name, name);
+  push("code", "Code", existing.code, code);
+  push("weight", "Weight % (of group)", `${existing.weight}`, `${input.weight}`);
+  push("unit", "Unit", existing.unit ?? "empty", input.unit?.trim() || "empty");
+  push(
+    "deadlineMonth",
+    "Deadline month",
+    existing.deadlineMonth ? formatPeriodLabel(existing.deadlineMonth) : "none",
+    input.deadlineMonth ? formatPeriodLabel(input.deadlineMonth) : "none"
+  );
+  push("frequency", "Reporting frequency", existing.frequency, input.frequency);
+  push("phasing", "Phasing", existing.phasing, phasing);
+  if (metricChanged) {
+    push(
+      "targets",
+      "Metric and targets",
+      describeMetric(existing.metricType, existing.targetMode, existing.direction, existing.targetConfig),
+      describeMetric(nextColumns.metricType, nextColumns.targetMode, nextColumns.direction, nextColumns.targetConfig)
+    );
+  }
+  const beforeDepts = [...existing.departments.map((d) => d.departmentId)].sort().join(",");
+  const afterDepts = [...input.departmentIds].sort().join(",");
+  push("departments", "Owning departments", beforeDepts || "none", afterDepts || "none");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.kpi.update({
       where: { id: input.kpiId },
       data: {
         name,
+        code,
         weight: input.weight,
         unit: input.unit?.trim() || null,
         deadlineMonth: input.deadlineMonth,
         scoreFinalAfterDeadline: input.scoreFinalAfterDeadline,
-        targetConfig: serialiseTargets(input.targetConfig),
+        frequency: input.frequency,
+        phasing,
+        phaseConfig,
+        ...nextColumns,
       },
-    }),
-    prisma.kpiDepartment.deleteMany({ where: { kpiId: input.kpiId } }),
-    prisma.kpiDepartment.createMany({
-      data: input.departmentIds.map((departmentId) => ({
-        kpiId: input.kpiId,
-        departmentId,
-      })),
-      skipDuplicates: true,
-    }),
-  ]);
+    });
+
+    await tx.kpiDepartment.deleteMany({ where: { kpiId: input.kpiId } });
+    if (input.departmentIds.length > 0) {
+      await tx.kpiDepartment.createMany({
+        data: input.departmentIds.map((departmentId) => ({
+          kpiId: input.kpiId,
+          departmentId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    if (clearedValueCount > 0) {
+      await tx.kpiValue.deleteMany({ where: { kpiId: input.kpiId } });
+    }
+
+    if (audits.length > 0) {
+      await tx.kpiAudit.createMany({
+        data: audits.map((a) => ({
+          kpiId: input.kpiId,
+          field: a.field,
+          label: a.label,
+          from: a.from,
+          to: a.to,
+          author: input.author?.trim() || null,
+        })),
+      });
+    }
+  });
 
   revalidatePath("/");
   revalidatePath("/kpis");
   revalidatePath("/manage");
+  revalidatePath("/manage/hierarchy");
   revalidatePath(`/kpi/${input.kpiId}`);
-}
-
-function bandName(band: Band): string {
-  return band.replace(/_/g, " ").toLowerCase();
-}
-
-function validateTargets(config: TargetConfigInput | null): void {
-  if (!config) return;
-
-  if (config.kind === "MONTH") {
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(config.targetMonth)) {
-      throw new Error("The target month must be in YYYY-MM form, e.g. 2026-10.");
-    }
-    return;
-  }
-
-  for (const band of BANDS) {
-    const value = config.bands[band];
-    if (value === undefined || value === null) {
-      throw new Error(`The ${bandName(band)} target is missing.`);
-    }
-    const numbers = Array.isArray(value) ? value : [value];
-    if (numbers.some((n) => typeof n !== "number" || !Number.isFinite(n))) {
-      throw new Error(`The ${bandName(band)} target is not a number.`);
-    }
-  }
-}
-
-/** Back to the JSON shape the scoring engine reads from the database. */
-function serialiseTargets(config: TargetConfigInput | null): string | null {
-  if (!config) return null;
-  if (config.kind === "MONTH") return JSON.stringify({ targetMonth: config.targetMonth });
-  return JSON.stringify(config.bands);
 }
 
 export async function addKpiUpdate(input: {

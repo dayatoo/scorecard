@@ -9,6 +9,7 @@
     "lint": "eslint",
     "postinstall": "prisma generate",
     "seed": "tsx prisma/seed.ts",
+    "migrate:weights": "tsx scripts/weights-to-local.ts",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "db:push": "prisma migrate deploy",
     "verify": "npm run test && tsc --noEmit && npm run lint && npm run build"

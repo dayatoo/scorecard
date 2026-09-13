@@ -14,6 +14,8 @@ export function ConfirmSaveDialog({
   changes,
   isSaving,
   title = "Save these changes?",
+  warnings = [],
+  error = null,
   onConfirm,
   onCancel,
 }: {
@@ -21,6 +23,10 @@ export function ConfirmSaveDialog({
   changes: FieldChange[];
   isSaving: boolean;
   title?: string;
+  /** Consequences no field diff can show — e.g. "every score is recalculated". */
+  warnings?: string[];
+  /** A failed save's message. The dialog stays open so it's visible right where the mistake was made. */
+  error?: string | null;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -64,6 +70,22 @@ export function ConfirmSaveDialog({
               : `${changes.length} fields will be updated.`}
           </p>
         </div>
+
+        {warnings.length > 0 && (
+          <div className="mx-5 mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <ul className="list-disc space-y-1 pl-4">
+              {warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {error && (
+          <div className="mx-5 mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-900">
+            {error}
+          </div>
+        )}
 
         <div className="max-h-80 overflow-y-auto px-5 py-4">
           <ul className="space-y-3">

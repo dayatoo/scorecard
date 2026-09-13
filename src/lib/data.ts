@@ -23,7 +23,14 @@ import type { Band, Rollup } from "./scoring";
 
 export type PeriodScores = Map<
   string,
-  { score: number | null; band: Band | null; coverage: number; provisional: boolean }
+  {
+    score: number | null;
+    band: Band | null;
+    coverage: number;
+    provisional: boolean;
+    prorated: boolean;
+    notYetDueShare: number;
+  }
 >;
 
 export type Scorecard = {
@@ -74,6 +81,9 @@ async function loadKpiRecords(fiscalYearId: string): Promise<KpiRecord[]> {
     parentId: row.parentId,
     sortOrder: row.sortOrder,
     weight: row.weight,
+    frequency: row.frequency,
+    phasing: row.phasing,
+    phaseConfig: row.phaseConfig,
     metricType: row.metricType,
     direction: row.direction,
     targetMode: row.targetMode,
@@ -140,6 +150,8 @@ export async function getScorecard(options?: {
         band: node.band,
         coverage: node.coverage,
         provisional: node.provisional,
+        prorated: node.prorated,
+        notYetDueShare: node.notYetDueShare,
       });
     }
     scoresByPeriod.set(p, lookup);

@@ -1,11 +1,14 @@
 "use server";
 
-import { applyImport, type ImportSummary } from "@/app/actions/admin";
+import { prisma } from "@/lib/prisma";
+import { applyImport, type ImportMode, type ImportSummary } from "@/app/actions/admin";
 import { attempt, type ActionResult } from "@/app/actions/result";
 import { requireAuth } from "@/lib/session";
 import { parseWorkbook, type ParsedKpi, type ParsedValue, type ParseIssue } from "@/lib/workbook";
 import { validateHierarchy, type Issue } from "@/lib/validation";
 import type { KpiRecord } from "@/lib/kpi-tree";
+
+export type RemovalPreview = { code: string; name: string; figuresRecorded: number };
 
 export type ImportPreview = {
   kpis: ParsedKpi[];
@@ -15,20 +18,28 @@ export type ImportPreview = {
   /** Structural problems: weights, target order, cycles. */
   issues: Issue[];
   counts: { total: number; leaves: number; levels: number; weightTotal: number };
+  /** KPIs in the target year absent from this file — what REPLACE mode would remove. */
+  wouldRemove: RemovalPreview[];
 };
 
 /**
  * Reads an uploaded workbook and reports what it would do, without writing
  * anything. The page shows this first so nothing lands in the database on the
  * strength of a mis-picked file.
+ *
+ * `fiscalYearId` makes this a real diff against the year being imported into,
+ * rather than validating the file in isolation: without it there is no way to
+ * name which KPIs a Replace import would remove before it actually removes
+ * them.
  */
 export async function previewImport(
-  formData: FormData
+  formData: FormData,
+  fiscalYearId?: string
 ): Promise<ActionResult<ImportPreview>> {
-  return attempt(() => readWorkbook(formData));
+  return attempt(() => readWorkbook(formData, fiscalYearId));
 }
 
-async function readWorkbook(formData: FormData): Promise<ImportPreview> {
+async function readWorkbook(formData: FormData, fiscalYearId?: string): Promise<ImportPreview> {
   await requireAuth();
 
   const file = formData.get("file");
@@ -60,6 +71,26 @@ async function readWorkbook(formData: FormData): Promise<ImportPreview> {
 
   const parentCodes = new Set(asRecords.map((k) => k.parentId).filter(Boolean));
   const leaves = asRecords.filter((k) => !parentCodes.has(k.id));
+  // Weight is now local (a share of siblings), so leaf weights across
+  // different groups no longer sum to anything in particular — that
+  // identity now holds trivially of *global* weight instead (every leaf's
+  // derived share of the whole company always sums to 100, by construction).
+  // The one flat, single-number check people actually care about first is
+  // whether the top-level groups — the Strategic Goals — sum to 100; the
+  // per-group detail for everything underneath is in `issues` below.
+  const roots = asRecords.filter((k) => !k.parentId);
+
+  let wouldRemove: RemovalPreview[] = [];
+  if (fiscalYearId) {
+    const incomingCodes = new Set(parsed.kpis.map((k) => k.code.toLowerCase()));
+    const existing = await prisma.kpi.findMany({
+      where: { fiscalYearId },
+      include: { _count: { select: { values: true } } },
+    });
+    wouldRemove = existing
+      .filter((k) => !incomingCodes.has(k.code.toLowerCase()))
+      .map((k) => ({ code: k.code, name: k.name, figuresRecorded: k._count.values }));
+  }
 
   return {
     kpis: parsed.kpis,
@@ -71,8 +102,9 @@ async function readWorkbook(formData: FormData): Promise<ImportPreview> {
       total: parsed.kpis.length,
       leaves: leaves.length,
       levels: maxDepth(asRecords),
-      weightTotal: leaves.reduce((sum, k) => sum + k.weight, 0),
+      weightTotal: roots.reduce((sum, k) => sum + k.weight, 0),
     },
+    wouldRemove,
   };
 }
 
@@ -96,6 +128,7 @@ export async function commitImport(input: {
   kpis: ParsedKpi[];
   departments: string[];
   values?: ParsedValue[];
+  mode?: ImportMode;
 }): Promise<ActionResult<ImportSummary>> {
   return attempt(async () => {
     await requireAuth();

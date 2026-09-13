@@ -1,9 +1,12 @@
 // Turns flat KPI rows plus their recorded values into a scored hierarchy.
 //
-// Weights are global: every leaf carries its own share of the company's 100%.
-// A parent's weight is therefore not stored but derived — the sum of its
-// descendant leaves — which keeps a parent's rollup consistent with the total
-// no matter how deep the tree goes.
+// Weights are local: every node's stored weight is its share of its own
+// siblings, summing to 100 within each group (roots included). A node's
+// *global* weight — its share of the whole company — is derived top-down:
+// globalOf(node) = globalOf(parent) x node.weight / sum(siblings' weight),
+// with roots scaled to sum to 100. The scoring engine itself needs no
+// awareness of this: rollup() has only ever cared about ratios within a
+// group, so local and global weights score identically.
 
 import {
   bandForScore,
@@ -12,9 +15,11 @@ import {
   type Band,
   type Direction,
   type Entry,
+  type Frequency,
   type KpiDefinition,
   type LeafScore,
   type MetricType,
+  type Phasing,
   type Rollup,
   type TargetConfig,
   type TargetMode,
@@ -26,7 +31,12 @@ export type KpiRecord = {
   name: string;
   parentId: string | null;
   sortOrder: number;
+  /** Local weight — this node's share of its own siblings. */
   weight: number;
+  /** Defaults applied where absent, so a caller building a synthetic record (e.g. an import preview) need not set these. */
+  frequency?: Frequency;
+  phasing?: Phasing;
+  phaseConfig?: string | null;
   metricType: MetricType | null;
   direction: Direction | null;
   targetMode: TargetMode | null;
@@ -36,6 +46,16 @@ export type KpiRecord = {
   scoreFinalAfterDeadline: boolean;
   departments: { id: string; name: string }[];
 };
+
+export function parsePhaseConfig(raw: string | null): number[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as number[]) : null;
+  } catch {
+    return null;
+  }
+}
 
 export type ValueRecord = {
   kpiId: string;
@@ -53,8 +73,13 @@ export type ScoredNode = {
   name: string;
   level: number;
   isLeaf: boolean;
-  /** Global weight: stored for leaves, summed from descendants for parents. */
+  /** Local weight: this node's share of its own siblings (sums to ~100 per group). */
   weight: number;
+  /** Derived, read-only: this node's share of the whole company (roots sum to 100). */
+  globalWeight: number;
+  frequency: Frequency;
+  phasing: Phasing;
+  phaseConfig: number[] | null;
   metricType: MetricType | null;
   direction: Direction | null;
   targetMode: TargetMode | null;
@@ -70,14 +95,24 @@ export type ScoredNode = {
   /** The same score before rounding, used when rolling up further. */
   exactScore: number | null;
   band: Band | null;
-  /** Share of this node's weight that has a figure behind it, 0..1. */
+  /** Share of this node's *due* weight that has a figure behind it, 0..1. */
   coverage: number;
-  /** Absolute weight beneath this node that produced a score. */
+  /** Absolute (local-scale) weight beneath this node that produced a score. */
   scoredWeight: number;
   /** Absolute weight beneath this node whose score rests on an estimate. */
   provisionalWeight: number;
+  /** Absolute weight beneath this node that is not yet due to be reported. */
+  notYetDueWeight: number;
+  /** Absolute weight beneath this node whose score rests on a phased target. */
+  proratedWeight: number;
+  /** Share of this node's total weight not yet due, 0..1. */
+  notYetDueShare: number;
+  /** Share of this node's total weight that is pro-rated, 0..1. */
+  proratedShare: number;
   /** True when any of this node's score rests on an estimate. */
   provisional: boolean;
+  /** True when any of this node's score rests on a phased (pro-rated) target. */
+  prorated: boolean;
   /** Leaf detail — null on rollup nodes. */
   leaf: LeafScore | null;
 };
@@ -99,16 +134,29 @@ function toDefinition(kpi: KpiRecord): KpiDefinition {
     targetConfig: parseTargetConfig(kpi.targetConfig),
     deadlineMonth: kpi.deadlineMonth,
     scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+    frequency: kpi.frequency ?? "MONTHLY",
+    phasing: kpi.phasing ?? "NONE",
+    phaseConfig: parsePhaseConfig(kpi.phaseConfig ?? null),
   };
+}
+
+/** A sibling group's local weight total, guarding against a group of zeros. */
+function groupTotal(kids: KpiRecord[]): number {
+  const total = kids.reduce((sum, k) => sum + Math.max(0, k.weight), 0);
+  return total > 0 ? total : 1;
 }
 
 /**
  * Builds the scored tree for one period.
  *
  * Leaves are scored from their entries; parents are rolled up depth-first so a
- * fourth-level score reaches the Strategic Goal correctly. Coverage is tracked
- * against *total* weight, so a parent whose children are half-reported reads
- * "50% scored" rather than silently looking complete.
+ * fifth-level score reaches the Strategic Goal correctly. Coverage is tracked
+ * against *due* weight (total minus not-yet-due), so a parent whose children
+ * are half-reported reads "50% scored" rather than silently looking complete,
+ * and a milestone or annual KPI that isn't due yet doesn't read as a gap.
+ *
+ * Global weight (each node's share of the whole company) is derived top-down
+ * alongside the bottom-up score rollup, from the locally-stored weights.
  */
 export function buildScoredTree(
   kpis: KpiRecord[],
@@ -139,7 +187,7 @@ export function buildScoredTree(
 
   const byId = new Map<string, ScoredNode>();
 
-  const build = (kpi: KpiRecord, level: number): ScoredNode => {
+  const build = (kpi: KpiRecord, level: number, globalWeight: number): ScoredNode => {
     const kids = childrenOf.get(kpi.id) ?? [];
     const isLeaf = kids.length === 0;
 
@@ -149,7 +197,11 @@ export function buildScoredTree(
       name: kpi.name,
       level,
       isLeaf,
-      weight: 0,
+      weight: kpi.weight,
+      globalWeight,
+      frequency: kpi.frequency ?? "MONTHLY",
+      phasing: kpi.phasing ?? "NONE",
+      phaseConfig: parsePhaseConfig(kpi.phaseConfig ?? null),
       metricType: kpi.metricType,
       direction: kpi.direction,
       targetMode: kpi.targetMode,
@@ -166,41 +218,67 @@ export function buildScoredTree(
       coverage: 0,
       scoredWeight: 0,
       provisionalWeight: 0,
+      notYetDueWeight: 0,
+      proratedWeight: 0,
+      notYetDueShare: 0,
+      proratedShare: 0,
       provisional: false,
+      prorated: false,
       leaf: null,
     };
 
     if (isLeaf) {
       const leaf = scoreLeaf(toDefinition(kpi), entriesByKpi.get(kpi.id) ?? [], period);
       const scored = leaf.score !== null;
-      node.weight = kpi.weight;
+      const notYetDue = leaf.pendingReason === "NOT_YET_DUE";
       node.leaf = leaf;
       node.score = leaf.score;
       node.exactScore = leaf.score;
       node.band = leaf.band;
       node.provisional = leaf.provisional;
+      node.prorated = leaf.prorated;
       node.scoredWeight = scored ? kpi.weight : 0;
       node.provisionalWeight = scored && leaf.provisional ? kpi.weight : 0;
-      node.coverage = scored ? 1 : 0;
+      node.proratedWeight = scored && leaf.prorated ? kpi.weight : 0;
+      node.notYetDueWeight = notYetDue ? kpi.weight : 0;
+      const dueWeight = Math.max(0, kpi.weight - node.notYetDueWeight);
+      node.coverage = dueWeight > 0 ? node.scoredWeight / dueWeight : 0;
+      node.notYetDueShare = kpi.weight > 0 ? node.notYetDueWeight / kpi.weight : 0;
+      node.proratedShare = kpi.weight > 0 ? node.proratedWeight / kpi.weight : 0;
     } else {
-      node.children = kids.map((child) => build(child, level + 1));
+      const total = groupTotal(kids);
+      node.children = kids.map((child) =>
+        build(child, level + 1, (globalWeight * child.weight) / total)
+      );
+      // Ratios within a sibling group are identical whether weighted by local
+      // or global weight — a common scale factor cancels — so the rollup here
+      // uses each child's own (local) weight, the same field looked up for
+      // every other node. The result is only ever used within this group; a
+      // further rollup looks up this node's *own* local weight, not this sum.
       const result = rollup(node.children.map(toRollupInput));
-      node.weight = result.totalWeight;
       node.score = result.score;
       node.exactScore = result.exactScore;
       node.band = result.band;
       node.coverage = result.coverage;
       node.scoredWeight = result.scoredWeight;
       node.provisionalWeight = result.provisionalWeight;
-      // A parent is provisional if any scored weight beneath it is.
+      node.notYetDueWeight = result.notYetDueWeight;
+      node.proratedWeight = result.proratedWeight;
+      node.notYetDueShare = result.notYetDueShare;
+      node.proratedShare = result.proratedShare;
+      // A parent is provisional/prorated if any scored weight beneath it is.
       node.provisional = result.provisionalWeight > 0;
+      node.prorated = result.proratedWeight > 0;
     }
 
     byId.set(node.id, node);
     return node;
   };
 
-  const roots = (childrenOf.get(null) ?? []).map((kpi) => build(kpi, 1));
+  const rootsTotal = groupTotal(childrenOf.get(null) ?? []);
+  const roots = (childrenOf.get(null) ?? []).map((kpi) =>
+    build(kpi, 1, (100 * kpi.weight) / rootsTotal)
+  );
 
   const total = rollup(roots.map(toRollupInput));
 
@@ -215,6 +293,8 @@ function toRollupInput(node: ScoredNode) {
     weight: node.weight,
     scoredWeight: node.scoredWeight,
     provisionalWeight: node.provisionalWeight,
+    notYetDueWeight: node.notYetDueWeight,
+    proratedWeight: node.proratedWeight,
   };
 }
 
