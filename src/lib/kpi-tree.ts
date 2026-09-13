@@ -260,10 +260,22 @@ export function buildScoredTree(
       node.exactScore = result.exactScore;
       node.band = result.band;
       node.coverage = result.coverage;
-      node.scoredWeight = result.scoredWeight;
-      node.provisionalWeight = result.provisionalWeight;
-      node.notYetDueWeight = result.notYetDueWeight;
-      node.proratedWeight = result.proratedWeight;
+      // result.scoredWeight etc. are absolute quantities on the scale of this
+      // node's own children (which sum to result.totalWeight, ~100 by
+      // convention) — not this node's own local weight among its *siblings*
+      // (node.weight, e.g. 70). A grandparent's rollup reads node.weight
+      // alongside these fields via toRollupInput, so they must share a scale:
+      // rescale each from "share of this node's own subtree" to "share of
+      // this node's own weight" before exposing it upward. Left unscaled, a
+      // sibling group with a nested rollup branch would sum to more than its
+      // own group's weight — inflating coverage past 100% and over-weighting
+      // that branch in the parent's weighted average.
+      const rescale = (value: number) =>
+        result.totalWeight > 0 ? (value / result.totalWeight) * node.weight : 0;
+      node.scoredWeight = rescale(result.scoredWeight);
+      node.provisionalWeight = rescale(result.provisionalWeight);
+      node.notYetDueWeight = rescale(result.notYetDueWeight);
+      node.proratedWeight = rescale(result.proratedWeight);
       node.notYetDueShare = result.notYetDueShare;
       node.proratedShare = result.proratedShare;
       // A parent is provisional/prorated if any scored weight beneath it is.

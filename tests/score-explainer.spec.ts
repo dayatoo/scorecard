@@ -56,7 +56,8 @@ test("a leaf frozen at its deadline shows the raw score it would otherwise have 
 test("a rollup KPI shows the weighted-average arithmetic and excludes unscored children", async ({ page }) => {
   const panel = await openExplainer(page, "Operate efficiently");
   await expect(panel).toContainText("SG2.1 — scored weight 30.0 × score 4.500 = 135.000");
-  await expect(panel).toContainText("3.767 → 3.8");
+  await expect(panel).toContainText("3.600 → 3.6");
   await expect(panel).toContainText("SG2.2");
+  await expect(panel).toContainText("SG2.6");
   await expect(panel).toContainText("excluded entirely");
 });
