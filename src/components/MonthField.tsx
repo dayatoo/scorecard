@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { MONTH_PLACEHOLDER, formatMonth, isValidMonthInput, parseMonth } from "@/lib/dates";
+import { MONTH_PLACEHOLDER, autoFormatMonthInput, formatMonth, isValidMonthInput, parseMonth } from "@/lib/dates";
 
 /**
  * An mm/yyyy month field, for a milestone's target month or a KPI's deadline
@@ -59,7 +59,7 @@ export function MonthField({
         className={className}
         value={text}
         onChange={(event) => {
-          const next = event.target.value;
+          const next = autoFormatMonthInput(event.target.value);
           setText(next);
           const yearMonth = parseMonth(next);
           // Only report a change once the text is a whole, real month — or

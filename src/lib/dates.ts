@@ -57,6 +57,20 @@ export function isValidDateInput(text: string): boolean {
   return text.trim() === "" || parseDate(text) !== null;
 }
 
+/**
+ * Digits-only input to "dd/mm/yyyy" as more digits arrive. A slash only
+ * appears between two groups once both have at least one digit, so typing
+ * never requires a "/" key — the mobile numeric keypad `DateField` uses has
+ * none — and backspacing away the last digit of a group drops its trailing
+ * slash too. Pasted text with its own separators works the same way, since
+ * everything but the digits is stripped before re-grouping.
+ */
+export function autoFormatDateInput(text: string): string {
+  const digits = text.replace(/\D/g, "").slice(0, 8);
+  const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
+  return parts.join("/");
+}
+
 /** The period ("YYYY-MM") a dd/mm/yyyy date falls in. */
 export function periodOfDateInput(text: string): string | null {
   const iso = parseDate(text);
@@ -101,4 +115,11 @@ export function parseMonth(text: string): string | null {
 /** True when the text is either empty or a month this app can read. */
 export function isValidMonthInput(text: string): boolean {
   return text.trim() === "" || parseMonth(text) !== null;
+}
+
+/** Same idea as `autoFormatDateInput`, for mm/yyyy. */
+export function autoFormatMonthInput(text: string): string {
+  const digits = text.replace(/\D/g, "").slice(0, 6);
+  const parts = [digits.slice(0, 2), digits.slice(2, 6)].filter(Boolean);
+  return parts.join("/");
 }

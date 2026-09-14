@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  autoFormatDateInput,
+  autoFormatMonthInput,
   formatDate,
   formatMonth,
   isValidDateInput,
@@ -102,6 +104,55 @@ describe("periodOfDateInput", () => {
   it("gives the month a date falls in", () => {
     assert.equal(periodOfDateInput("09/03/2026"), "2026-03");
     assert.equal(periodOfDateInput("nonsense"), null);
+  });
+});
+
+describe("autoFormatDateInput", () => {
+  it("inserts a slash only once a group is complete and another digit follows", () => {
+    assert.equal(autoFormatDateInput("0"), "0");
+    assert.equal(autoFormatDateInput("09"), "09");
+    assert.equal(autoFormatDateInput("090"), "09/0");
+    assert.equal(autoFormatDateInput("0903"), "09/03");
+    assert.equal(autoFormatDateInput("09032"), "09/03/2");
+    assert.equal(autoFormatDateInput("09032026"), "09/03/2026");
+  });
+
+  it("drops a trailing slash as soon as the digit before it is removed — how a mobile numeric keypad's own backspace naturally erases one", () => {
+    // Typing "9/0/3" then backspacing the "3" leaves the raw text "09/0/"
+    // (the browser deletes exactly one character); reformatting that
+    // shouldn't reintroduce a slash for the now-empty third group.
+    assert.equal(autoFormatDateInput("09/0/"), "09/0");
+    assert.equal(autoFormatDateInput("09/"), "09");
+  });
+
+  it("re-groups pasted text with its own separators the same way", () => {
+    assert.equal(autoFormatDateInput("09/03/2026"), "09/03/2026");
+    assert.equal(autoFormatDateInput("09-03-2026"), "09/03/2026");
+  });
+
+  it("truncates digits past a full date rather than appending them", () => {
+    assert.equal(autoFormatDateInput("090320269999"), "09/03/2026");
+  });
+
+  it("has no effect on an already-empty field", () => {
+    assert.equal(autoFormatDateInput(""), "");
+  });
+});
+
+describe("autoFormatMonthInput", () => {
+  it("inserts a slash only once the month group is complete and another digit follows", () => {
+    assert.equal(autoFormatMonthInput("0"), "0");
+    assert.equal(autoFormatMonthInput("09"), "09");
+    assert.equal(autoFormatMonthInput("092"), "09/2");
+    assert.equal(autoFormatMonthInput("092026"), "09/2026");
+  });
+
+  it("drops a trailing slash as soon as the digit before it is removed", () => {
+    assert.equal(autoFormatMonthInput("09/"), "09");
+  });
+
+  it("truncates digits past a full month rather than appending them", () => {
+    assert.equal(autoFormatMonthInput("0920269999"), "09/2026");
   });
 });
 

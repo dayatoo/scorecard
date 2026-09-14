@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { DATE_PLACEHOLDER, formatDate, isValidDateInput, parseDate } from "@/lib/dates";
+import { DATE_PLACEHOLDER, autoFormatDateInput, formatDate, isValidDateInput, parseDate } from "@/lib/dates";
 
 /**
  * A dd/mm/yyyy date field.
@@ -57,7 +57,7 @@ export function DateField({
         className={className}
         value={text}
         onChange={(event) => {
-          const next = event.target.value;
+          const next = autoFormatDateInput(event.target.value);
           setText(next);
           const iso = parseDate(next);
           // Only report a change once the text is a whole, real date — or once
