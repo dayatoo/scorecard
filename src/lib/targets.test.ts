@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  describeMeetTarget,
   draftToMetricInput,
   metricColumns,
   metricToDraft,
@@ -29,8 +30,15 @@ describe("parseRangeInput", () => {
     assert.deepEqual(parseRangeInput("50 – 69"), [50, 69]);
   });
 
-  it("rejects a bare number — it is not a window", () => {
-    assert.equal(parseRangeInput("50"), null);
+  it("accepts a bare number as shorthand for an exact target — a single-point window", () => {
+    assert.deepEqual(parseRangeInput("50"), [50, 50]);
+    assert.deepEqual(parseRangeInput("$1,200"), [1200, 1200]);
+    assert.deepEqual(parseRangeInput("45%"), [45, 45]);
+  });
+
+  it("rejects text that is neither a window nor a number", () => {
+    assert.equal(parseRangeInput("not a number"), null);
+    assert.equal(parseRangeInput(""), null);
   });
 });
 
@@ -70,6 +78,35 @@ describe("metric round trip — the regression test for the latent column-write 
       targetConfig: JSON.parse(columns.targetConfig!),
     });
     assert.deepEqual(roundTripped.targets, draft.targets);
+  });
+
+  it("a RANGE metric with an absolute Excellent band stores it as a single-point window and redisplays as a bare number", () => {
+    const draft: MetricDraft = {
+      metricType: "QUANTITY",
+      targetMode: "RANGE",
+      direction: "HIGHER_BETTER",
+      targets: {
+        POOR: "0-4", IMPROVEMENT_NEEDED: "5-6", MEET: "7-8",
+        GOOD: "9-10", VERY_GOOD: "11-11", EXCELLENT: "12",
+      },
+      targetMonth: "",
+    };
+
+    const parsed = draftToMetricInput(draft, true);
+    assert.ok(parsed.ok);
+    if (!parsed.ok) return;
+
+    const columns = metricColumns(parsed.metric);
+    assert.deepEqual(JSON.parse(columns.targetConfig!).EXCELLENT, [12, 12]);
+
+    // Redisplays as "12", not "12-12".
+    const roundTripped = metricToDraft({
+      metricType: columns.metricType,
+      targetMode: columns.targetMode,
+      direction: columns.direction,
+      targetConfig: JSON.parse(columns.targetConfig!),
+    });
+    assert.equal(roundTripped.targets.EXCELLENT, "12");
   });
 
   it("a FIXED metric produces FIXED columns, not RANGE", () => {
@@ -147,6 +184,20 @@ describe("validateMetric — ordering", () => {
     assert.ok(ok.ok);
     if (!ok.ok) return;
     assert.doesNotThrow(() => validateMetric(ok.metric));
+  });
+});
+
+describe("describeMeetTarget", () => {
+  it("shows a two-sided RANGE meet band as a dash-joined window", () => {
+    assert.equal(describeMeetTarget({ MEET: [70, 79] }, "PERCENTAGE"), "70–79");
+  });
+
+  it("shows an absolute RANGE meet band as a bare number, not a degenerate window", () => {
+    assert.equal(describeMeetTarget({ MEET: [100, 100] }, "QUANTITY"), "100");
+  });
+
+  it("shows a FIXED meet band as a bare number", () => {
+    assert.equal(describeMeetTarget({ MEET: 3000000 }, "DOLLAR"), "3,000,000");
   });
 });
 

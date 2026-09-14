@@ -414,7 +414,7 @@ export function TargetsPanel({
       title="Targets"
       description={
         isRange
-          ? 'A window per band, written "50-69". The score scales across the window.'
+          ? 'A window per band, written "50-69" — or a single number like "100" for an exact target. The score scales across the window.'
           : "One number per band. Reaching a band's target scores the top of that band."
       }
     >
@@ -449,7 +449,7 @@ export function TargetsPanel({
                     <input
                       className={`${attributeInputClass} max-w-40`}
                       value={draft.targets[band] ?? ""}
-                      placeholder={isRange ? "50-69" : "100"}
+                      placeholder={isRange ? "50-69 or 100" : "100"}
                       onChange={(e) =>
                         setField("targets", { ...draft.targets, [band]: e.target.value })
                       }

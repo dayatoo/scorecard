@@ -665,7 +665,7 @@ function addReadmeSheet(workbook: ExcelJS.Workbook) {
     ["Metric Type", `${METRIC_TYPES.join(", ")}. Use DOLLAR for money; put the currency (${DEFAULT_CURRENCY}) in the Unit column.`],
     ["Direction", "HIGHER_BETTER when a bigger number is better (revenue, completion %), LOWER_BETTER when a smaller one is (cost, days taken, defects)."],
     ["Target Mode", "FIXED — put a single number in each band column. Reaching a band's target scores the top of that band. Targets normally step by 1 and must get harder from Poor through to Excellent."],
-    ["", 'RANGE — put a window in each band column, written "50-69". The score scales across the window between that band\'s lowest and highest score.'],
+    ["", 'RANGE — put a window in each band column, written "50-69". The score scales across the window between that band\'s lowest and highest score. A band can instead hold a single number (e.g. "100") for an exact target — reaching or passing it scores the top of that band, same as FIXED.'],
     ["Month of completion", "Set Metric Type to MONTH_COMPLETION and put the target month in the Meet column — as YYYY-MM, or as an actual Excel date (the day is ignored, only the month and year count). Leave the other band columns blank — finishing one, two or three months early scores Good, Very Good, Excellent, and one or two months late scores Improvement Needed or Poor."],
     ["Deadline Month", "Optional, YYYY-MM. Use it for a KPI that is time-bound even though its metric is not. It means the last day of that month."],
     ["Score Final After Deadline", 'Yes — the score freezes at whatever it was in the deadline month; later achievement is recorded but does not change it. No (the default) — later achievement still earns partial credit, capped at 2.9 one month late, 2.4 two months late, and 0 after that.'],
@@ -781,7 +781,9 @@ function formatTargetCell(
 
   const value = (config as Record<Band, unknown>)[band];
   if (value === undefined || value === null) return null;
-  if (targetMode === "RANGE" && Array.isArray(value)) return `${value[0]}-${value[1]}`;
+  if (targetMode === "RANGE" && Array.isArray(value)) {
+    return value[0] === value[1] ? value[0] : `${value[0]}-${value[1]}`;
+  }
   return typeof value === "number" ? value : String(value);
 }
 

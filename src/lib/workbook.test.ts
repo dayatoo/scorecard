@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { DEFAULT_CURRENCY } from "./config";
 import {
   buildExampleWorkbook,
+  buildExportWorkbook,
   buildTemplateWorkbook,
   parseWorkbook,
   type ExportKpi,
@@ -78,6 +79,39 @@ describe("example workbook round-trip", () => {
       VERY_GOOD: [90, 95],
       EXCELLENT: [96, 100],
     });
+  });
+
+  it("exports an absolute RANGE band as a bare number, and re-imports it to the same single-point window", async () => {
+    const kpi: ExportKpi = {
+      code: "K1", name: "A KPI", parentCode: null, weight: 100,
+      departments: [], metricType: "QUANTITY", unit: "units",
+      direction: "HIGHER_BETTER", targetMode: "RANGE",
+      targetConfig: {
+        POOR: [0, 4], IMPROVEMENT_NEEDED: [5, 6], MEET: [7, 8],
+        GOOD: [9, 10], VERY_GOOD: [11, 11], EXCELLENT: [12, 12],
+      },
+      deadlineMonth: null, scoreFinalAfterDeadline: false, isLeaf: true,
+    };
+
+    const bytes = await buildExportWorkbook({
+      fiscalYearLabel: "FY2026/27",
+      kpis: [kpi],
+      departments: [],
+      periods: [],
+      tree: [],
+      totalsByPeriod: new Map(),
+      scoresByPeriod: new Map(),
+    });
+
+    const ExcelJS = (await import("exceljs")).default;
+    const readBack = new ExcelJS.Workbook();
+    await readBack.xlsx.load(bytesToArrayBuffer(bytes));
+    const excellentCell = readBack.getWorksheet("KPIs")!.getRow(2).getCell(15).value;
+    assert.equal(excellentCell, 12); // a plain number, not the string "12-12"
+
+    const { kpis, issues } = await parseWorkbook(bytesToArrayBuffer(bytes));
+    assert.deepEqual(issues, []);
+    assert.deepEqual(JSON.parse(kpis[0].targetConfig!).EXCELLENT, [12, 12]);
   });
 
   it("preserves a month-of-completion target and a deadline", async () => {
@@ -195,6 +229,14 @@ describe("parse errors", () => {
   it("reports a missing target", async () => {
     const result = await parseWorkbook(await buildSheet([row({ Meet: null })]));
     assert.ok(result.issues.some((i) => i.message.includes("Meet target is missing")));
+  });
+
+  it("accepts a bare number in a RANGE band as an exact target", async () => {
+    const result = await parseWorkbook(
+      await buildSheet([row({ "Target Mode": "RANGE", Excellent: 100 })])
+    );
+    assert.deepEqual(result.issues, []);
+    assert.deepEqual(JSON.parse(result.kpis[0].targetConfig!).EXCELLENT, [100, 100]);
   });
 
   it("reports an unrecognised metric type", async () => {

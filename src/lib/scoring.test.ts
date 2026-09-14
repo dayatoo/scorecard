@@ -168,6 +168,35 @@ describe("scoreRangeTarget", () => {
     assert.equal(roundScore(scoreRangeTarget(-20, cost, "LOWER_BETTER")), 5);
     assert.equal(roundScore(scoreRangeTarget(9999, cost, "LOWER_BETTER")), 0);
   });
+
+  it("an absolute extreme band (equal low/high) scores its band's top, matching FIXED's own-target convention, no matter how far past it the value is", () => {
+    // Excellent given as a bare "12" (stored [12, 12]) rather than a window —
+    // a self-consistent scale, since splicing [12, 12] into `range` above
+    // (built for a 0-100 scale) would put Excellent below Very Good.
+    const higherBetter: RangeTargetConfig = {
+      POOR: [0, 4],
+      IMPROVEMENT_NEEDED: [5, 6],
+      MEET: [7, 8],
+      GOOD: [9, 10],
+      VERY_GOOD: [11, 11],
+      EXCELLENT: [12, 12],
+    };
+    assert.equal(scoreRangeTarget(12, higherBetter, "HIGHER_BETTER"), 5);
+    assert.equal(scoreRangeTarget(1000, higherBetter, "HIGHER_BETTER"), 5);
+
+    // Poor given as a bare "50" with lower-is-better — the worst band, so a
+    // value far beyond it still scores exactly what reaching 50 would.
+    const lowerBetter: RangeTargetConfig = {
+      POOR: [50, 50],
+      IMPROVEMENT_NEEDED: [40, 49],
+      MEET: [30, 39],
+      GOOD: [20, 29],
+      VERY_GOOD: [10, 19],
+      EXCELLENT: [0, 9],
+    };
+    assert.equal(scoreRangeTarget(50, lowerBetter, "LOWER_BETTER"), BAND_BOUNDS.POOR.hi);
+    assert.equal(scoreRangeTarget(1000, lowerBetter, "LOWER_BETTER"), BAND_BOUNDS.POOR.hi);
+  });
 });
 
 describe("scoreMonthCompletion", () => {

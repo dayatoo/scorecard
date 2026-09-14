@@ -169,7 +169,8 @@ function describeMetric(metricType: string | null, targetMode: string | null, di
   }
   const bands = BANDS.map((b) => {
     const v = (config as Record<Band, unknown> | null)?.[b];
-    return Array.isArray(v) ? `${v[0]}-${v[1]}` : String(v ?? "—");
+    if (Array.isArray(v)) return v[0] === v[1] ? String(v[0]) : `${v[0]}-${v[1]}`;
+    return String(v ?? "—");
   }).join(", ");
   return `${metricType} ${targetMode ?? ""} ${direction ?? ""}: ${bands}`;
 }

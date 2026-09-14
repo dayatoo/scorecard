@@ -59,15 +59,24 @@ export function parseNumberInput(text: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-/** "50-69", "50 – 69", "50 to 69" — but not a bare number. */
+/**
+ * "50-69", "50 – 69", "50 to 69" — or a bare number ("100", "$100", "100%"),
+ * accepted as shorthand for an exact target: a single-point window `[n, n]`.
+ * `scoreRangeTarget` already scores a degenerate window like this as reaching
+ * that band outright, including any value beyond it, so no scoring-side
+ * change is needed for this shorthand to behave like an absolute target.
+ */
 export function parseRangeInput(text: string): [number, number] | null {
   const cleaned = text.replace(/\s*(?:to|–|—)\s*/gi, "-").trim();
   const match = cleaned.match(/^(-?[\d.]+)\s*-\s*(-?[\d.]+)$/);
-  if (!match) return null;
-  const lo = Number(match[1]);
-  const hi = Number(match[2]);
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
-  return [lo, hi];
+  if (match) {
+    const lo = Number(match[1]);
+    const hi = Number(match[2]);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+    return [lo, hi];
+  }
+  const single = parseNumberInput(text);
+  return single === null ? null : [single, single];
 }
 
 // --------------------------------------------------------------------------
@@ -99,7 +108,11 @@ export function metricToDraft(kpi: {
   for (const band of BANDS) {
     const value = (kpi.targetConfig as Record<Band, unknown>)[band];
     if (value === undefined || value === null) continue;
-    draft.targets[band] = Array.isArray(value) ? `${value[0]}-${value[1]}` : String(value);
+    draft.targets[band] = Array.isArray(value)
+      ? value[0] === value[1]
+        ? String(value[0])
+        : `${value[0]}-${value[1]}`
+      : String(value);
   }
   return draft;
 }
@@ -245,6 +258,8 @@ export function describeMeetTarget(config: unknown, metricType: MetricType | nul
 
   const meet = (config as Record<string, unknown>).MEET;
   if (typeof meet === "number") return meet.toLocaleString();
-  if (Array.isArray(meet) && meet.length === 2) return `${meet[0]}–${meet[1]}`;
+  if (Array.isArray(meet) && meet.length === 2) {
+    return meet[0] === meet[1] ? meet[0].toLocaleString() : `${meet[0]}–${meet[1]}`;
+  }
   return null;
 }
