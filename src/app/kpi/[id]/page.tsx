@@ -12,20 +12,24 @@ import { describeMeetTarget } from "@/lib/targets";
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata({ params }: PageProps<"/kpi/[id]">) {
+export async function generateMetadata({ params, searchParams }: PageProps<"/kpi/[id]">) {
   const { id } = await params;
-  const detail = await getKpiDetail(id);
+  const query = await searchParams;
+  const period = typeof query.period === "string" ? query.period : undefined;
+  // Same arguments as the page component below — getKpiDetail is memoized
+  // with cache(), so matching args here let this call and the page's share
+  // one DB round-trip instead of running the whole chain twice.
+  const detail = await getKpiDetail(id, period);
   return { title: detail ? `${detail.node.name} — KPI Scorecard` : "KPI Scorecard" };
 }
 
 export default async function KpiDetailPage({ params, searchParams }: PageProps<"/kpi/[id]">) {
-  const currentUser = await requireAuthPage();
-
   const { id } = await params;
   const query = await searchParams;
   const period = typeof query.period === "string" ? query.period : undefined;
 
-  const [detail, departments, statusOptions, audits, pendingProposalRow] = await Promise.all([
+  const [currentUser, detail, departments, statusOptions, audits, pendingProposalRow] = await Promise.all([
+    requireAuthPage(),
     getKpiDetail(id, period),
     listDepartments(),
     listStatusOptions(),

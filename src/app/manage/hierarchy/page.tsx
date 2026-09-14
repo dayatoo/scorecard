@@ -12,12 +12,11 @@ export default async function HierarchyPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireAdminPage();
-
   const query = await searchParams;
   const requestedId = typeof query.fy === "string" ? query.fy : undefined;
 
-  const [fiscalYears, activeYear, departments, statusOptions] = await Promise.all([
+  const [, fiscalYears, activeYear, departments, statusOptions] = await Promise.all([
+    requireAdminPage(),
     listFiscalYears(),
     getActiveFiscalYear(),
     listDepartments(),

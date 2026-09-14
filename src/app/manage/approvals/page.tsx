@@ -6,13 +6,14 @@ export const metadata = { title: "Approvals — KPI Scorecard" };
 export const dynamic = "force-dynamic";
 
 export default async function ApprovalsPage() {
-  await requireAdminPage();
-
-  const proposals = await prisma.kpiChangeProposal.findMany({
-    where: { status: "PENDING" },
-    orderBy: { createdAt: "asc" },
-    include: { proposedBy: true, kpi: true },
-  });
+  const [, proposals] = await Promise.all([
+    requireAdminPage(),
+    prisma.kpiChangeProposal.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      include: { proposedBy: true, kpi: true },
+    }),
+  ]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">

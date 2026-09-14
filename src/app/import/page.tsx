@@ -6,9 +6,8 @@ export const metadata = { title: "Import — KPI Scorecard" };
 export const dynamic = "force-dynamic";
 
 export default async function ImportPage() {
-  await requireAdminPage();
-
-  const [fiscalYears, active] = await Promise.all([
+  const [, fiscalYears, active] = await Promise.all([
+    requireAdminPage(),
     listFiscalYears(),
     getActiveFiscalYear(),
   ]);

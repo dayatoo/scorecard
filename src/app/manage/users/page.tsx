@@ -6,12 +6,13 @@ export const metadata = { title: "Users — KPI Scorecard" };
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
-  const currentUser = await requireAdminPage();
-
-  const users = await prisma.user.findMany({
-    orderBy: { createdAt: "asc" },
-    include: { department: true },
-  });
+  const [currentUser, users] = await Promise.all([
+    requireAdminPage(),
+    prisma.user.findMany({
+      orderBy: { createdAt: "asc" },
+      include: { department: true },
+    }),
+  ]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">

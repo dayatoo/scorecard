@@ -3,6 +3,8 @@
 
 import "server-only";
 
+import { cache } from "react";
+
 import { prisma } from "./prisma";
 import {
   currentPeriod,
@@ -317,8 +319,14 @@ function resolvePeriod(requested: string | undefined, startYear: number): string
   return today < yearPeriods[0] ? yearPeriods[0] : yearPeriods[yearPeriods.length - 1];
 }
 
-/** Everything the KPI detail page needs: the node, its history and its updates. */
-export async function getKpiDetail(kpiId: string, period?: string) {
+/**
+ * Everything the KPI detail page needs: the node, its history and its
+ * updates. Wrapped in `cache()` because the page calls this from both
+ * `generateMetadata` and the page component itself with identical
+ * (primitive) arguments — without memoizing, this multi-query chain would
+ * run twice per page load.
+ */
+export const getKpiDetail = cache(async (kpiId: string, period?: string) => {
   const kpi = await prisma.kpi.findUnique({
     where: { id: kpiId },
     select: { fiscalYearId: true },
@@ -337,4 +345,4 @@ export async function getKpiDetail(kpiId: string, period?: string) {
   });
 
   return { scorecard, node, updates };
-}
+});

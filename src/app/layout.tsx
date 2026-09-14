@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Manrope, Source_Sans_3 } from "next/font/google";
 import Link from "next/link";
 
+import { NavLinkPendingDot } from "@/components/NavLinkPendingDot";
 import { getCurrentUser } from "@/lib/session";
 import "./globals.css";
 
@@ -63,6 +64,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                     className="text-gray-600 hover:text-blue-700"
                   >
                     {item.label}
+                    <NavLinkPendingDot />
                   </Link>
                 ))}
                 {currentUser.role === "ADMIN" && (
@@ -78,6 +80,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                           className="block px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-blue-700"
                         >
                           {item.label}
+                          <NavLinkPendingDot />
                         </Link>
                       ))}
                     </div>
@@ -91,6 +94,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                       className="text-gray-600 hover:text-blue-700"
                     >
                       {item.label}
+                      <NavLinkPendingDot />
                     </Link>
                   ))}
               </nav>

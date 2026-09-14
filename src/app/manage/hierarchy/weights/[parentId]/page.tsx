@@ -16,15 +16,17 @@ export default async function GroupWeightsPage({
   params: Promise<{ parentId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireAdminPage();
-
   const { parentId: rawParentId } = await params;
   const parentId = rawParentId === "root" ? null : rawParentId;
 
   const query = await searchParams;
   const requestedId = typeof query.fy === "string" ? query.fy : undefined;
 
-  const [fiscalYears, activeYear] = await Promise.all([listFiscalYears(), getActiveFiscalYear()]);
+  const [, fiscalYears, activeYear] = await Promise.all([
+    requireAdminPage(),
+    listFiscalYears(),
+    getActiveFiscalYear(),
+  ]);
   const fiscalYearId = requestedId ?? activeYear?.id;
   const selectedFiscalYear = fiscalYears.find((fy) => fy.id === fiscalYearId) ?? null;
 

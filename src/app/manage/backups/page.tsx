@@ -13,12 +13,11 @@ export default async function BackupsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireAdminPage();
-
   const query = await searchParams;
   const requestedId = typeof query.fy === "string" ? query.fy : undefined;
 
-  const [fiscalYears, activeYear] = await Promise.all([
+  const [, fiscalYears, activeYear] = await Promise.all([
+    requireAdminPage(),
     listFiscalYears(),
     getActiveFiscalYear(),
   ]);

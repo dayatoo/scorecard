@@ -9,17 +9,15 @@ export const metadata = { title: "Manage — KPI Scorecard" };
 export const dynamic = "force-dynamic";
 
 export default async function ManagePage() {
-  await requireAdminPage();
-
-  const [fiscalYears, departments] = await Promise.all([
+  const [, fiscalYears, departments, counts] = await Promise.all([
+    requireAdminPage(),
     listFiscalYears(),
     listDepartments(),
+    prisma.kpi.groupBy({
+      by: ["fiscalYearId"],
+      _count: { _all: true },
+    }),
   ]);
-
-  const counts = await prisma.kpi.groupBy({
-    by: ["fiscalYearId"],
-    _count: { _all: true },
-  });
   const kpiCount = new Map(counts.map((c) => [c.fiscalYearId, c._count._all]));
 
   return (

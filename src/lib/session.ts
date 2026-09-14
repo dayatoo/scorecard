@@ -4,6 +4,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 
 import { prisma } from "./prisma";
 import { SESSION_COOKIE, verifySessionToken } from "./auth";
@@ -19,8 +20,12 @@ export type CurrentUser = {
  * Re-reads the User row on every call — never trusts anything beyond the
  * userId out of the token — so a since-removed or since-unapproved account
  * stops working the moment its cookie is next used, not just at next login.
+ *
+ * `cache()` only dedupes repeat calls within one request's render (e.g. the
+ * root layout and a page both calling this for the same navigation) — it
+ * does not carry over between requests, so that guarantee still holds.
  */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   const verified = await verifySessionToken(token);
   if (!verified) return null;
@@ -34,7 +39,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     role: user.role,
     departmentId: user.departmentId,
   };
-}
+});
 
 export async function isAuthenticated(): Promise<boolean> {
   return (await getCurrentUser()) !== null;

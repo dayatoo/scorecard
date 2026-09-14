@@ -19,13 +19,12 @@ export const metadata = { title: "Dashboard — KPI Scorecard" };
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage({ searchParams }: PageProps<"/">) {
-  await requireAuthPage();
-
   const params = await searchParams;
   const fiscalYearId = typeof params.fy === "string" ? params.fy : undefined;
   const period = typeof params.period === "string" ? params.period : undefined;
 
-  const [scorecard, fiscalYears] = await Promise.all([
+  const [, scorecard, fiscalYears] = await Promise.all([
+    requireAuthPage(),
     getScorecard({ fiscalYearId, period }),
     listFiscalYears(),
   ]);
