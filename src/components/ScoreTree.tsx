@@ -93,7 +93,7 @@ export function ScoreTree({
   return (
     <div className="overflow-hidden rounded-lg border bg-white">
       <div className="flex items-center justify-between border-b bg-gray-50 px-4 py-2">
-        <h2 className="text-sm font-semibold text-gray-700">Scorecard</h2>
+        <h2 className="font-heading text-sm font-bold text-gray-700">Scorecard</h2>
         <button
           type="button"
           onClick={() =>
@@ -133,7 +133,7 @@ export function ScoreTree({
                 <tr
                   key={row.id}
                   className={`border-b last:border-0 hover:bg-blue-50/40 ${
-                    row.level === 1 ? "bg-gray-50/70 font-medium" : ""
+                    row.level === 1 ? "bg-blue-50/70 font-medium" : ""
                   }`}
                 >
                   <th scope="row" className="px-4 py-1.5 text-left font-normal">

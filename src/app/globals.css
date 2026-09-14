@@ -1,9 +1,33 @@
 @import "tailwindcss";
 
+/*
+ * BELTS palette — navy/cyan brand, from the "Executive Cards" design
+ * direction (see the "Scorecard Style Directions" artifact). Overriding
+ * Tailwind's own `blue-*` scale re-brands the app's existing accent color
+ * (buttons, links, focus rings, badges already use `blue-*` throughout)
+ * without touching every file that uses it.
+ */
 @theme {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* Set on <html> by next/font (see layout.tsx) — self-hosted Manrope,
+     Source Sans 3 and JetBrains Mono, each already carrying its own
+     generic-family fallback. */
+  --font-sans: var(--next-font-body), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-heading: var(--next-font-heading), var(--font-sans);
+  --font-mono: var(--next-font-mono), ui-monospace, SFMono-Regular, "SF Mono",
+    Menlo, Consolas, monospace;
+
+  --color-blue-50: #E6F6FD;
+  --color-blue-100: #CCEEFB;
+  --color-blue-200: #99DDF7;
+  --color-blue-300: #5FCBF2;
+  --color-blue-400: #20B0EC;
+  --color-blue-500: #20B0EC;
+  --color-blue-600: #032853;
+  --color-blue-700: #063C78;
+  --color-blue-800: #042C5E;
+  --color-blue-900: #021A38;
+  --color-blue-950: #01101F;
 }
 
 html {
@@ -12,9 +36,18 @@ html {
 
 body {
   font-family: var(--font-sans);
+  background: #F3F4F6;
 }
 
-/* Numbers in a score column should line up, so tabular figures throughout. */
+h1, h2, h3 {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* Numbers in a score column should line up and read as data, so tabular
+   figures in the brand's monospace throughout. */
 .tabular {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }

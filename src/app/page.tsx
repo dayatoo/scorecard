@@ -5,6 +5,7 @@ import { IssueBanner } from "@/components/IssueBanner";
 import { PeriodPicker } from "@/components/PeriodPicker";
 import { ScoreTree, type TreeRow } from "@/components/ScoreTree";
 import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
+import { bandStyle } from "@/lib/band-style";
 import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
 import { flattenTree } from "@/lib/kpi-tree";
 import { getScorecard, listFiscalYears } from "@/lib/data";
@@ -107,29 +108,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
       <Header scorecard={scorecard} fiscalYears={fiscalYears} />
       <IssueBanner issues={scorecard.issues} />
 
+      {/* Total score gets its own band — deliberately unlike the Strategic
+          Goal cards below it, so it reads as the headline figure rather
+          than a third peer in the same grid. */}
+      <TotalScoreHero scorecard={scorecard} />
+
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard
-          label={`Total score — ${formatPeriodLabel(scorecard.period)}`}
-          score={scorecard.total.score}
-          band={scorecard.total.band}
-          provisional={scorecard.total.provisionalShare > 0}
-          prorated={scorecard.total.proratedWeight > 0}
-          footer={
-            <>
-              <CoverageBadge
-                coverage={scorecard.total.coverage}
-                provisionalShare={scorecard.total.provisionalShare}
-                notYetDueShare={scorecard.total.notYetDueShare}
-              />
-              <span className="ml-1 text-xs text-gray-500">of weight scored</span>
-              {scorecard.total.proratedShare > 0 && (
-                <span className="ml-1 text-xs text-gray-500">
-                  · {Math.round(scorecard.total.proratedShare * 100)}% pro-rated
-                </span>
-              )}
-            </>
-          }
-        />
         {/* Every Strategic Goal, not a fixed few: the grid wraps to as many rows
             as the scorecard needs. Truncating here once hid goals entirely, since
             the summary is the only place a goal's score is shown unexpanded. */}
@@ -161,6 +145,46 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
         total={totalRow}
       />
     </div>
+  );
+}
+
+function TotalScoreHero({
+  scorecard,
+}: {
+  scorecard: NonNullable<Awaited<ReturnType<typeof getScorecard>>>;
+}) {
+  const { total, period } = scorecard;
+  const style = bandStyle(total.band);
+
+  return (
+    <section
+      className="rounded-2xl p-7 text-white shadow-sm"
+      style={{
+        background:
+          "radial-gradient(480px 260px at 88% -20%, rgba(32,176,236,0.35), transparent 65%), " +
+          "linear-gradient(155deg, #04336A 0%, #032853 55%, #021A38 100%)",
+      }}
+    >
+      <div className="text-xs font-bold tracking-widest text-blue-400 uppercase">
+        Total score — {formatPeriodLabel(period)}
+      </div>
+      <div className="mt-2 flex flex-wrap items-baseline gap-3">
+        <span className="font-heading text-5xl font-extrabold">
+          {total.score !== null ? total.score.toFixed(1) : "—"}
+        </span>
+        {style && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/10 px-3 py-1 text-xs font-bold">
+            <span className="h-2 w-2 rounded-full" style={{ background: style.hex }} />
+            {style.label}
+          </span>
+        )}
+      </div>
+      <div className="tabular mt-2.5 text-xs text-white/65">
+        {Math.round(total.coverage * 100)}% scored
+        {total.notYetDueShare > 0 && ` · ${Math.round(total.notYetDueShare * 100)}% not due`}
+        {total.proratedShare > 0 && ` · ${Math.round(total.proratedShare * 100)}% pro-rated`}
+      </div>
+    </section>
   );
 }
 
