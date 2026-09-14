@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 
+import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import { fiscalYearLabel, periodsOfFiscalYear } from "@/lib/fiscal";
@@ -327,9 +329,13 @@ export async function applyImport(input: {
   let created = 0;
   let updated = 0;
   const idByCode = new Map<string, string>();
+  const allKpiIds: string[] = [];
+  const departmentPairs: { kpiId: string; departmentId: string }[] = [];
 
   // Pass 1: upsert every row without its parent, so a parent listed after its
-  // child in the sheet still resolves.
+  // child in the sheet still resolves. Department links are collected here
+  // and written in one batch below, rather than per row, since Prisma has no
+  // bulk upsert of its own to fold the KPI write itself into the same batch.
   for (const [index, kpi] of kpis.entries()) {
     const data = {
       name: kpi.name,
@@ -358,31 +364,43 @@ export async function applyImport(input: {
     if (match) updated++;
     else created++;
     idByCode.set(kpi.code.toLowerCase(), record.id);
+    allKpiIds.push(record.id);
 
-    await prisma.kpiDepartment.deleteMany({ where: { kpiId: record.id } });
     const departmentIds = kpi.departments
       .map((name) => departmentIdByName.get(name.toLowerCase()))
       .filter(Boolean) as string[];
-    if (departmentIds.length > 0) {
-      await prisma.kpiDepartment.createMany({
-        data: departmentIds.map((departmentId) => ({
-          kpiId: record.id,
-          departmentId,
-        })),
-        skipDuplicates: true,
-      });
+    for (const departmentId of departmentIds) {
+      departmentPairs.push({ kpiId: record.id, departmentId });
     }
   }
 
-  // Pass 2: attach parents.
-  for (const kpi of kpis) {
-    if (!kpi.parentCode) continue;
-    const parentId = idByCode.get(kpi.parentCode.toLowerCase());
-    if (!parentId) continue;
-    await prisma.kpi.update({
-      where: { id: idByCode.get(kpi.code.toLowerCase()) as string },
-      data: { parentId },
-    });
+  // Every imported KPI's department links are cleared and rewritten as two
+  // bulk statements, rather than a delete+create per row.
+  await prisma.kpiDepartment.deleteMany({ where: { kpiId: { in: allKpiIds } } });
+  if (departmentPairs.length > 0) {
+    await prisma.kpiDepartment.createMany({ data: departmentPairs, skipDuplicates: true });
+  }
+
+  // Pass 2: attach parents, in one statement rather than one UPDATE per row.
+  const parentPairs = kpis
+    .map((kpi) => {
+      if (!kpi.parentCode) return null;
+      const parentId = idByCode.get(kpi.parentCode.toLowerCase());
+      const childId = idByCode.get(kpi.code.toLowerCase());
+      if (!parentId || !childId) return null;
+      return { childId, parentId };
+    })
+    .filter((p): p is { childId: string; parentId: string } => p !== null);
+
+  if (parentPairs.length > 0) {
+    await prisma.$executeRaw`
+      UPDATE "Kpi" AS k
+      SET "parentId" = c.parent_id
+      FROM (VALUES ${Prisma.join(
+        parentPairs.map((p) => Prisma.sql`(${p.childId}, ${p.parentId})`)
+      )}) AS c(child_id, parent_id)
+      WHERE k.id = c.child_id
+    `;
   }
 
   const toRemove =
