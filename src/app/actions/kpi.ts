@@ -93,8 +93,10 @@ async function writeEntry(user: CurrentUser, input: SaveEntryInput): Promise<voi
     throw new Error("That completion date is not a valid date.");
   }
   // Something cannot have been completed after the month being reported on —
-  // that would let a future completion score an earlier month.
-  if (completionDate) {
+  // that would let a future completion score an earlier month. An estimate
+  // is a projection rather than a confirmed completion, so it's allowed to
+  // point at a month that hasn't happened yet.
+  if (completionDate && input.basis !== "ESTIMATE") {
     const endOfPeriod = lastDayOfPeriod(input.period);
     if (completionDate > endOfPeriod) {
       throw new Error(

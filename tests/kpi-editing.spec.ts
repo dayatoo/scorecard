@@ -76,7 +76,8 @@ test("a milestone's completion date can be marked Actual or Estimate, on both th
 
   // Record it as an estimate — the score should carry the same provisional
   // marker an estimated year-to-date figure gets. Dated within the reporting
-  // month itself, since a completion after the month being viewed is refused.
+  // month itself here; a separate test below covers an estimate dated after
+  // the reporting month, which (unlike Actual) is allowed.
   await page.getByLabel("Completion date").fill("03/08/2026");
   await basis.getByRole("radio", { name: "Estimate" }).click();
   await page.getByRole("button", { name: "Save" }).click();
@@ -101,6 +102,34 @@ test("a milestone's completion date can be marked Actual or Estimate, on both th
   await expect(page.locator('[title*="provisional"]')).toHaveCount(0);
 
   // Restore the seed's baseline (no completion date) for other specs.
+  await page.getByLabel("Completion date").fill("");
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+  await expect(page.getByLabel("Completion date")).toHaveValue("");
+});
+
+test("an estimated completion date may be after the reporting month, since it's a projection — an actual one may not", async ({ page }) => {
+  await page.goto(`/kpis?period=${PERIOD}`);
+  await page.getByRole("link", { name: "Complete ERP rollout" }).click();
+  await expect(page.getByRole("heading", { name: "Complete ERP rollout" })).toBeVisible();
+
+  const basis = page.getByRole("radiogroup", { name: "This date is" });
+  await basis.getByRole("radio", { name: "Estimate" }).click();
+  await page.getByLabel("Completion date").fill("15/09/2026");
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+  await expect(page.getByLabel("Completion date")).toHaveValue("15/09/2026");
+
+  // The same date is refused once the figure is marked Actual instead.
+  await basis.getByRole("radio", { name: "Actual" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/is after Aug 2026, the month being reported on/)).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  // Restore the seed's baseline for other specs.
+  await basis.getByRole("radio", { name: "Estimate" }).click();
   await page.getByLabel("Completion date").fill("");
   await page.getByRole("button", { name: "Save" }).click();
   await page.getByRole("button", { name: "Confirm and save" }).click();

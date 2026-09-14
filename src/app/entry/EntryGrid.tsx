@@ -231,10 +231,10 @@ export function EntryGrid({
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border bg-white">
+      <div className="max-h-[70dvh] overflow-auto rounded-lg border bg-white">
         <table className="w-full min-w-[60rem] text-sm">
-          <thead>
-            <tr className="border-b bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
+          <thead className="sticky top-0 z-10 bg-gray-50">
+            <tr className="border-b text-left text-xs font-medium text-gray-500 uppercase">
               <th scope="col" className="px-3 py-2">KPI</th>
               <th scope="col" className="px-3 py-2 text-right">Meet target</th>
               <th scope="col" className="w-40 px-3 py-2">YTD value</th>

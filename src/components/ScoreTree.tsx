@@ -22,6 +22,9 @@ export type TreeRow = {
   bandTargets: Record<Band, string | null>;
   unit: string | null;
   metricType: MetricType | null;
+  /** The KPI's own reported year-to-date figure, shown next to Meet Target. */
+  value: number | null;
+  basis: "ACTUAL" | "ESTIMATE" | null;
   /** Score per period, keyed by period. */
   scores: Record<
     string,
@@ -121,7 +124,7 @@ export function ScoreTree({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[44rem] border-collapse text-sm">
+        <table className="w-full min-w-[48rem] border-collapse text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
               <th scope="col" className="px-4 py-2">KPI</th>
@@ -131,6 +134,7 @@ export function ScoreTree({
               ) : (
                 <th scope="col" className="px-2 py-2 text-right">Meet Target</th>
               )}
+              <th scope="col" className="px-2 py-2 text-right">YTD</th>
               {periods.map((period) => (
                 <th
                   key={period}
@@ -223,6 +227,27 @@ export function ScoreTree({
                       )}
                     </td>
                   )}
+
+                  <td className="tabular px-2 py-1.5 text-right text-xs text-gray-500">
+                    {row.value === null ? (
+                      "—"
+                    ) : (
+                      <>
+                        {row.value.toLocaleString()}
+                        {row.metricType === "VARIANCE" ? (
+                          <span className="ml-0.5 text-gray-400">%</span>
+                        ) : (
+                          row.unit &&
+                          row.metricType !== "MONTH_COMPLETION" && (
+                            <span className="ml-0.5 text-gray-400">{row.unit}</span>
+                          )
+                        )}
+                        {row.basis === "ESTIMATE" && (
+                          <span className="ml-1 text-amber-700">est</span>
+                        )}
+                      </>
+                    )}
+                  </td>
 
                   {periods.map((period) => {
                     const entry = row.scores[period];

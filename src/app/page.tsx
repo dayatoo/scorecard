@@ -75,6 +75,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
     ) as Record<Band, string | null>,
     unit: node.unit,
     metricType: node.metricType,
+    value: node.leaf?.value ?? null,
+    basis: node.leaf?.basis ?? null,
     pendingReason: node.leaf?.pendingReason ?? null,
     scores: Object.fromEntries(
       scorecard.periods.map((p) => [
