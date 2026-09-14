@@ -271,9 +271,18 @@ test("the entry grid saves several KPIs at once", async ({ page }) => {
   await expect(days).toHaveValue(originalDays);
 });
 
-/** The Score column, top to bottom, skipping rows with no score. */
+/**
+ * The Score column, top to bottom, skipping rows with no score. Reads the
+ * column's position from its header rather than a hardcoded index, so an
+ * unrelated column added elsewhere in the table (e.g. toggling "Show all
+ * bands") doesn't silently make this read the wrong column.
+ */
 async function scoreColumn(page: import("@playwright/test").Page): Promise<number[]> {
-  const cells = await page.locator("tbody tr td:nth-child(8)").allInnerTexts();
+  const headers = await page.locator("thead th").allInnerTexts();
+  // Sortable headers append a "▲"/"▼" glyph, and "Scored" is a separate
+  // column, so strip the glyph before matching the exact label.
+  const index = headers.findIndex((h) => h.replace(/[▲▼]/g, "").trim() === "Score");
+  const cells = await page.locator(`tbody tr td:nth-child(${index + 1})`).allInnerTexts();
   return cells
     .map((text) => Number(text.replace(/[^\d.]/g, "")))
     .filter((value) => Number.isFinite(value) && value > 0);

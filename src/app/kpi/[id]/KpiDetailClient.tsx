@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
+import { BandTargetCells, BandTargetHeaderCells } from "@/components/BandColumns";
 import { ConfirmSaveDialog, SaveBar } from "@/components/ConfirmSaveDialog";
 import { DateField } from "@/components/DateField";
 import {
@@ -142,7 +143,8 @@ export function KpiDetailClient({
     id: string; code: string; name: string; weight: number;
     score: number | null; band: Band | null; coverage: number; provisional: boolean;
     exactScore: number | null; scoredWeight: number;
-    meetTarget: string | null; unit: string | null; metricType: MetricType | null;
+    meetTarget: string | null; bandTargets: Record<Band, string | null>;
+    unit: string | null; metricType: MetricType | null;
   }[];
   history: HistoryRow[];
   updates: {
@@ -884,24 +886,39 @@ function ChildrenTable({ subKpis, period }: {
   subKpis: {
     id: string; code: string; name: string; weight: number;
     score: number | null; band: Band | null; coverage: number; provisional: boolean;
-    meetTarget: string | null; unit: string | null; metricType: MetricType | null;
+    meetTarget: string | null; bandTargets: Record<Band, string | null>;
+    unit: string | null; metricType: MetricType | null;
   }[];
   period: string;
 }) {
   const totalWeight = subKpis.reduce((sum, c) => sum + c.weight, 0);
+  const [showBands, setShowBands] = useState(false);
 
   return (
     <Panel
       title="How this score is made up"
       description="Each sub-KPI's share of this KPI's weight, and what it contributed."
     >
+      <div className="mb-2 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowBands((v) => !v)}
+          className="text-xs font-medium text-blue-700 hover:text-blue-900"
+        >
+          {showBands ? "Hide bands" : "Show all bands"}
+        </button>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[34rem] text-sm">
           <thead>
             <tr className="border-b text-left text-xs font-medium text-gray-500 uppercase">
               <th scope="col" className="py-2">Sub-KPI</th>
               <th scope="col" className="py-2 text-right">Weight</th>
-              <th scope="col" className="py-2 text-right">Meet Target</th>
+              {showBands ? (
+                <BandTargetHeaderCells className="py-2 text-right" />
+              ) : (
+                <th scope="col" className="py-2 text-right">Meet Target</th>
+              )}
               <th scope="col" className="py-2 text-right">Share</th>
               <th scope="col" className="py-2 text-center">Score</th>
               <th scope="col" className="py-2 text-right">Scored</th>
@@ -919,18 +936,27 @@ function ChildrenTable({ subKpis, period }: {
                 <td className="tabular py-1.5 text-right text-gray-600">
                   {child.weight.toFixed(1)}%
                 </td>
-                <td className="tabular py-1.5 text-right text-gray-500">
-                  {child.meetTarget === null ? (
-                    "—"
-                  ) : (
-                    <>
-                      {child.meetTarget}
-                      {child.unit && child.metricType !== "MONTH_COMPLETION" && (
-                        <span className="ml-0.5 text-xs text-gray-400">{child.unit}</span>
-                      )}
-                    </>
-                  )}
-                </td>
+                {showBands ? (
+                  <BandTargetCells
+                    bandTargets={child.bandTargets}
+                    unit={child.unit}
+                    metricType={child.metricType}
+                    className="tabular py-1.5 text-right text-gray-500"
+                  />
+                ) : (
+                  <td className="tabular py-1.5 text-right text-gray-500">
+                    {child.meetTarget === null ? (
+                      "—"
+                    ) : (
+                      <>
+                        {child.meetTarget}
+                        {child.unit && child.metricType !== "MONTH_COMPLETION" && (
+                          <span className="ml-0.5 text-xs text-gray-400">{child.unit}</span>
+                        )}
+                      </>
+                    )}
+                  </td>
+                )}
                 <td className="tabular py-1.5 text-right text-gray-500">
                   {totalWeight > 0 ? `${((child.weight / totalWeight) * 100).toFixed(0)}%` : "—"}
                 </td>

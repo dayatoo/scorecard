@@ -9,8 +9,9 @@ import { bandStyle } from "@/lib/band-style";
 import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
 import { flattenTree } from "@/lib/kpi-tree";
 import { getScorecard, listFiscalYears } from "@/lib/data";
+import { BANDS, type Band } from "@/lib/scoring";
 import { requireAuthPage } from "@/lib/session";
-import { describeMeetTarget } from "@/lib/targets";
+import { describeBandTarget, describeMeetTarget } from "@/lib/targets";
 
 export const metadata = { title: "Dashboard — KPI Scorecard" };
 
@@ -69,6 +70,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
     parentId: node.parentId,
     departments: node.departments.map((d) => d.name),
     meetTarget: describeMeetTarget(node.targetConfig, node.metricType),
+    bandTargets: Object.fromEntries(
+      BANDS.map((b) => [b, describeBandTarget(node.targetConfig, node.metricType, b)])
+    ) as Record<Band, string | null>,
     unit: node.unit,
     metricType: node.metricType,
     pendingReason: node.leaf?.pendingReason ?? null,

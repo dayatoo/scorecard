@@ -243,23 +243,31 @@ export function crossesNumericMonthBoundary(
 }
 
 /**
- * "What am I being measured against" in one short string — the Meet band's
- * target, or (for a milestone) its target month. Used wherever a KPI is
- * listed alongside its score, so the target is visible without opening it.
- * `null` for a rollup (no metric) or a KPI with no target set yet.
+ * "What am I being measured against" in one short string, for any one band —
+ * a milestone's target month (MEET only; every other band has nothing to
+ * show, since a milestone has one target, not six), or that band's number or
+ * range. Used wherever a KPI is listed alongside its score, so its targets
+ * are visible without opening it. `null` for a rollup (no metric), a KPI
+ * with no target set yet, or a non-MEET band on a milestone.
  */
-export function describeMeetTarget(config: unknown, metricType: MetricType | null): string | null {
+export function describeBandTarget(config: unknown, metricType: MetricType | null, band: Band): string | null {
   if (!config || typeof config !== "object") return null;
 
   if (metricType === "MONTH_COMPLETION") {
+    if (band !== "MEET") return null;
     const month = (config as { targetMonth?: string }).targetMonth;
     return month ? formatPeriodLabel(month) : null;
   }
 
-  const meet = (config as Record<string, unknown>).MEET;
-  if (typeof meet === "number") return meet.toLocaleString();
-  if (Array.isArray(meet) && meet.length === 2) {
-    return meet[0] === meet[1] ? meet[0].toLocaleString() : `${meet[0]}–${meet[1]}`;
+  const value = (config as Record<string, unknown>)[band];
+  if (typeof value === "number") return value.toLocaleString();
+  if (Array.isArray(value) && value.length === 2) {
+    return value[0] === value[1] ? value[0].toLocaleString() : `${value[0]}–${value[1]}`;
   }
   return null;
+}
+
+/** The Meet band's target specifically — see `describeBandTarget`. */
+export function describeMeetTarget(config: unknown, metricType: MetricType | null): string | null {
+  return describeBandTarget(config, metricType, "MEET");
 }

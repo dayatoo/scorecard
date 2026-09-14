@@ -5,7 +5,8 @@ import { getScorecard, listFiscalYears } from "@/lib/data";
 import { requireAuthPage } from "@/lib/session";
 import { flattenTree, strategicGoalOf } from "@/lib/kpi-tree";
 import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
-import { describeMeetTarget } from "@/lib/targets";
+import { BANDS, type Band } from "@/lib/scoring";
+import { describeBandTarget, describeMeetTarget } from "@/lib/targets";
 
 export const metadata = { title: "KPIs — KPI Scorecard" };
 export const dynamic = "force-dynamic";
@@ -50,6 +51,9 @@ export default async function KpisPage({ searchParams }: PageProps<"/kpis">) {
       metricType: node.metricType,
       unit: node.unit,
       meetTarget: describeMeetTarget(node.targetConfig, node.metricType),
+      bandTargets: Object.fromEntries(
+        BANDS.map((b) => [b, describeBandTarget(node.targetConfig, node.metricType, b)])
+      ) as Record<Band, string | null>,
       deadlineMonth: node.deadlineMonth,
       value: node.leaf?.value ?? null,
       basis: node.leaf?.basis ?? null,

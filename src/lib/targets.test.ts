@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  describeBandTarget,
   describeMeetTarget,
   draftToMetricInput,
   metricColumns,
@@ -198,6 +199,36 @@ describe("describeMeetTarget", () => {
 
   it("shows a FIXED meet band as a bare number", () => {
     assert.equal(describeMeetTarget({ MEET: 3000000 }, "DOLLAR"), "3,000,000");
+  });
+});
+
+describe("describeBandTarget", () => {
+  const range = {
+    POOR: [0, 49], IMPROVEMENT_NEEDED: [50, 69], MEET: [70, 79],
+    GOOD: [80, 89], VERY_GOOD: [90, 95], EXCELLENT: [96, 100],
+  };
+
+  it("describes any band, not just Meet, on a RANGE config", () => {
+    assert.equal(describeBandTarget(range, "PERCENTAGE", "POOR"), "0–49");
+    assert.equal(describeBandTarget(range, "PERCENTAGE", "EXCELLENT"), "96–100");
+  });
+
+  it("describes any band on a FIXED config", () => {
+    const fixed = { POOR: 12, IMPROVEMENT_NEEDED: 11, MEET: 10, GOOD: 9, VERY_GOOD: 8, EXCELLENT: 7 };
+    assert.equal(describeBandTarget(fixed, "DAYS", "POOR"), "12");
+    assert.equal(describeBandTarget(fixed, "DAYS", "EXCELLENT"), "7");
+  });
+
+  it("gives a milestone's target month only for Meet — every other band has nothing to show", () => {
+    const month = { targetMonth: "2026-10" };
+    assert.equal(describeBandTarget(month, "MONTH_COMPLETION", "MEET"), "Oct 2026");
+    for (const band of ["POOR", "IMPROVEMENT_NEEDED", "GOOD", "VERY_GOOD", "EXCELLENT"] as const) {
+      assert.equal(describeBandTarget(month, "MONTH_COMPLETION", band), null);
+    }
+  });
+
+  it("returns null for a rollup with no config", () => {
+    assert.equal(describeBandTarget(null, "PERCENTAGE", "MEET"), null);
   });
 });
 

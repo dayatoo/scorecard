@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { BandTargetCells, BandTargetHeaderCells } from "@/components/BandColumns";
 import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
 import { formatPeriodLabel } from "@/lib/fiscal";
 import { BANDS, bandLabel, type Band, type MetricType } from "@/lib/scoring";
@@ -13,6 +14,7 @@ export type KpiTableRow = {
   name: string;
   subGroup: string | null;
   meetTarget: string | null;
+  bandTargets: Record<Band, string | null>;
   level: number;
   isLeaf: boolean;
   weight: number;
@@ -50,6 +52,7 @@ export function KpiTable({
   period: string;
 }) {
   const [view, setView] = useState<"leaves" | "level">("leaves");
+  const [showBands, setShowBands] = useState(false);
   const [level, setLevel] = useState(1);
   const [goal, setGoal] = useState("");
   const [department, setDepartment] = useState("");
@@ -194,7 +197,15 @@ export function KpiTable({
           </button>
         )}
 
-        <span className="ml-auto text-sm text-gray-500">
+        <button
+          type="button"
+          onClick={() => setShowBands((v) => !v)}
+          className="ml-auto text-xs font-medium text-blue-700 hover:text-blue-900"
+        >
+          {showBands ? "Hide bands" : "Show all bands"}
+        </button>
+
+        <span className="text-sm text-gray-500">
           {sorted.length} of {view === "leaves" ? rows.filter((r) => r.isLeaf).length : rows.filter((r) => r.level === level).length}
         </span>
       </div>
@@ -208,7 +219,11 @@ export function KpiTable({
               <SortHeader label="Strategic Goal" sortKey="strategicGoal" sort={sort} onSort={toggleSort} />
               <th scope="col" className="px-3 py-2">Owners</th>
               <SortHeader label="Weight" sortKey="weight" sort={sort} onSort={toggleSort} align="right" />
-              <th scope="col" className="px-3 py-2 text-right">Meet Target</th>
+              {showBands ? (
+                <BandTargetHeaderCells className="px-3 py-2 text-right" />
+              ) : (
+                <th scope="col" className="px-3 py-2 text-right">Meet Target</th>
+              )}
               <th scope="col" className="px-3 py-2 text-right">YTD</th>
               <SortHeader label="Score" sortKey="score" sort={sort} onSort={toggleSort} align="center" />
               <SortHeader label="Scored" sortKey="coverage" sort={sort} onSort={toggleSort} align="right" />
@@ -244,18 +259,27 @@ export function KpiTable({
                 <td className="tabular px-3 py-1.5 text-right text-gray-600">
                   {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
                 </td>
-                <td className="tabular px-3 py-1.5 text-right text-gray-500">
-                  {row.meetTarget === null ? (
-                    <span className="text-gray-300">—</span>
-                  ) : (
-                    <>
-                      {row.meetTarget}
-                      {row.unit && row.metricType !== "MONTH_COMPLETION" && (
-                        <span className="ml-0.5 text-xs text-gray-400">{row.unit}</span>
-                      )}
-                    </>
-                  )}
-                </td>
+                {showBands ? (
+                  <BandTargetCells
+                    bandTargets={row.bandTargets}
+                    unit={row.unit}
+                    metricType={row.metricType}
+                    className="tabular px-3 py-1.5 text-right text-gray-500"
+                  />
+                ) : (
+                  <td className="tabular px-3 py-1.5 text-right text-gray-500">
+                    {row.meetTarget === null ? (
+                      <span className="text-gray-300">—</span>
+                    ) : (
+                      <>
+                        {row.meetTarget}
+                        {row.unit && row.metricType !== "MONTH_COMPLETION" && (
+                          <span className="ml-0.5 text-xs text-gray-400">{row.unit}</span>
+                        )}
+                      </>
+                    )}
+                  </td>
+                )}
                 <td className="tabular px-3 py-1.5 text-right text-gray-700">
                   {row.value === null ? (
                     <span className="text-gray-300">—</span>
@@ -280,7 +304,7 @@ export function KpiTable({
             ))}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-sm text-gray-500">
+                <td colSpan={showBands ? 14 : 9} className="px-3 py-10 text-center text-sm text-gray-500">
                   No KPIs match those filters.
                 </td>
               </tr>

@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { BandTargetCells, BandTargetHeaderCells } from "./BandColumns";
 import { CoverageBadge, ScoreCell } from "./ScoreCell";
 import { formatPeriodShort } from "@/lib/fiscal";
-import type { Band, MetricType } from "@/lib/scoring";
+import { BANDS, type Band, type MetricType } from "@/lib/scoring";
 
 export type TreeRow = {
   id: string;
@@ -18,6 +19,7 @@ export type TreeRow = {
   parentId: string | null;
   departments: string[];
   meetTarget: string | null;
+  bandTargets: Record<Band, string | null>;
   unit: string | null;
   metricType: MetricType | null;
   /** Score per period, keyed by period. */
@@ -69,6 +71,7 @@ export function ScoreTree({
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(rows.filter((r) => r.level === 1).map((r) => r.id))
   );
+  const [showBands, setShowBands] = useState(false);
 
   const toggle = (id: string) =>
     setExpanded((current) => {
@@ -97,15 +100,24 @@ export function ScoreTree({
     <div className="overflow-hidden rounded-lg border bg-white">
       <div className="flex items-center justify-between border-b bg-gray-50 px-4 py-2">
         <h2 className="font-heading text-sm font-bold text-gray-700">Scorecard</h2>
-        <button
-          type="button"
-          onClick={() =>
-            setExpanded(allExpanded ? new Set() : new Set(hasChildren))
-          }
-          className="text-xs font-medium text-blue-700 hover:text-blue-900"
-        >
-          {allExpanded ? "Collapse all" : "Expand all"}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowBands((v) => !v)}
+            className="text-xs font-medium text-blue-700 hover:text-blue-900"
+          >
+            {showBands ? "Hide bands" : "Show all bands"}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setExpanded(allExpanded ? new Set() : new Set(hasChildren))
+            }
+            className="text-xs font-medium text-blue-700 hover:text-blue-900"
+          >
+            {allExpanded ? "Collapse all" : "Expand all"}
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -114,7 +126,11 @@ export function ScoreTree({
             <tr className="border-b bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
               <th scope="col" className="px-4 py-2">KPI</th>
               <th scope="col" className="px-2 py-2 text-right">Weight</th>
-              <th scope="col" className="px-2 py-2 text-right">Meet Target</th>
+              {showBands ? (
+                <BandTargetHeaderCells className="px-2 py-2 text-right" />
+              ) : (
+                <th scope="col" className="px-2 py-2 text-right">Meet Target</th>
+              )}
               {periods.map((period) => (
                 <th
                   key={period}
@@ -181,18 +197,27 @@ export function ScoreTree({
                     {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
                   </td>
 
-                  <td className="tabular px-2 py-1.5 text-right text-xs text-gray-500">
-                    {row.meetTarget === null ? (
-                      "—"
-                    ) : (
-                      <>
-                        {row.meetTarget}
-                        {row.unit && row.metricType !== "MONTH_COMPLETION" && (
-                          <span className="ml-0.5 text-gray-400">{row.unit}</span>
-                        )}
-                      </>
-                    )}
-                  </td>
+                  {showBands ? (
+                    <BandTargetCells
+                      bandTargets={row.bandTargets}
+                      unit={row.unit}
+                      metricType={row.metricType}
+                      className="tabular px-2 py-1.5 text-right text-xs text-gray-500"
+                    />
+                  ) : (
+                    <td className="tabular px-2 py-1.5 text-right text-xs text-gray-500">
+                      {row.meetTarget === null ? (
+                        "—"
+                      ) : (
+                        <>
+                          {row.meetTarget}
+                          {row.unit && row.metricType !== "MONTH_COMPLETION" && (
+                            <span className="ml-0.5 text-gray-400">{row.unit}</span>
+                          )}
+                        </>
+                      )}
+                    </td>
+                  )}
 
                   {periods.map((period) => {
                     const entry = row.scores[period];
@@ -227,7 +252,9 @@ export function ScoreTree({
                 Total combined score
               </th>
               <td className="tabular px-2 py-2.5 text-right text-xs text-gray-600">100%</td>
-              <td className="px-2 py-2.5"></td>
+              {showBands
+                ? BANDS.map((band) => <td key={band} className="px-2 py-2.5" />)
+                : <td className="px-2 py-2.5" />}
               {periods.map((period) => {
                 const entry = total.scores[period];
                 return (

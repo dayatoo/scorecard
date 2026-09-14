@@ -7,8 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAuthPage } from "@/lib/session";
 import { ancestorsOf } from "@/lib/kpi-tree";
 import { periodsOfFiscalYear } from "@/lib/fiscal";
-import type { Band } from "@/lib/scoring";
-import { describeMeetTarget } from "@/lib/targets";
+import { BANDS, type Band } from "@/lib/scoring";
+import { describeBandTarget, describeMeetTarget } from "@/lib/targets";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +113,9 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
     coverage: child.coverage,
     provisional: child.provisional,
     meetTarget: describeMeetTarget(child.targetConfig, child.metricType),
+    bandTargets: Object.fromEntries(
+      BANDS.map((b) => [b, describeBandTarget(child.targetConfig, child.metricType, b)])
+    ) as Record<Band, string | null>,
     unit: child.unit,
     metricType: child.metricType,
     // For the score explainer's rollup arithmetic: the exact (unrounded)
