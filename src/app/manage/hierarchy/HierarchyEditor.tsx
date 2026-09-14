@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation";
 import { useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 
 import { ConfirmSaveDialog } from "@/components/ConfirmSaveDialog";
-import { createKpi, deleteKpi, moveKpi, reorderKpi } from "@/app/actions/hierarchy";
+import {
+  applyParentInference,
+  createKpi,
+  deleteKpi,
+  moveKpi,
+  previewParentInference,
+  reorderKpi,
+  type ParentInferenceResult,
+} from "@/app/actions/hierarchy";
 import { KpiEditPanel } from "./KpiEditPanel";
 
 type Node = {
@@ -80,6 +88,10 @@ export function HierarchyEditor({
   const nameInputRef = useRef<HTMLInputElement>(null);
   const addSessionRef = useRef<AddSession | null>(null);
 
+  const [repairPreview, setRepairPreview] = useState<ParentInferenceResult | null>(null);
+  const [repairChecking, setRepairChecking] = useState(false);
+  const [repairError, setRepairError] = useState<string | null>(null);
+
   // The list a KPI appears in the instant it's submitted, rather than once
   // the round trip that actually saves it comes back — see submitAdd.
   const [optimisticNodes, addOptimisticNode] = useOptimistic(
@@ -123,6 +135,39 @@ export function HierarchyEditor({
         setError("Could not reach the server. Check your connection and try again.");
       }
     });
+
+  /**
+   * A code already encodes its place in the tree ("1.2.1" belongs under
+   * "1.2"), so a KPI left without a parent — e.g. by an import interrupted
+   * between creating KPIs and attaching them — can be reconnected from its
+   * code alone. Checks first, without writing anything, so nothing is
+   * applied on the strength of a mis-click.
+   */
+  const checkRepair = async () => {
+    setRepairError(null);
+    setRepairChecking(true);
+    try {
+      const result = await previewParentInference(selectedFiscalYearId);
+      setRepairChecking(false);
+      if (!result.ok) {
+        setRepairError(result.error);
+        return;
+      }
+      if (result.data.changes.length === 0 && result.data.unresolved.length === 0) {
+        setRepairError("Every KPI's parent already matches its code — nothing to fix.");
+        return;
+      }
+      setRepairPreview(result.data);
+    } catch {
+      setRepairChecking(false);
+      setRepairError("Could not reach the server. Check your connection and try again.");
+    }
+  };
+
+  const confirmRepair = () => {
+    run(() => applyParentInference(selectedFiscalYearId));
+    setRepairPreview(null);
+  };
 
   const groupTotal = (parentId: string | null) =>
     (childrenOf.get(parentId) ?? []).reduce((sum, n) => sum + n.weight, 0);
@@ -408,7 +453,20 @@ export function HierarchyEditor({
             + Strategic Goal
           </button>
         )}
+        {!fiscalYearClosed && (
+          <button
+            type="button"
+            onClick={checkRepair}
+            disabled={repairChecking}
+            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            title="Reconnect any KPI missing a parent using its code, e.g. 1.2.1 under 1.2"
+          >
+            {repairChecking ? "Checking…" : "Repair hierarchy from codes"}
+          </button>
+        )}
       </div>
+
+      {repairError && <p className="text-sm font-medium text-rose-700">{repairError}</p>}
 
       {fiscalYearClosed && (
         <p className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">
@@ -452,6 +510,31 @@ export function HierarchyEditor({
           setConfirmDelete(null);
           if (target) run(() => deleteKpi({ kpiId: target.id }));
         }}
+      />
+
+      <ConfirmSaveDialog
+        open={repairPreview !== null}
+        isSaving={pending}
+        title="Repair hierarchy from codes?"
+        changes={
+          repairPreview?.changes.map((c) => ({
+            field: c.code,
+            label: `${c.code} — ${c.name}`,
+            from: "Top level",
+            to: `${c.inferredParentCode} — ${c.inferredParentName}`,
+          })) ?? []
+        }
+        warnings={
+          repairPreview && repairPreview.unresolved.length > 0
+            ? [
+                `${repairPreview.unresolved.length} KPI${repairPreview.unresolved.length === 1 ? "" : "s"} left unchanged — their code implies a parent (` +
+                  repairPreview.unresolved.map((u) => `${u.code} under ${u.expectedParentCode}`).join(", ") +
+                  ") that doesn't match any KPI in this year. Fix those codes or parent them by hand.",
+              ]
+            : []
+        }
+        onCancel={() => setRepairPreview(null)}
+        onConfirm={confirmRepair}
       />
 
       {editingId && (() => {

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
@@ -261,5 +261,135 @@ export async function reorderKpi(input: {
     revalidatePath("/manage/hierarchy");
     revalidatePath("/");
     revalidatePath("/kpis");
+  });
+}
+
+// --------------------------------------------------------------------------
+// Repairing the hierarchy from codes
+//
+// Codes already encode the hierarchy — a child's code is its parent's code
+// plus one more dot-separated segment (e.g. "1.2" under "1", "1.2.1" under
+// "1.2"), the same convention the "+ sub" add-form on this page already
+// follows. When a batch write leaves KPIs created but unparented (e.g. an
+// import interrupted between its create pass and its parent-attach pass),
+// that's enough to reconstruct the hierarchy without touching the original
+// workbook.
+// --------------------------------------------------------------------------
+
+/** A code's parent code, or null if the code has no dot (a genuine root). */
+function inferredParentCode(code: string): string | null {
+  const idx = code.lastIndexOf(".");
+  return idx === -1 ? null : code.slice(0, idx);
+}
+
+export type ParentInferenceChange = {
+  kpiId: string;
+  code: string;
+  name: string;
+  parentId: string;
+  inferredParentCode: string;
+  inferredParentName: string;
+};
+
+export type ParentInferenceUnresolved = { code: string; name: string; expectedParentCode: string };
+
+export type ParentInferenceResult = {
+  changes: ParentInferenceChange[];
+  unresolved: ParentInferenceUnresolved[];
+};
+
+/**
+ * Computes what `applyParentInference` would do, without writing anything.
+ * Shared by the preview and the apply step so they can never disagree about
+ * what "inferred" means.
+ */
+async function computeParentInference(fiscalYearId: string): Promise<ParentInferenceResult> {
+  const kpis = await prisma.kpi.findMany({
+    where: { fiscalYearId },
+    select: { id: true, code: true, name: true, parentId: true },
+  });
+  const byCode = new Map(kpis.map((k) => [k.code.toLowerCase(), k]));
+
+  const changes: ParentInferenceChange[] = [];
+  const unresolved: ParentInferenceUnresolved[] = [];
+
+  for (const kpi of kpis) {
+    // Never override a parent that's already set, whether by hand or by a
+    // working import — this only ever fills in what's currently missing.
+    if (kpi.parentId) continue;
+
+    const expectedParentCode = inferredParentCode(kpi.code);
+    if (!expectedParentCode) continue; // no dot in the code: a genuine root
+
+    const parent = byCode.get(expectedParentCode.toLowerCase());
+    if (!parent) {
+      unresolved.push({ code: kpi.code, name: kpi.name, expectedParentCode });
+      continue;
+    }
+
+    changes.push({
+      kpiId: kpi.id,
+      code: kpi.code,
+      name: kpi.name,
+      parentId: parent.id,
+      inferredParentCode: parent.code,
+      inferredParentName: parent.name,
+    });
+  }
+
+  return { changes, unresolved };
+}
+
+export async function previewParentInference(fiscalYearId: string): Promise<ActionResult<ParentInferenceResult>> {
+  return attempt(async () => {
+    await requireAdmin();
+    return computeParentInference(fiscalYearId);
+  });
+}
+
+/**
+ * Applies the inferred parent links in one batch. Recomputes the change set
+ * itself rather than trusting a client-supplied list, so it can never apply
+ * a preview that's gone stale (another edit landed in between).
+ */
+export async function applyParentInference(fiscalYearId: string): Promise<ActionResult<{ updated: number }>> {
+  return attempt(async () => {
+    const admin = await requireAdmin();
+
+    const fiscalYear = await prisma.fiscalYear.findUnique({
+      where: { id: fiscalYearId },
+      select: { closedAt: true, label: true },
+    });
+    if (!fiscalYear) throw new Error("That fiscal year no longer exists.");
+    assertFiscalYearOpen(fiscalYear);
+
+    const { changes } = await computeParentInference(fiscalYearId);
+    if (changes.length === 0) return { updated: 0 };
+
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        UPDATE "Kpi" AS k
+        SET "parentId" = c.parent_id
+        FROM (VALUES ${Prisma.join(
+          changes.map((c) => Prisma.sql`(${c.kpiId}, ${c.parentId})`)
+        )}) AS c(child_id, parent_id)
+        WHERE k.id = c.child_id
+      `;
+      await tx.kpiAudit.createMany({
+        data: changes.map((c) => ({
+          kpiId: c.kpiId,
+          field: "parentId",
+          label: "Parent inferred from code",
+          from: "the top level",
+          to: `${c.inferredParentCode} — ${c.inferredParentName}`,
+          author: admin.username,
+        })),
+      });
+    });
+
+    revalidatePath("/manage/hierarchy");
+    revalidatePath("/");
+    revalidatePath("/kpis");
+    return { updated: changes.length };
   });
 }
