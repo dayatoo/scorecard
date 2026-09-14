@@ -12,6 +12,7 @@
 // Writing them separately was the latent bug: a target mode could change
 // while the database still recorded the old one.
 
+import { formatPeriodLabel } from "./fiscal";
 import { BANDS, type Band, type Direction, type MetricType, type TargetMode } from "./scoring";
 import { orderingIssue } from "./validation";
 
@@ -226,4 +227,24 @@ export function crossesNumericMonthBoundary(
   const wasMonth = from === "MONTH_COMPLETION";
   const willBeMonth = to === "MONTH_COMPLETION";
   return (wasNumeric && willBeMonth) || (wasMonth && willBeNumeric);
+}
+
+/**
+ * "What am I being measured against" in one short string — the Meet band's
+ * target, or (for a milestone) its target month. Used wherever a KPI is
+ * listed alongside its score, so the target is visible without opening it.
+ * `null` for a rollup (no metric) or a KPI with no target set yet.
+ */
+export function describeMeetTarget(config: unknown, metricType: MetricType | null): string | null {
+  if (!config || typeof config !== "object") return null;
+
+  if (metricType === "MONTH_COMPLETION") {
+    const month = (config as { targetMonth?: string }).targetMonth;
+    return month ? formatPeriodLabel(month) : null;
+  }
+
+  const meet = (config as Record<string, unknown>).MEET;
+  if (typeof meet === "number") return meet.toLocaleString();
+  if (Array.isArray(meet) && meet.length === 2) return `${meet[0]}–${meet[1]}`;
+  return null;
 }

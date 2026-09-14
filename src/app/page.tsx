@@ -10,6 +10,7 @@ import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
 import { flattenTree } from "@/lib/kpi-tree";
 import { getScorecard, listFiscalYears } from "@/lib/data";
 import { requireAuthPage } from "@/lib/session";
+import { describeMeetTarget } from "@/lib/targets";
 
 export const metadata = { title: "Dashboard — KPI Scorecard" };
 
@@ -68,6 +69,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
     weight: node.weight,
     parentId: node.parentId,
     departments: node.departments.map((d) => d.name),
+    meetTarget: describeMeetTarget(node.targetConfig, node.metricType),
+    unit: node.unit,
+    metricType: node.metricType,
     pendingReason: node.leaf?.pendingReason ?? null,
     scores: Object.fromEntries(
       scorecard.periods.map((p) => [

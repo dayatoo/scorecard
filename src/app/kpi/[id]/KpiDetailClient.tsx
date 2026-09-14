@@ -139,6 +139,7 @@ export function KpiDetailClient({
     id: string; code: string; name: string; weight: number;
     score: number | null; band: Band | null; coverage: number; provisional: boolean;
     exactScore: number | null; scoredWeight: number;
+    meetTarget: string | null; unit: string | null; metricType: MetricType | null;
   }[];
   history: HistoryRow[];
   updates: { id: string; period: string; body: string; author: string | null; createdAt: string }[];
@@ -871,6 +872,7 @@ function ChildrenTable({ subKpis, period }: {
   subKpis: {
     id: string; code: string; name: string; weight: number;
     score: number | null; band: Band | null; coverage: number; provisional: boolean;
+    meetTarget: string | null; unit: string | null; metricType: MetricType | null;
   }[];
   period: string;
 }) {
@@ -887,6 +889,7 @@ function ChildrenTable({ subKpis, period }: {
             <tr className="border-b text-left text-xs font-medium text-gray-500 uppercase">
               <th scope="col" className="py-2">Sub-KPI</th>
               <th scope="col" className="py-2 text-right">Weight</th>
+              <th scope="col" className="py-2 text-right">Meet Target</th>
               <th scope="col" className="py-2 text-right">Share</th>
               <th scope="col" className="py-2 text-center">Score</th>
               <th scope="col" className="py-2 text-right">Scored</th>
@@ -903,6 +906,18 @@ function ChildrenTable({ subKpis, period }: {
                 </th>
                 <td className="tabular py-1.5 text-right text-gray-600">
                   {child.weight.toFixed(1)}%
+                </td>
+                <td className="tabular py-1.5 text-right text-gray-500">
+                  {child.meetTarget === null ? (
+                    "—"
+                  ) : (
+                    <>
+                      {child.meetTarget}
+                      {child.unit && child.metricType !== "MONTH_COMPLETION" && (
+                        <span className="ml-0.5 text-xs text-gray-400">{child.unit}</span>
+                      )}
+                    </>
+                  )}
                 </td>
                 <td className="tabular py-1.5 text-right text-gray-500">
                   {totalWeight > 0 ? `${((child.weight / totalWeight) * 100).toFixed(0)}%` : "—"}

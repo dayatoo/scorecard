@@ -5,6 +5,7 @@ import { getScorecard, listFiscalYears } from "@/lib/data";
 import { requireAuthPage } from "@/lib/session";
 import { leavesOf, strategicGoalOf } from "@/lib/kpi-tree";
 import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
+import { describeMeetTarget } from "@/lib/targets";
 
 export const metadata = { title: "Enter data — KPI Scorecard" };
 export const dynamic = "force-dynamic";
@@ -98,21 +99,4 @@ export default async function EntryPage({ searchParams }: PageProps<"/entry">) {
       />
     </div>
   );
-}
-
-function describeMeetTarget(
-  config: unknown,
-  metricType: string | null
-): string | null {
-  if (!config || typeof config !== "object") return null;
-
-  if (metricType === "MONTH_COMPLETION") {
-    const month = (config as { targetMonth?: string }).targetMonth;
-    return month ? formatPeriodLabel(month) : null;
-  }
-
-  const meet = (config as Record<string, unknown>).MEET;
-  if (typeof meet === "number") return meet.toLocaleString();
-  if (Array.isArray(meet) && meet.length === 2) return `${meet[0]}–${meet[1]}`;
-  return null;
 }

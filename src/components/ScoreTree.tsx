@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { CoverageBadge, ScoreCell } from "./ScoreCell";
 import { formatPeriodShort } from "@/lib/fiscal";
-import type { Band } from "@/lib/scoring";
+import type { Band, MetricType } from "@/lib/scoring";
 
 export type TreeRow = {
   id: string;
@@ -17,6 +17,9 @@ export type TreeRow = {
   weight: number;
   parentId: string | null;
   departments: string[];
+  meetTarget: string | null;
+  unit: string | null;
+  metricType: MetricType | null;
   /** Score per period, keyed by period. */
   scores: Record<
     string,
@@ -111,6 +114,7 @@ export function ScoreTree({
             <tr className="border-b bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
               <th scope="col" className="px-4 py-2">KPI</th>
               <th scope="col" className="px-2 py-2 text-right">Weight</th>
+              <th scope="col" className="px-2 py-2 text-right">Meet Target</th>
               {periods.map((period) => (
                 <th
                   key={period}
@@ -177,6 +181,19 @@ export function ScoreTree({
                     {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
                   </td>
 
+                  <td className="tabular px-2 py-1.5 text-right text-xs text-gray-500">
+                    {row.meetTarget === null ? (
+                      "—"
+                    ) : (
+                      <>
+                        {row.meetTarget}
+                        {row.unit && row.metricType !== "MONTH_COMPLETION" && (
+                          <span className="ml-0.5 text-gray-400">{row.unit}</span>
+                        )}
+                      </>
+                    )}
+                  </td>
+
                   {periods.map((period) => {
                     const entry = row.scores[period];
                     return (
@@ -210,6 +227,7 @@ export function ScoreTree({
                 Total combined score
               </th>
               <td className="tabular px-2 py-2.5 text-right text-xs text-gray-600">100%</td>
+              <td className="px-2 py-2.5"></td>
               {periods.map((period) => {
                 const entry = total.scores[period];
                 return (

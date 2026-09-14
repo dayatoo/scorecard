@@ -8,6 +8,7 @@ import { requireAuthPage } from "@/lib/session";
 import { ancestorsOf } from "@/lib/kpi-tree";
 import { periodsOfFiscalYear } from "@/lib/fiscal";
 import type { Band } from "@/lib/scoring";
+import { describeMeetTarget } from "@/lib/targets";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,9 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
     band: child.band,
     coverage: child.coverage,
     provisional: child.provisional,
+    meetTarget: describeMeetTarget(child.targetConfig, child.metricType),
+    unit: child.unit,
+    metricType: child.metricType,
     // For the score explainer's rollup arithmetic: the exact (unrounded)
     // score and the scored weight are what rollup() actually weights by.
     exactScore: child.exactScore,

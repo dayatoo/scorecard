@@ -273,7 +273,7 @@ test("the entry grid saves several KPIs at once", async ({ page }) => {
 
 /** The Score column, top to bottom, skipping rows with no score. */
 async function scoreColumn(page: import("@playwright/test").Page): Promise<number[]> {
-  const cells = await page.locator("tbody tr td:nth-child(7)").allInnerTexts();
+  const cells = await page.locator("tbody tr td:nth-child(8)").allInnerTexts();
   return cells
     .map((text) => Number(text.replace(/[^\d.]/g, "")))
     .filter((value) => Number.isFinite(value) && value > 0);

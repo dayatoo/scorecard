@@ -12,6 +12,7 @@ export type KpiTableRow = {
   code: string;
   name: string;
   subGroup: string | null;
+  meetTarget: string | null;
   level: number;
   isLeaf: boolean;
   weight: number;
@@ -207,6 +208,7 @@ export function KpiTable({
               <SortHeader label="Strategic Goal" sortKey="strategicGoal" sort={sort} onSort={toggleSort} />
               <th scope="col" className="px-3 py-2">Owners</th>
               <SortHeader label="Weight" sortKey="weight" sort={sort} onSort={toggleSort} align="right" />
+              <th scope="col" className="px-3 py-2 text-right">Meet Target</th>
               <th scope="col" className="px-3 py-2 text-right">YTD</th>
               <SortHeader label="Score" sortKey="score" sort={sort} onSort={toggleSort} align="center" />
               <SortHeader label="Scored" sortKey="coverage" sort={sort} onSort={toggleSort} align="right" />
@@ -241,6 +243,18 @@ export function KpiTable({
                 </td>
                 <td className="tabular px-3 py-1.5 text-right text-gray-600">
                   {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
+                </td>
+                <td className="tabular px-3 py-1.5 text-right text-gray-500">
+                  {row.meetTarget === null ? (
+                    <span className="text-gray-300">—</span>
+                  ) : (
+                    <>
+                      {row.meetTarget}
+                      {row.unit && row.metricType !== "MONTH_COMPLETION" && (
+                        <span className="ml-0.5 text-xs text-gray-400">{row.unit}</span>
+                      )}
+                    </>
+                  )}
                 </td>
                 <td className="tabular px-3 py-1.5 text-right text-gray-700">
                   {row.value === null ? (
