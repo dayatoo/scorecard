@@ -78,6 +78,8 @@ export type ValueRecord = {
   basis: "ACTUAL" | "ESTIMATE";
   completionDate: Date | null;
   note: string | null;
+  /** VARIANCE metrics only — the period's target/budget figure. */
+  plannedValue?: number | null;
 };
 
 /** A KPI plus its computed score for one period, and its children. */
@@ -190,6 +192,7 @@ export function buildScoredTree(
       value: v.value,
       basis: v.basis,
       completionDate: v.completionDate,
+      plannedValue: v.plannedValue,
     });
     entriesByKpi.set(v.kpiId, list);
   }

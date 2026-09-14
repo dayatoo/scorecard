@@ -56,7 +56,8 @@ export type MetricType =
   | "DOLLAR"
   | "QUANTITY"
   | "DAYS"
-  | "MONTH_COMPLETION";
+  | "MONTH_COMPLETION"
+  | "VARIANCE";
 export type TargetMode = "FIXED" | "RANGE";
 export type ValueBasis = "ACTUAL" | "ESTIMATE";
 export type Frequency = "MONTHLY" | "QUARTERLY" | "ANNUAL";
@@ -430,6 +431,8 @@ export type Entry = {
   value: number | null;
   basis: ValueBasis;
   completionDate: Date | null;
+  /** VARIANCE metrics only — the period's target/budget figure. Absent (not just null) for any fixture/caller that predates this field. */
+  plannedValue?: number | null;
 };
 
 export type LeafScore = {
@@ -437,6 +440,8 @@ export type LeafScore = {
   band: Band | null;
   /** The figure actually scored, and where it came from. */
   value: number | null;
+  /** VARIANCE metrics only — the period's target/budget figure `value` is compared against. */
+  plannedValue: number | null;
   basis: ValueBasis | null;
   /** True when scored from an estimate, so the score is provisional. */
   provisional: boolean;
@@ -461,6 +466,7 @@ const NO_SCORE = (pendingReason: LeafScore["pendingReason"]): LeafScore => ({
   score: null,
   band: null,
   value: null,
+  plannedValue: null,
   basis: null,
   provisional: false,
   deadline: null,
@@ -496,6 +502,19 @@ export function selectEntry(entries: Entry[], period: string): Entry | null {
 }
 
 /**
+ * VARIANCE metrics only: the symmetric percentage deviation of `actual` from
+ * `planned` — +12% and -12% return the same magnitude, so scoring this value
+ * against an ordinary LOWER_BETTER RANGE config already treats either
+ * direction identically, with no changes needed to `scoreRangeTarget` or its
+ * band-ordering rules. `null` when there's nothing to compare against (no
+ * planned figure recorded, or it's zero).
+ */
+export function varianceMagnitude(actual: number, planned: number | null): number | null {
+  if (planned === null || planned === 0 || !Number.isFinite(planned)) return null;
+  return Math.abs((actual - planned) / planned) * 100;
+}
+
+/**
  * Scores one leaf KPI for one scorecard month.
  *
  * `MONTH_COMPLETION` KPIs need no entry to be scored once overdue: past the
@@ -521,14 +540,18 @@ export function scoreLeaf(
     return NO_SCORE("NO_DATA");
   }
 
+  const scoredValue =
+    kpi.metricType === "VARIANCE" ? varianceMagnitude(entry.value, entry.plannedValue ?? null) : entry.value;
+  if (scoredValue === null) return NO_SCORE("NO_DATA");
+
   const fraction = phaseFraction(kpi.phasing ?? "NONE", monthOfFiscalYear(period), kpi.phaseConfig ?? null);
   const phasedConfig = scalePhasedTarget(kpi.targetConfig, kpi.targetMode, fraction);
   const prorated = fraction < 1;
 
   const raw =
     kpi.targetMode === "FIXED"
-      ? scoreFixedTarget(entry.value, phasedConfig as FixedTargetConfig, kpi.direction)
-      : scoreRangeTarget(entry.value, phasedConfig as RangeTargetConfig, kpi.direction);
+      ? scoreFixedTarget(scoredValue, phasedConfig as FixedTargetConfig, kpi.direction)
+      : scoreRangeTarget(scoredValue, phasedConfig as RangeTargetConfig, kpi.direction);
 
   const deadline = applyDeadline({
     rawScore: roundScore(raw),
@@ -545,6 +568,7 @@ export function scoreLeaf(
     score,
     band: bandForScore(score),
     value: entry.value,
+    plannedValue: entry.plannedValue ?? null,
     basis: entry.basis,
     provisional: entry.basis === "ESTIMATE",
     deadline: kpi.deadlineMonth ? deadline : null,
@@ -565,13 +589,17 @@ function scoreFrozenAtDeadline(
   if (!entry || entry.value === null) return 0; // nothing achieved by the deadline
   if (!kpi.direction || !kpi.targetMode || !kpi.targetConfig) return null;
 
+  const scoredValue =
+    kpi.metricType === "VARIANCE" ? varianceMagnitude(entry.value, entry.plannedValue ?? null) : entry.value;
+  if (scoredValue === null) return 0; // nothing to compare against by the deadline
+
   const fraction = phaseFraction(kpi.phasing ?? "NONE", monthOfFiscalYear(deadlineMonth), kpi.phaseConfig ?? null);
   const phasedConfig = scalePhasedTarget(kpi.targetConfig, kpi.targetMode, fraction);
 
   const raw =
     kpi.targetMode === "FIXED"
-      ? scoreFixedTarget(entry.value, phasedConfig as FixedTargetConfig, kpi.direction)
-      : scoreRangeTarget(entry.value, phasedConfig as RangeTargetConfig, kpi.direction);
+      ? scoreFixedTarget(scoredValue, phasedConfig as FixedTargetConfig, kpi.direction)
+      : scoreRangeTarget(scoredValue, phasedConfig as RangeTargetConfig, kpi.direction);
   return roundScore(raw);
 }
 
@@ -594,6 +622,7 @@ function scoreMilestoneLeaf(
       score,
       band: bandForScore(score),
       value: null,
+      plannedValue: null,
       basis: completed.basis,
       provisional: completed.basis === "ESTIMATE",
       deadline: null,
@@ -614,6 +643,7 @@ function scoreMilestoneLeaf(
     score,
     band: bandForScore(score),
     value: null,
+    plannedValue: null,
     basis: null,
     provisional: false,
     deadline: null,

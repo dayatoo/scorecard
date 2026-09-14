@@ -13,6 +13,7 @@ import {
   scoreFixedTarget,
   scoreMonthCompletion,
   scoreRangeTarget,
+  varianceMagnitude,
   type Band,
   type Direction,
   type FixedTargetConfig,
@@ -195,18 +196,22 @@ function FixedNumericExplainer({ kpi, period }: { kpi: KpiProps; period: string 
   );
 }
 
-function RangeNumericExplainer({ kpi, period }: { kpi: KpiProps; period: string }) {
-  const leaf = kpi.leaf!;
-  const value = leaf.value as number;
-  const direction = kpi.direction as Direction;
-  const unit = kpi.unit ? ` ${kpi.unit}` : "";
-  const config = (leaf.prorated ? leaf.phasedTarget : kpi.targetConfig) as RangeTargetConfig;
-  const note = phasingNote(kpi, period);
-
+/**
+ * The window-matching/interpolation narration shared by `RangeNumericExplainer`
+ * and `VarianceExplainer` — takes the value actually being scored (the raw
+ * reported figure for an ordinary RANGE KPI, or the computed variance % for a
+ * VARIANCE one) plus the unit to display it in, so both can reuse the same
+ * band-matching prose without duplicating it.
+ */
+function rangeWindowLines(
+  value: number,
+  config: RangeTargetConfig,
+  direction: Direction,
+  unit: string,
+  raw: number
+): React.ReactNode[] {
   const match = matchedBandRange(value, config, direction);
-  const raw = scoreRangeTarget(value, config, direction);
   const rawRounded = roundScore(raw);
-
   const lines: React.ReactNode[] = [];
   if (match) {
     const { band, lo, hi } = match;
@@ -227,6 +232,19 @@ function RangeNumericExplainer({ kpi, period }: { kpi: KpiProps; period: string 
     lines.push(`This value falls outside every configured window — scored at the scale's extreme.`);
   }
   lines.push(`Rounded: ${fmt(raw, 3)} → ${fmt(rawRounded)} (${bandLabel(bandForScore(rawRounded))})`);
+  return lines;
+}
+
+function RangeNumericExplainer({ kpi, period }: { kpi: KpiProps; period: string }) {
+  const leaf = kpi.leaf!;
+  const value = leaf.value as number;
+  const direction = kpi.direction as Direction;
+  const unit = kpi.unit ? ` ${kpi.unit}` : "";
+  const config = (leaf.prorated ? leaf.phasedTarget : kpi.targetConfig) as RangeTargetConfig;
+  const note = phasingNote(kpi, period);
+
+  const raw = scoreRangeTarget(value, config, direction);
+  const lines = rangeWindowLines(value, config, direction, unit, raw);
 
   return (
     <>
@@ -235,6 +253,39 @@ function RangeNumericExplainer({ kpi, period }: { kpi: KpiProps; period: string 
         {formatPeriodLabel(period)} was <strong>{fmtValue(value)}{unit}</strong>. Each band owns a
         value window; the score interpolates linearly across the window the value falls in.
       </Rule>
+      {note && <Rule>{note}</Rule>}
+      <Maths lines={lines} />
+      <DeadlineLayer kpi={kpi} period={period} />
+    </>
+  );
+}
+
+function VarianceExplainer({ kpi, period }: { kpi: KpiProps; period: string }) {
+  const leaf = kpi.leaf!;
+  const value = leaf.value as number;
+  const planned = leaf.plannedValue;
+  const direction = "LOWER_BETTER" as Direction;
+  const unit = kpi.unit ? ` ${kpi.unit}` : "";
+  const config = (leaf.prorated ? leaf.phasedTarget : kpi.targetConfig) as RangeTargetConfig;
+  const note = phasingNote(kpi, period);
+
+  const variance = varianceMagnitude(value, planned) as number;
+  const raw = scoreRangeTarget(variance, config, direction);
+  const lines = rangeWindowLines(variance, config, direction, "%", raw);
+
+  return (
+    <>
+      <Rule>
+        {leaf.basis === "ESTIMATE" ? "An estimated" : "The reported"} actual for{" "}
+        {formatPeriodLabel(period)} was <strong>{fmtValue(value)}{unit}</strong> against a target of{" "}
+        <strong>{fmtValue(planned as number)}{unit}</strong>. Variance is scored the same whether the
+        actual is over or under target, using its magnitude.
+      </Rule>
+      <Maths
+        lines={[
+          `Variance = |(${fmtValue(value)} − ${fmtValue(planned as number)}) ÷ ${fmtValue(planned as number)}| × 100 = ${fmt(variance, 1)}%`,
+        ]}
+      />
       {note && <Rule>{note}</Rule>}
       <Maths lines={lines} />
       <DeadlineLayer kpi={kpi} period={period} />
@@ -351,6 +402,14 @@ function NoScoreExplainer({ kpi, period }: { kpi: KpiProps; period: string }) {
       </Rule>
     );
   }
+  if (kpi.metricType === "VARIANCE") {
+    return (
+      <Rule>
+        Both an actual and a target figure are needed to compute a variance for{" "}
+        {formatPeriodLabel(period)} — at least one is missing, so there is nothing to score yet.
+      </Rule>
+    );
+  }
   return (
     <Rule>
       No figure has been reported for {formatPeriodLabel(period)} yet, so there is nothing to
@@ -460,6 +519,8 @@ export function ScoreExplainer({
             completionDate={completionDate}
             completionBasis={completionBasis}
           />
+        ) : kpi.metricType === "VARIANCE" ? (
+          <VarianceExplainer kpi={kpi} period={period} />
         ) : kpi.targetMode === "RANGE" ? (
           <RangeNumericExplainer kpi={kpi} period={period} />
         ) : (

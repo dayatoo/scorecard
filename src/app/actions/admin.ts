@@ -422,6 +422,7 @@ export async function applyImport(input: {
     if (!kpiId) continue;
     const data = {
       value: v.value,
+      plannedValue: v.plannedValue,
       basis: v.basis,
       completionDate: v.completionDate ? new Date(v.completionDate) : null,
       note: v.note,

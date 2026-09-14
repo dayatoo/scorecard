@@ -34,6 +34,8 @@ export const MAX_BACKUP_BYTES = 10 * 1024 * 1024;
 export type BackupValue = {
   period: string;
   value: number | null;
+  /** VARIANCE metrics only — the period's target/budget figure. */
+  plannedValue: number | null;
   basis: "ACTUAL" | "ESTIMATE";
   completionDate: string | null;
   note: string | null;
@@ -254,7 +256,7 @@ function parseKpi(entry: unknown, index: number): BackupKpi {
     phasing: oneOf(entry.phasing, ["NONE", "EVEN", "CUSTOM"] as const, "NONE"),
     phaseConfig: stringOrNull(entry.phaseConfig),
     metricType: optionalOneOf(entry.metricType, [
-      "PERCENTAGE", "DOLLAR", "QUANTITY", "DAYS", "MONTH_COMPLETION",
+      "PERCENTAGE", "DOLLAR", "QUANTITY", "DAYS", "MONTH_COMPLETION", "VARIANCE",
     ] as const),
     direction: optionalOneOf(entry.direction, ["HIGHER_BETTER", "LOWER_BETTER"] as const),
     targetMode: optionalOneOf(entry.targetMode, ["FIXED", "RANGE"] as const),
@@ -268,6 +270,7 @@ function parseKpi(entry: unknown, index: number): BackupKpi {
     values: list(entry.values).map((v) => ({
       period: requirePeriod(v.period, `a figure on "${name}"`),
       value: typeof v.value === "number" && Number.isFinite(v.value) ? v.value : null,
+      plannedValue: typeof v.plannedValue === "number" && Number.isFinite(v.plannedValue) ? v.plannedValue : null,
       basis: v.basis === "ESTIMATE" ? "ESTIMATE" : "ACTUAL",
       completionDate: stringOrNull(v.completionDate),
       note: stringOrNull(v.note),

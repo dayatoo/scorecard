@@ -211,8 +211,13 @@ export function ScoreTree({
                       ) : (
                         <>
                           {row.meetTarget}
-                          {row.unit && row.metricType !== "MONTH_COMPLETION" && (
-                            <span className="ml-0.5 text-gray-400">{row.unit}</span>
+                          {row.metricType === "VARIANCE" ? (
+                            <span className="ml-0.5 text-gray-400">%</span>
+                          ) : (
+                            row.unit &&
+                            row.metricType !== "MONTH_COMPLETION" && (
+                              <span className="ml-0.5 text-gray-400">{row.unit}</span>
+                            )
                           )}
                         </>
                       )}

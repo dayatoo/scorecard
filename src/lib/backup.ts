@@ -76,6 +76,7 @@ export async function serializeFiscalYear(fiscalYearId: string): Promise<FiscalY
     values: row.values.map((v) => ({
       period: v.period,
       value: v.value,
+      plannedValue: v.plannedValue,
       basis: v.basis,
       completionDate: v.completionDate ? v.completionDate.toISOString() : null,
       note: v.note,
@@ -255,6 +256,7 @@ export async function restoreInto(
           kpiId: created.id,
           period: v.period,
           value: v.value,
+          plannedValue: v.plannedValue,
           basis: v.basis,
           completionDate: v.completionDate ? new Date(v.completionDate) : null,
           note: v.note,

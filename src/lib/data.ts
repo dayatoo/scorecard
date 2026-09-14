@@ -168,6 +168,7 @@ export async function getScorecard(options?: {
     basis: v.basis,
     completionDate: v.completionDate,
     note: v.note,
+    plannedValue: v.plannedValue,
   }));
 
   const overrides = new Map<string, ScoreOverrideRecord[]>();

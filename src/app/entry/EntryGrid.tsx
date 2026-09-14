@@ -9,7 +9,7 @@ import { DateField } from "@/components/DateField";
 import { ScoreCell } from "@/components/ScoreCell";
 import { formatDate } from "@/lib/dates";
 import { formatPeriodLabel } from "@/lib/fiscal";
-import type { Band, MetricType } from "@/lib/scoring";
+import { varianceMagnitude, type Band, type MetricType } from "@/lib/scoring";
 import { saveEntries, type SaveEntryInput } from "@/app/actions/kpi";
 
 export type EntryRow = {
@@ -23,6 +23,8 @@ export type EntryRow = {
   unit: string | null;
   meetTarget: string | null;
   value: number | null;
+  /** VARIANCE metrics only — the period's target/budget figure. */
+  plannedValue: number | null;
   basis: "ACTUAL" | "ESTIMATE";
   completionDate: string | null;
   note: string | null;
@@ -34,6 +36,7 @@ export type EntryRow = {
 
 type Cell = {
   value: string;
+  plannedValue: string;
   basis: "ACTUAL" | "ESTIMATE";
   completionDate: string;
   note: string;
@@ -76,6 +79,7 @@ export function EntryGrid({
           row.id,
           {
             value: row.value === null ? "" : String(row.value),
+            plannedValue: row.plannedValue === null ? "" : String(row.plannedValue),
             basis: row.basis,
             completionDate: row.completionDate ?? "",
             note: row.note ?? "",
@@ -111,6 +115,7 @@ export function EntryGrid({
         const after = draft.get(row.id) as Cell;
         return (
           before.value !== after.value ||
+          before.plannedValue !== after.plannedValue ||
           before.basis !== after.basis ||
           before.completionDate !== after.completionDate ||
           before.note !== after.note
@@ -152,10 +157,15 @@ export function EntryGrid({
         if (raw !== "" && !Number.isFinite(Number(raw))) {
           throw new Error(`"${raw}" on ${row.code} is not a number.`);
         }
+        const rawPlanned = cell.plannedValue.trim();
+        if (rawPlanned !== "" && !Number.isFinite(Number(rawPlanned))) {
+          throw new Error(`"${rawPlanned}" (target value) on ${row.code} is not a number.`);
+        }
         return {
           kpiId: row.id,
           period,
           value: raw === "" ? null : Number(raw),
+          plannedValue: rawPlanned === "" ? null : Number(rawPlanned),
           basis: cell.basis,
           completionDate: cell.completionDate || null,
           note: cell.note || null,
@@ -237,8 +247,13 @@ export function EntryGrid({
             {visible.map((row) => {
               const cell = draft.get(row.id) as Cell;
               const isMilestone = row.metricType === "MONTH_COMPLETION";
+              const isVariance = row.metricType === "VARIANCE";
               const isDirty = changed.some((c) => c.id === row.id);
               const canEdit = owns(row);
+              const liveVariance =
+                isVariance && cell.value.trim() !== "" && cell.plannedValue.trim() !== ""
+                  ? varianceMagnitude(Number(cell.value), Number(cell.plannedValue))
+                  : null;
 
               return (
                 <tr
@@ -257,7 +272,11 @@ export function EntryGrid({
 
                   <td className="tabular px-3 py-1.5 text-right text-xs text-gray-600">
                     {row.meetTarget ?? "—"}
-                    {row.unit && !isMilestone && <span className="ml-0.5 text-gray-400">{row.unit}</span>}
+                    {isVariance ? (
+                      <span className="ml-0.5 text-gray-400">%</span>
+                    ) : (
+                      row.unit && !isMilestone && <span className="ml-0.5 text-gray-400">{row.unit}</span>
+                    )}
                   </td>
 
                   <td className="px-3 py-1.5">
@@ -269,6 +288,36 @@ export function EntryGrid({
                         onChange={(iso) => update(row.id, { completionDate: iso })}
                         disabled={!canEdit}
                       />
+                    ) : isVariance ? (
+                      <div className="space-y-1">
+                        <input
+                          type="number"
+                          step="any"
+                          inputMode="decimal"
+                          aria-label={`Actual value for ${row.name}`}
+                          placeholder="Actual"
+                          className={inputClass}
+                          value={cell.value}
+                          onChange={(e) => update(row.id, { value: e.target.value })}
+                          disabled={!canEdit}
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          inputMode="decimal"
+                          aria-label={`Target value for ${row.name}`}
+                          placeholder="Target"
+                          className={inputClass}
+                          value={cell.plannedValue}
+                          onChange={(e) => update(row.id, { plannedValue: e.target.value })}
+                          disabled={!canEdit}
+                        />
+                        {liveVariance !== null && (
+                          <span className="block text-xs text-gray-500">
+                            Variance: {liveVariance.toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       <input
                         type="number"
@@ -362,6 +411,13 @@ function describeCell(cell: Cell, row: EntryRow): string {
   if (row.metricType === "MONTH_COMPLETION") {
     parts.push(cell.completionDate ? `completed ${formatDate(cell.completionDate)}` : "not completed");
     if (cell.completionDate && cell.basis === "ESTIMATE") parts.push("estimate");
+  } else if (row.metricType === "VARIANCE") {
+    if (cell.value.trim() === "" && cell.plannedValue.trim() === "") {
+      parts.push("not reported");
+    } else {
+      parts.push(`actual ${cell.value || "—"}, target ${cell.plannedValue || "—"}`);
+      if (cell.basis === "ESTIMATE") parts.push("estimate");
+    }
   } else if (cell.value.trim() === "") {
     parts.push("not reported");
   } else {

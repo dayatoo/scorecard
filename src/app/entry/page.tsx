@@ -55,6 +55,7 @@ export default async function EntryPage({ searchParams }: PageProps<"/entry">) {
       // figure can see what they are being measured against.
       meetTarget: describeMeetTarget(node.targetConfig, node.metricType),
       value: entry?.value ?? null,
+      plannedValue: entry?.plannedValue ?? null,
       basis: entry?.basis ?? "ACTUAL",
       completionDate: entry?.completionDate?.toISOString().slice(0, 10) ?? null,
       note: entry?.note ?? null,

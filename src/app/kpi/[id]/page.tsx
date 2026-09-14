@@ -93,6 +93,7 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
       period: p,
       isFuture,
       value: entry?.value ?? null,
+      plannedValue: entry?.plannedValue ?? null,
       basis: entry?.basis ?? null,
       completionDate: entry?.completionDate?.toISOString().slice(0, 10) ?? null,
       note: entry?.note ?? null,

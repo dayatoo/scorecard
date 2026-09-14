@@ -46,8 +46,13 @@ export function BandTargetCells({
             ) : (
               <>
                 {value}
-                {unit && metricType !== "MONTH_COMPLETION" && (
-                  <span className="ml-0.5 text-xs text-gray-400">{unit}</span>
+                {metricType === "VARIANCE" ? (
+                  <span className="ml-0.5 text-xs text-gray-400">%</span>
+                ) : (
+                  unit &&
+                  metricType !== "MONTH_COMPLETION" && (
+                    <span className="ml-0.5 text-xs text-gray-400">{unit}</span>
+                  )
                 )}
               </>
             )}

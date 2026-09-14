@@ -65,8 +65,8 @@ describe("parseBackup", () => {
           unit: "BND",
           departments: ["Sales"],
           values: [
-            { period: "2026-04", value: 260000, basis: "ACTUAL", completionDate: null, note: "on plan" },
-            { period: "2026-05", value: 610000, basis: "ESTIMATE", completionDate: null, note: null },
+            { period: "2026-04", value: 260000, plannedValue: null, basis: "ACTUAL", completionDate: null, note: "on plan" },
+            { period: "2026-05", value: 610000, plannedValue: null, basis: "ESTIMATE", completionDate: null, note: null },
           ],
           updates: [
             {

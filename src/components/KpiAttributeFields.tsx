@@ -98,6 +98,7 @@ export function SettingsPanel({
   };
 
   const isMilestone = draft.metricType === "MONTH_COMPLETION";
+  const isVariance = draft.metricType === "VARIANCE";
   const isNumericMetric = draft.metricType !== "" && draft.metricType !== "MONTH_COMPLETION";
 
   return (
@@ -192,6 +193,7 @@ export function SettingsPanel({
                 <option value="QUANTITY">Quantity</option>
                 <option value="DAYS">Days</option>
                 <option value="MONTH_COMPLETION">Month of completion</option>
+                <option value="VARIANCE">Variance</option>
               </select>
             </Field>
 
@@ -215,51 +217,62 @@ export function SettingsPanel({
                     onChange={(e) => setField("unit", e.target.value)}
                   />
                 </Field>
-                <Field label="Direction">
-                  <select
-                    className={`mt-1 ${attributeInputClass}`}
-                    value={draft.direction}
-                    onChange={(e) => setField("direction", e.target.value as AttributeDraft["direction"])}
-                  >
-                    <option value="">Choose one</option>
-                    <option value="HIGHER_BETTER">Higher is better</option>
-                    <option value="LOWER_BETTER">Lower is better</option>
-                  </select>
-                </Field>
-                <Field label="Target mode">
-                  <select
-                    className={`mt-1 ${attributeInputClass}`}
-                    value={draft.targetMode}
-                    onChange={(e) => setField("targetMode", e.target.value as AttributeDraft["targetMode"])}
-                  >
-                    <option value="">Choose one</option>
-                    <option value="FIXED">Fixed — one number per band</option>
-                    <option value="RANGE">Range — a window per band</option>
-                  </select>
-                </Field>
-                <Field
-                  label="Phasing"
-                  hint="Pro-rates the annual target by how much of the year has elapsed. For cumulative measures only — never rates or stocks."
-                >
-                  <select
-                    className={`mt-1 ${attributeInputClass}`}
-                    value={draft.phasing}
-                    onChange={(e) => setField("phasing", e.target.value as Phasing)}
-                  >
-                    <option value="NONE">None — full-year target every month</option>
-                    <option value="EVEN">Even — divided evenly across 12 months</option>
-                    <option value="CUSTOM">Custom — month-by-month shares</option>
-                  </select>
-                </Field>
-                {draft.phasing === "CUSTOM" && (
-                  <Field label="Phase shares" hint="12 monthly shares (April first), comma-separated, summing to 100.">
-                    <input
-                      className={`mt-1 ${attributeInputClass}`}
-                      value={draft.phaseShares}
-                      placeholder="5, 5, 10, 10, 10, 10, 10, 10, 10, 10, 5, 5"
-                      onChange={(e) => setField("phaseShares", e.target.value)}
-                    />
-                  </Field>
+                {isVariance ? (
+                  <p className="sm:col-span-2 lg:col-span-3 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                    Variance is always scored the same whether the actual figure is over or under
+                    target, so direction, target mode and phasing aren&apos;t asked for — the
+                    bands below are set as a %-deviation window, e.g. &quot;10-15&quot; for
+                    ±10-15%.
+                  </p>
+                ) : (
+                  <>
+                    <Field label="Direction">
+                      <select
+                        className={`mt-1 ${attributeInputClass}`}
+                        value={draft.direction}
+                        onChange={(e) => setField("direction", e.target.value as AttributeDraft["direction"])}
+                      >
+                        <option value="">Choose one</option>
+                        <option value="HIGHER_BETTER">Higher is better</option>
+                        <option value="LOWER_BETTER">Lower is better</option>
+                      </select>
+                    </Field>
+                    <Field label="Target mode">
+                      <select
+                        className={`mt-1 ${attributeInputClass}`}
+                        value={draft.targetMode}
+                        onChange={(e) => setField("targetMode", e.target.value as AttributeDraft["targetMode"])}
+                      >
+                        <option value="">Choose one</option>
+                        <option value="FIXED">Fixed — one number per band</option>
+                        <option value="RANGE">Range — a window per band</option>
+                      </select>
+                    </Field>
+                    <Field
+                      label="Phasing"
+                      hint="Pro-rates the annual target by how much of the year has elapsed. For cumulative measures only — never rates or stocks."
+                    >
+                      <select
+                        className={`mt-1 ${attributeInputClass}`}
+                        value={draft.phasing}
+                        onChange={(e) => setField("phasing", e.target.value as Phasing)}
+                      >
+                        <option value="NONE">None — full-year target every month</option>
+                        <option value="EVEN">Even — divided evenly across 12 months</option>
+                        <option value="CUSTOM">Custom — month-by-month shares</option>
+                      </select>
+                    </Field>
+                    {draft.phasing === "CUSTOM" && (
+                      <Field label="Phase shares" hint="12 monthly shares (April first), comma-separated, summing to 100.">
+                        <input
+                          className={`mt-1 ${attributeInputClass}`}
+                          value={draft.phaseShares}
+                          placeholder="5, 5, 10, 10, 10, 10, 10, 10, 10, 10, 5, 5"
+                          onChange={(e) => setField("phaseShares", e.target.value)}
+                        />
+                      </Field>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -407,15 +420,18 @@ export function TargetsPanel({
     );
   }
 
-  const isRange = draft.targetMode === "RANGE";
+  const isVariance = draft.metricType === "VARIANCE";
+  const isRange = draft.targetMode === "RANGE" || isVariance;
 
   return (
     <Panel
       title="Targets"
       description={
-        isRange
-          ? 'A window per band, written "50-69" — or a single number like "100" for an exact target. The score scales across the window.'
-          : "One number per band. Reaching a band's target scores the top of that band."
+        isVariance
+          ? 'A %-deviation window per band, written "10-15" for ±10-15% — scored the same whether the actual figure is over or under target.'
+          : isRange
+            ? 'A window per band, written "50-69" — or a single number like "100" for an exact target. The score scales across the window.'
+            : "One number per band. Reaching a band's target scores the top of that band."
       }
     >
       <fieldset disabled={readOnly} className="overflow-x-auto">
@@ -449,7 +465,7 @@ export function TargetsPanel({
                     <input
                       className={`${attributeInputClass} max-w-40`}
                       value={draft.targets[band] ?? ""}
-                      placeholder={isRange ? "50-69 or 100" : "100"}
+                      placeholder={isVariance ? "10-15" : isRange ? "50-69 or 100" : "100"}
                       onChange={(e) =>
                         setField("targets", { ...draft.targets, [band]: e.target.value })
                       }
@@ -470,8 +486,9 @@ export function TargetsPanel({
       </fieldset>
       {currentValue !== null && (
         <p className="mt-3 text-xs text-gray-500">
-          Current year-to-date figure: <strong className="tabular">{currentValue.toLocaleString()}</strong>
-          {subject.unit && ` ${subject.unit}`}.
+          {isVariance ? "Current variance" : "Current year-to-date figure"}:{" "}
+          <strong className="tabular">{currentValue.toLocaleString()}</strong>
+          {isVariance ? "%" : subject.unit && ` ${subject.unit}`}.
         </p>
       )}
     </Panel>

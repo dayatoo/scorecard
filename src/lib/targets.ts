@@ -136,10 +136,27 @@ export function draftToMetricInput(
     return { ok: true, metric: { kind: "MONTH", targetMonth } };
   }
 
+  const metricType = draft.metricType as NumericMetricType;
+
+  // VARIANCE is always scored as a symmetric %-deviation window — direction
+  // and target mode aren't meaningful choices for it (there's no "higher is
+  // better" for a variance, and a variance target is always a window, never
+  // a single point), so they're forced here regardless of what the draft (a
+  // stale form, say) carries, rather than asked for.
+  if (metricType === "VARIANCE") {
+    const bands = {} as Record<Band, [number, number]>;
+    for (const band of BANDS) {
+      const range = parseRangeInput(draft.targets[band] ?? "");
+      if (!range) {
+        return { ok: false, error: `The ${bandName(band)} variance window should look like "10-15".` };
+      }
+      bands[band] = range;
+    }
+    return { ok: true, metric: { kind: "RANGE", metricType, direction: "LOWER_BETTER", bands } };
+  }
+
   if (!draft.direction) return { ok: false, error: "Choose a direction — higher or lower is better." };
   if (!draft.targetMode) return { ok: false, error: "Choose a target mode — fixed or range." };
-
-  const metricType = draft.metricType as NumericMetricType;
 
   if (draft.targetMode === "RANGE") {
     const bands = {} as Record<Band, [number, number]>;

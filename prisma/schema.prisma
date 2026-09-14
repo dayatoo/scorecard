@@ -21,6 +21,7 @@ enum MetricType {
   QUANTITY
   DAYS
   MONTH_COMPLETION
+  VARIANCE
 }
 
 enum Direction {
@@ -407,6 +408,11 @@ model KpiValue {
   // metrics. Null for MONTH_COMPLETION, which records a date instead.
   value Float?
   basis ValueBasis @default(ACTUAL)
+
+  // The period's target/budget figure, for VARIANCE metrics only — the score
+  // is the (symmetric) percentage deviation of `value` from this. Null for
+  // every other metric type.
+  plannedValue Float?
 
   completionDate DateTime?
 

@@ -166,7 +166,10 @@ test("nothing is written until Save is confirmed", async ({ page }) => {
   // 95 sits at the top edge of the Very Good window [90, 95], so it scores 4.5.
   await expect(page.getByTitle("Very Good").first()).toContainText("4.5");
 
-  // Put it back, so the suite can be re-run.
+  // Put it back, so the suite can be re-run. Click first — right after a
+  // reload, `fill()` alone can race the client's hydration and land on a
+  // component that hasn't wired up its input handler yet.
+  await valueInput.click();
   await valueInput.fill(original);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByRole("button", { name: "Confirm and save" }).click();

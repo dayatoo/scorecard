@@ -35,6 +35,8 @@ export type SaveEntryInput = {
   kpiId: string;
   period: string;
   value: number | null;
+  /** VARIANCE metrics only — the period's target/budget figure. */
+  plannedValue: number | null;
   basis: "ACTUAL" | "ESTIMATE";
   completionDate: string | null;
   note: string | null;
@@ -82,6 +84,9 @@ async function writeEntry(user: CurrentUser, input: SaveEntryInput): Promise<voi
   if (input.value !== null && !Number.isFinite(input.value)) {
     throw new Error("That value is not a number.");
   }
+  if (input.plannedValue !== null && !Number.isFinite(input.plannedValue)) {
+    throw new Error("That target value is not a number.");
+  }
 
   const completionDate = input.completionDate ? new Date(input.completionDate) : null;
   if (completionDate && Number.isNaN(completionDate.getTime())) {
@@ -100,6 +105,7 @@ async function writeEntry(user: CurrentUser, input: SaveEntryInput): Promise<voi
 
   const data = {
     value: input.value,
+    plannedValue: input.plannedValue,
     basis: input.basis,
     completionDate,
     note: input.note?.trim() || null,
@@ -107,7 +113,7 @@ async function writeEntry(user: CurrentUser, input: SaveEntryInput): Promise<voi
 
   // Clearing every field removes the entry outright, so the KPI goes back to
   // "not reported" rather than sitting on a hollow row that scores zero.
-  if (data.value === null && data.completionDate === null && data.note === null) {
+  if (data.value === null && data.plannedValue === null && data.completionDate === null && data.note === null) {
     await prisma.kpiValue.deleteMany({
       where: { kpiId: input.kpiId, period: input.period },
     });
@@ -368,9 +374,14 @@ export async function prepareKpiSettings(input: SaveKpiSettingsInput): Promise<P
     existing.targetConfig !== nextColumns.targetConfig;
   if (metricChanged) metric = validateMetric(metric);
 
-  // Phasing only means anything for a phase-able numeric target; forced off
-  // server-side so a stale form can't leave it set on a milestone.
-  const phasing: Phasing = nextColumns.metricType && nextColumns.metricType !== "MONTH_COMPLETION" ? input.phasing : "NONE";
+  // Phasing only means anything for a phase-able cumulative numeric target;
+  // forced off server-side so a stale form can't leave it set on a milestone
+  // or on a VARIANCE KPI (whose bands are a % window, not an annual total to
+  // pro-rate — scaling "10-15%" mid-year would be meaningless).
+  const phasing: Phasing =
+    nextColumns.metricType && nextColumns.metricType !== "MONTH_COMPLETION" && nextColumns.metricType !== "VARIANCE"
+      ? input.phasing
+      : "NONE";
   const phaseConfig = phasing === "CUSTOM" ? JSON.stringify(input.phaseConfig ?? []) : null;
 
   const audits: AuditEntry[] = [];

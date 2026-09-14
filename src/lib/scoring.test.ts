@@ -16,6 +16,7 @@ import {
   scoreRangeTarget,
   selectEntry,
   shiftPeriod,
+  varianceMagnitude,
   type Entry,
   type FixedTargetConfig,
   type KpiDefinition,
@@ -196,6 +197,64 @@ describe("scoreRangeTarget", () => {
     };
     assert.equal(scoreRangeTarget(50, lowerBetter, "LOWER_BETTER"), BAND_BOUNDS.POOR.hi);
     assert.equal(scoreRangeTarget(1000, lowerBetter, "LOWER_BETTER"), BAND_BOUNDS.POOR.hi);
+  });
+});
+
+describe("varianceMagnitude", () => {
+  it("is symmetric — over and under target by the same amount give the same magnitude", () => {
+    assert.equal(varianceMagnitude(112, 100), 12);
+    assert.equal(varianceMagnitude(88, 100), 12);
+  });
+
+  it("returns null when there's nothing to compare against", () => {
+    assert.equal(varianceMagnitude(100, null), null);
+    assert.equal(varianceMagnitude(100, 0), null);
+  });
+});
+
+describe("scoreLeaf — VARIANCE", () => {
+  // A variance KPI is always RANGE + LOWER_BETTER — Meet is within ±10-15%.
+  const varianceRange: RangeTargetConfig = {
+    POOR: [30, 999],
+    IMPROVEMENT_NEEDED: [20, 29],
+    MEET: [10, 15],
+    GOOD: [5, 9],
+    VERY_GOOD: [2, 4],
+    EXCELLENT: [0, 1],
+  };
+  const varianceKpi: KpiDefinition = {
+    metricType: "VARIANCE",
+    direction: "LOWER_BETTER",
+    targetMode: "RANGE",
+    targetConfig: varianceRange,
+    deadlineMonth: null,
+    scoreFinalAfterDeadline: false,
+  };
+
+  it("scores +12% and -12% variance identically", () => {
+    const over = scoreLeaf(
+      varianceKpi,
+      [{ period: "2026-06", value: 112, plannedValue: 100, basis: "ACTUAL", completionDate: null }],
+      "2026-06"
+    );
+    const under = scoreLeaf(
+      varianceKpi,
+      [{ period: "2026-06", value: 88, plannedValue: 100, basis: "ACTUAL", completionDate: null }],
+      "2026-06"
+    );
+    assert.equal(over.score, under.score);
+    assert.equal(over.band, "MEET");
+    assert.equal(under.band, "MEET");
+  });
+
+  it("reports no data when the target/planned figure is missing", () => {
+    const result = scoreLeaf(
+      varianceKpi,
+      [{ period: "2026-06", value: 112, plannedValue: null, basis: "ACTUAL", completionDate: null }],
+      "2026-06"
+    );
+    assert.equal(result.score, null);
+    assert.equal(result.pendingReason, "NO_DATA");
   });
 });
 

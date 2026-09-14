@@ -363,7 +363,7 @@ describe("column dropdowns", () => {
     const bytes = await buildTemplateWorkbook([]);
 
     for (const [header, expected] of [
-      ["Metric Type", ["PERCENTAGE", "DOLLAR", "QUANTITY", "DAYS", "MONTH_COMPLETION"]],
+      ["Metric Type", ["PERCENTAGE", "DOLLAR", "QUANTITY", "DAYS", "MONTH_COMPLETION", "VARIANCE"]],
       ["Direction", ["HIGHER_BETTER", "LOWER_BETTER"]],
       ["Target Mode", ["FIXED", "RANGE"]],
       ["Score Final After Deadline", ["Yes", "No"]],
@@ -441,7 +441,7 @@ describe("Values sheet", () => {
     assert.deepEqual(
       { ...result.values[0], row: undefined },
       {
-        code: "K1", period: "2026-08", value: 4, basis: "ACTUAL",
+        code: "K1", period: "2026-08", value: 4, plannedValue: null, basis: "ACTUAL",
         completionDate: null, note: "on track", row: undefined,
       }
     );

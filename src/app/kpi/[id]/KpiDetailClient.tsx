@@ -32,6 +32,7 @@ import {
   type Phasing,
   type TargetConfig,
   type TargetMode,
+  varianceMagnitude,
 } from "@/lib/scoring";
 import { addKpiUpdate, saveEntry, saveKpiSettings } from "@/app/actions/kpi";
 import { clearOverride, overrideScore } from "@/app/actions/calibration";
@@ -48,6 +49,8 @@ type HistoryRow = {
   /** Later than the month being reported on, so deliberately unscored. */
   isFuture: boolean;
   value: number | null;
+  /** VARIANCE metrics only — the period's target/budget figure. */
+  plannedValue: number | null;
   basis: "ACTUAL" | "ESTIMATE" | null;
   completionDate: string | null;
   note: string | null;
@@ -111,6 +114,8 @@ type Draft = {
   targetMonth: string;
   clearFigures: boolean;
   value: string;
+  /** VARIANCE metrics only — the period's target/budget figure. */
+  plannedValue: string;
   basis: "ACTUAL" | "ESTIMATE";
   completionDate: string;
   note: string;
@@ -189,6 +194,8 @@ export function KpiDetailClient({
       targetMonth: metric.targetMonth,
       clearFigures: false,
       value: current?.value !== null && current?.value !== undefined ? String(current.value) : "",
+      plannedValue:
+        current?.plannedValue !== null && current?.plannedValue !== undefined ? String(current.plannedValue) : "",
       basis: current?.basis ?? "ACTUAL",
       completionDate: current?.completionDate ?? "",
       note: current?.note ?? "",
@@ -291,11 +298,12 @@ export function KpiDetailClient({
     const ok = await commit(async (d) => {
       const touched = new Set(changes.map((c) => c.field));
 
-      if (["value", "basis", "completionDate", "note"].some((f) => touched.has(f))) {
+      if (["value", "plannedValue", "basis", "completionDate", "note"].some((f) => touched.has(f))) {
         const result = await saveEntry({
           kpiId: kpi.id,
           period,
           value: d.value.trim() === "" ? null : Number(d.value),
+          plannedValue: d.plannedValue.trim() === "" ? null : Number(d.plannedValue),
           basis: d.basis,
           completionDate: d.completionDate || null,
           note: d.note || null,
@@ -365,7 +373,11 @@ export function KpiDetailClient({
           .sort((a, b) => a.period.localeCompare(b.period))[0] ?? null
       : null;
 
-  const numericTargets = kpi.metricType && kpi.metricType !== "MONTH_COMPLETION"
+  // VARIANCE band targets are a %-deviation window, not a value in the KPI's
+  // own unit — plotting them against the raw actual-value line here would be
+  // misleading (see ScoreExplainer's VarianceExplainer for the equivalent
+  // call), so this chart just shows the actual-value trend on its own.
+  const numericTargets = kpi.metricType && kpi.metricType !== "MONTH_COMPLETION" && kpi.metricType !== "VARIANCE"
     ? BANDS.map((band) => ({ band, value: targetPoint(kpi, band) })).filter(
         (t): t is { band: Band; value: number } => t.value !== null
       )
@@ -450,7 +462,12 @@ export function KpiDetailClient({
             direction: kpi.direction,
             targetConfig: kpi.targetConfig,
             unit: kpi.unit,
-            currentValue: kpi.leaf?.value ?? null,
+            currentValue:
+              draft.metricType === "VARIANCE"
+                ? kpi.leaf?.value != null
+                  ? varianceMagnitude(kpi.leaf.value, kpi.leaf.plannedValue)
+                  : null
+                : (kpi.leaf?.value ?? null),
           }}
           draft={draft}
           setField={setAttributeField}
@@ -797,6 +814,11 @@ function EntryPanel({
   fiscalYearClosed?: boolean;
 }) {
   const isMilestone = draft.metricType === "MONTH_COMPLETION";
+  const isVariance = draft.metricType === "VARIANCE";
+  const liveVariance =
+    isVariance && draft.value.trim() !== "" && draft.plannedValue.trim() !== ""
+      ? varianceMagnitude(Number(draft.value), Number(draft.plannedValue))
+      : null;
 
   return (
     <Panel title={`Report for ${formatPeriodLabel(period)}`}>
@@ -816,6 +838,32 @@ function EntryPanel({
               onChange={(iso) => setField("completionDate", iso)}
             />
           </Field>
+        ) : isVariance ? (
+          <>
+            <Field label={`Actual value${kpi.unit ? ` (${kpi.unit})` : ""}`}>
+              <input
+                type="number"
+                step="any"
+                inputMode="decimal"
+                className={`mt-1 ${inputClass}`}
+                value={draft.value}
+                onChange={(e) => setField("value", e.target.value)}
+              />
+            </Field>
+            <Field label={`Target value${kpi.unit ? ` (${kpi.unit})` : ""}`}>
+              <input
+                type="number"
+                step="any"
+                inputMode="decimal"
+                className={`mt-1 ${inputClass}`}
+                value={draft.plannedValue}
+                onChange={(e) => setField("plannedValue", e.target.value)}
+              />
+              {liveVariance !== null && (
+                <p className="mt-1 text-xs text-gray-500">Variance: {liveVariance.toFixed(1)}%</p>
+              )}
+            </Field>
+          </>
         ) : (
           <Field label={`Year-to-date value${kpi.unit ? ` (${kpi.unit})` : ""}`}>
             <input
@@ -950,8 +998,13 @@ function ChildrenTable({ subKpis, period }: {
                     ) : (
                       <>
                         {child.meetTarget}
-                        {child.unit && child.metricType !== "MONTH_COMPLETION" && (
-                          <span className="ml-0.5 text-xs text-gray-400">{child.unit}</span>
+                        {child.metricType === "VARIANCE" ? (
+                          <span className="ml-0.5 text-xs text-gray-400">%</span>
+                        ) : (
+                          child.unit &&
+                          child.metricType !== "MONTH_COMPLETION" && (
+                            <span className="ml-0.5 text-xs text-gray-400">{child.unit}</span>
+                          )
                         )}
                       </>
                     )}
@@ -990,7 +1043,14 @@ function HistoryTable({
           <thead>
             <tr className="border-b text-left text-xs font-medium text-gray-500 uppercase">
               <th scope="col" className="py-2">Month</th>
-              {kpi.isLeaf && kpi.metricType !== "MONTH_COMPLETION" && (
+              {kpi.isLeaf && kpi.metricType === "VARIANCE" && (
+                <>
+                  <th scope="col" className="py-2 text-right">Actual</th>
+                  <th scope="col" className="py-2 text-right">Target</th>
+                  <th scope="col" className="py-2 text-right">Variance</th>
+                </>
+              )}
+              {kpi.isLeaf && kpi.metricType !== "MONTH_COMPLETION" && kpi.metricType !== "VARIANCE" && (
                 <th scope="col" className="py-2 text-right">YTD value</th>
               )}
               {kpi.metricType === "MONTH_COMPLETION" && (
@@ -1012,7 +1072,36 @@ function HistoryTable({
                 <th scope="row" className="py-1.5 text-left font-normal whitespace-nowrap">
                   {formatPeriodLabel(row.period)}
                 </th>
-                {kpi.isLeaf && kpi.metricType !== "MONTH_COMPLETION" && (
+                {kpi.isLeaf && kpi.metricType === "VARIANCE" && (
+                  <>
+                    <td className="tabular py-1.5 text-right">
+                      {row.value === null ? <span className="text-gray-400">—</span> : row.value.toLocaleString()}
+                    </td>
+                    <td className="tabular py-1.5 text-right">
+                      {row.plannedValue === null ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        row.plannedValue.toLocaleString()
+                      )}
+                    </td>
+                    <td className="tabular py-1.5 text-right">
+                      {(() => {
+                        const v = row.value === null ? null : varianceMagnitude(row.value, row.plannedValue);
+                        return v === null ? (
+                          <span className="text-gray-400">—</span>
+                        ) : (
+                          <>
+                            {v.toFixed(1)}%
+                            {row.basis === "ESTIMATE" && (
+                              <span className="ml-1 text-xs text-amber-700">est</span>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </td>
+                  </>
+                )}
+                {kpi.isLeaf && kpi.metricType !== "MONTH_COMPLETION" && kpi.metricType !== "VARIANCE" && (
                   <td className="tabular py-1.5 text-right">
                     {row.value === null ? (
                       <span className="text-gray-400">—</span>

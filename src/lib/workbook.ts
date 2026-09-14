@@ -75,6 +75,7 @@ const METRIC_TYPES: MetricType[] = [
   "QUANTITY",
   "DAYS",
   "MONTH_COMPLETION",
+  "VARIANCE",
 ];
 
 const DIRECTIONS: Direction[] = ["HIGHER_BETTER", "LOWER_BETTER"];
@@ -143,6 +144,8 @@ export type ParsedValue = {
   code: string;
   period: string;
   value: number | null;
+  /** VARIANCE metrics only — the period's target/budget figure. */
+  plannedValue: number | null;
   basis: "ACTUAL" | "ESTIMATE";
   completionDate: string | null;
   note: string | null;
@@ -508,6 +511,16 @@ function parseValuesSheet(
       return;
     }
 
+    const plannedValueText = get(row, "Planned Value");
+    const plannedValue = plannedValueText ? parseNumber(plannedValueText) : null;
+    if (plannedValueText && plannedValue === null) {
+      issues.push({
+        row: rowNumber,
+        message: `Values sheet: ${code}: "${plannedValueText}" (Planned Value) is not a number.`,
+      });
+      return;
+    }
+
     const completionText = get(row, "Completion Date");
     let completionDate: string | null = null;
     if (completionText) {
@@ -527,6 +540,7 @@ function parseValuesSheet(
       code,
       period,
       value,
+      plannedValue,
       basis: basisText.startsWith("E") ? "ESTIMATE" : "ACTUAL",
       completionDate,
       note: get(row, "Note") || null,
@@ -667,6 +681,7 @@ function addReadmeSheet(workbook: ExcelJS.Workbook) {
     ["Target Mode", "FIXED — put a single number in each band column. Reaching a band's target scores the top of that band. Targets normally step by 1 and must get harder from Poor through to Excellent."],
     ["", 'RANGE — put a window in each band column, written "50-69". The score scales across the window between that band\'s lowest and highest score. A band can instead hold a single number (e.g. "100") for an exact target — reaching or passing it scores the top of that band, same as FIXED.'],
     ["Month of completion", "Set Metric Type to MONTH_COMPLETION and put the target month in the Meet column — as YYYY-MM, or as an actual Excel date (the day is ignored, only the month and year count). Leave the other band columns blank — finishing one, two or three months early scores Good, Very Good, Excellent, and one or two months late scores Improvement Needed or Poor."],
+    ["Variance", 'Set Metric Type to VARIANCE for a KPI scored on how far an actual figure deviates from a per-period target, in either direction (e.g. budget utilization). Direction, Target Mode and Phasing are ignored — always scored the same whether over or under. Put a %-deviation window in each band column, written "10-15" for ±10-15%. Each month, enter both a Value (the actual) and a Planned Value (the target) on the Values sheet — the variance is computed automatically.'],
     ["Deadline Month", "Optional, YYYY-MM. Use it for a KPI that is time-bound even though its metric is not. It means the last day of that month."],
     ["Score Final After Deadline", 'Yes — the score freezes at whatever it was in the deadline month; later achievement is recorded but does not change it. No (the default) — later achievement still earns partial credit, capped at 2.9 one month late, 2.4 two months late, and 0 after that.'],
     ["Departments", "Who owns the KPI. Separate several with a semicolon, e.g. Finance; Operations. Names should match the Departments sheet."],
@@ -675,7 +690,7 @@ function addReadmeSheet(workbook: ExcelJS.Workbook) {
     ["Phase Shares", 'Custom phasing only: 12 monthly shares (April first), summing to 100, separated by semicolons — e.g. "5;5;10;10;10;10;10;10;10;10;5;5".'],
     ["Global %", "Export only, derived and read-only: this KPI's share of the whole company. Ignored on import — edit Weight (of group) instead."],
     ["Dropdowns", `Metric Type, Direction, Target Mode, Score Final After Deadline, Frequency and Phasing are dropdowns — pick from the list rather than typing, and Excel will refuse anything else. Unit offers ${UNIT_SUGGESTIONS.join(", ")} as a shortcut but accepts any label, so a KPI counted in something else can still be typed in. Every one of them may be left blank on a KPI that has children.`],
-    ["Values sheet (optional)", 'Add a sheet named "Values" to load monthly figures alongside the hierarchy, instead of typing them in. Columns: Code, Period, Value, Basis, Completion Date, Note. Period is YYYY-MM. Basis is Actual or Estimate. Completion Date (dd/mm/yyyy) is only for month-of-completion KPIs. A row overwrites whatever is recorded for that KPI and month.'],
+    ["Values sheet (optional)", 'Add a sheet named "Values" to load monthly figures alongside the hierarchy, instead of typing them in. Columns: Code, Period, Value, Planned Value, Basis, Completion Date, Note. Period is YYYY-MM. Basis is Actual or Estimate. Completion Date (dd/mm/yyyy) is only for month-of-completion KPIs. Planned Value is only for VARIANCE KPIs — the period\'s target figure. A row overwrites whatever is recorded for that KPI and month.'],
   ];
 
   lines.forEach(([label, text], index) => {
