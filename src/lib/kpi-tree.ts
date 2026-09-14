@@ -32,6 +32,8 @@ export type KpiRecord = {
   name: string;
   /** Purely organizational — clusters siblings for display, no scoring effect. */
   subGroup?: string | null;
+  /** Free text, suggested from a reusable company-wide list. No scoring effect. */
+  status?: string | null;
   parentId: string | null;
   sortOrder: number;
   /** Local weight — this node's share of its own siblings. */
@@ -85,6 +87,8 @@ export type ScoredNode = {
   name: string;
   /** Purely organizational — clusters siblings for display, no scoring effect. */
   subGroup: string | null;
+  /** Free text, suggested from a reusable company-wide list. No scoring effect. */
+  status: string | null;
   level: number;
   isLeaf: boolean;
   /** Local weight: this node's share of its own siblings (sums to ~100 per group). */
@@ -211,6 +215,7 @@ export function buildScoredTree(
       code: kpi.code,
       name: kpi.name,
       subGroup: kpi.subGroup ?? null,
+      status: kpi.status ?? null,
       level,
       isLeaf,
       weight: kpi.weight,

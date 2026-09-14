@@ -61,6 +61,7 @@ export type KpiProps = {
   code: string;
   name: string;
   subGroup: string | null;
+  status: string | null;
   level: number;
   isLeaf: boolean;
   weight: number;
@@ -94,6 +95,7 @@ type Draft = {
   name: string;
   weight: string;
   subGroup: string;
+  status: string;
   unit: string;
   departmentIds: string[];
   deadlineMonth: string;
@@ -127,6 +129,7 @@ export function KpiDetailClient({
   updates,
   audits,
   departments,
+  statusOptions,
   period,
   periods,
   fiscalYearLabel,
@@ -142,9 +145,15 @@ export function KpiDetailClient({
     meetTarget: string | null; unit: string | null; metricType: MetricType | null;
   }[];
   history: HistoryRow[];
-  updates: { id: string; period: string; body: string; author: string | null; createdAt: string }[];
+  updates: {
+    id: string; period: string; mode: "SIMPLE" | "DETAILED";
+    body: string | null; currentProgress: string | null; nextProgress: string | null;
+    timeCost: string | null; issues: string | null;
+    author: string | null; createdAt: string;
+  }[];
   audits: { id: string; field: string; label: string; from: string; to: string; author: string | null; createdAt: string }[];
   departments: { id: string; name: string }[];
+  statusOptions: string[];
   period: string;
   periods: string[];
   fiscalYearLabel: string;
@@ -163,6 +172,7 @@ export function KpiDetailClient({
       name: kpi.name,
       weight: String(kpi.weight),
       subGroup: kpi.subGroup ?? "",
+      status: kpi.status ?? "",
       unit: kpi.unit ?? "",
       departmentIds: [...kpi.departmentIds].sort(),
       deadlineMonth: kpi.deadlineMonth ?? "",
@@ -252,7 +262,7 @@ export function KpiDetailClient({
   );
 
   const settingsFields = new Set([
-    "code", "name", "weight", "unit", "departmentIds", "deadlineMonth",
+    "code", "name", "weight", "subGroup", "status", "unit", "departmentIds", "deadlineMonth",
     "scoreFinalAfterDeadline", "frequency", "metricType", "targetMode",
     "direction", "phasing", "phaseShares", "targets", "targetMonth", "clearFigures",
   ]);
@@ -312,6 +322,7 @@ export function KpiDetailClient({
           name: d.name,
           weight: Number(d.weight || 0),
           subGroup: d.subGroup || null,
+          status: d.status || null,
           unit: d.unit || null,
           departmentIds: d.departmentIds,
           deadlineMonth: d.deadlineMonth || null,
@@ -414,6 +425,8 @@ export function KpiDetailClient({
         />
       )}
 
+      <ProgressUpdatesPanel kpiId={kpi.id} period={period} updates={updates} />
+
       {pendingProposal && (
         <PendingProposalPanel proposal={pendingProposal} isAdmin={currentUser.role === "ADMIN"} />
       )}
@@ -423,6 +436,7 @@ export function KpiDetailClient({
         draft={draft}
         setField={setAttributeField}
         departments={departments}
+        statusOptions={statusOptions}
         crossesMetricBoundary={crossesMetricBoundary}
         readOnly={!canEditSettings}
         fiscalYearClosed={fiscalYearClosed}
@@ -453,8 +467,6 @@ export function KpiDetailClient({
       />
 
       <HistoryTable history={history} kpi={kpi} currentPeriod={period} />
-
-      <UpdatesPanel kpiId={kpi.id} period={period} updates={updates} />
 
       <AuditPanel audits={audits} />
 
@@ -1015,27 +1027,50 @@ function HistoryTable({
   );
 }
 
-function UpdatesPanel({
+function ProgressUpdatesPanel({
   kpiId, period, updates,
 }: {
   kpiId: string;
   period: string;
-  updates: { id: string; period: string; body: string; author: string | null; createdAt: string }[];
+  updates: {
+    id: string; period: string; mode: "SIMPLE" | "DETAILED";
+    body: string | null; currentProgress: string | null; nextProgress: string | null;
+    timeCost: string | null; issues: string | null;
+    author: string | null; createdAt: string;
+  }[];
 }) {
   const router = useRouter();
+  const [mode, setMode] = useState<"SIMPLE" | "DETAILED">("SIMPLE");
   const [body, setBody] = useState("");
+  const [currentProgress, setCurrentProgress] = useState("");
+  const [nextProgress, setNextProgress] = useState("");
+  const [timeCost, setTimeCost] = useState("");
+  const [issues, setIssues] = useState("");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  const canPost =
+    mode === "SIMPLE"
+      ? body.trim().length > 0
+      : [currentProgress, nextProgress, timeCost, issues].some((v) => v.trim().length > 0);
 
   const post = () => {
     startTransition(async () => {
       try {
-        const result = await addKpiUpdate({ kpiId, period, body });
+        const result = await addKpiUpdate(
+          mode === "SIMPLE"
+            ? { kpiId, period, mode: "SIMPLE", body }
+            : { kpiId, period, mode: "DETAILED", currentProgress, nextProgress, timeCost, issues }
+        );
         if (!result.ok) {
           setError(result.error);
           return;
         }
         setBody("");
+        setCurrentProgress("");
+        setNextProgress("");
+        setTimeCost("");
+        setIssues("");
         setError(null);
         router.refresh();
       } catch {
@@ -1046,22 +1081,57 @@ function UpdatesPanel({
 
   return (
     <Panel
-      title="Status updates"
+      title="Progress updates"
       description="Narrative about this KPI, newest first. Posted immediately, separately from the Save button."
     >
       <div className="space-y-2">
-        <textarea
-          rows={3}
-          className={inputClass}
-          value={body}
-          placeholder="What has moved on this KPI?"
-          onChange={(e) => setBody(e.target.value)}
-        />
+        <div className="inline-flex overflow-hidden rounded border border-gray-300">
+          <button
+            type="button"
+            onClick={() => setMode("SIMPLE")}
+            className={`px-3 py-1 text-xs font-medium ${mode === "SIMPLE" ? "bg-gray-900 text-white" : "bg-white text-gray-700 hover:bg-gray-50"}`}
+          >
+            Simple
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("DETAILED")}
+            className={`px-3 py-1 text-xs font-medium ${mode === "DETAILED" ? "bg-gray-900 text-white" : "bg-white text-gray-700 hover:bg-gray-50"}`}
+          >
+            Detailed
+          </button>
+        </div>
+
+        {mode === "SIMPLE" ? (
+          <textarea
+            rows={3}
+            className={inputClass}
+            value={body}
+            placeholder="What has moved on this KPI?"
+            onChange={(e) => setBody(e.target.value)}
+          />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Current progress">
+              <textarea rows={2} className={inputClass} value={currentProgress} onChange={(e) => setCurrentProgress(e.target.value)} />
+            </Field>
+            <Field label="Next progress">
+              <textarea rows={2} className={inputClass} value={nextProgress} onChange={(e) => setNextProgress(e.target.value)} />
+            </Field>
+            <Field label="Time/Cost">
+              <textarea rows={2} className={inputClass} value={timeCost} onChange={(e) => setTimeCost(e.target.value)} />
+            </Field>
+            <Field label="Issues">
+              <textarea rows={2} className={inputClass} value={issues} onChange={(e) => setIssues(e.target.value)} />
+            </Field>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={post}
-            disabled={pending || !body.trim()}
+            disabled={pending || !canPost}
             className="rounded bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-40"
           >
             {pending ? "Posting…" : "Post update"}
@@ -1085,8 +1155,40 @@ function UpdatesPanel({
                 <span className="rounded bg-gray-100 px-1.5 py-0.5">
                   {formatPeriodLabel(update.period)}
                 </span>
+                <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-800">
+                  {update.mode === "DETAILED" ? "Detailed" : "Simple"}
+                </span>
               </div>
-              <p className="mt-1 text-sm whitespace-pre-wrap text-gray-800">{update.body}</p>
+              {update.mode === "SIMPLE" ? (
+                <p className="mt-1 text-sm whitespace-pre-wrap text-gray-800">{update.body}</p>
+              ) : (
+                <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                  {update.currentProgress && (
+                    <div>
+                      <div className="text-xs font-semibold tracking-wide text-blue-700 uppercase">Current progress</div>
+                      <p className="mt-0.5 text-sm whitespace-pre-wrap text-gray-800">{update.currentProgress}</p>
+                    </div>
+                  )}
+                  {update.nextProgress && (
+                    <div>
+                      <div className="text-xs font-semibold tracking-wide text-blue-700 uppercase">Next progress</div>
+                      <p className="mt-0.5 text-sm whitespace-pre-wrap text-gray-800">{update.nextProgress}</p>
+                    </div>
+                  )}
+                  {update.timeCost && (
+                    <div>
+                      <div className="text-xs font-semibold tracking-wide text-blue-700 uppercase">Time/Cost</div>
+                      <p className="mt-0.5 text-sm whitespace-pre-wrap text-gray-800">{update.timeCost}</p>
+                    </div>
+                  )}
+                  {update.issues && (
+                    <div>
+                      <div className="text-xs font-semibold tracking-wide text-blue-700 uppercase">Issues</div>
+                      <p className="mt-0.5 text-sm whitespace-pre-wrap text-gray-800">{update.issues}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>

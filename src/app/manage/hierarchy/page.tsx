@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { HierarchyEditor } from "./HierarchyEditor";
-import { getActiveFiscalYear, getHierarchyTree, listDepartments, listFiscalYears } from "@/lib/data";
+import { getActiveFiscalYear, getHierarchyTree, listDepartments, listFiscalYears, listStatusOptions } from "@/lib/data";
 import { requireAdminPage } from "@/lib/session";
 
 export const metadata = { title: "Hierarchy — KPI Scorecard" };
@@ -17,10 +17,11 @@ export default async function HierarchyPage({
   const query = await searchParams;
   const requestedId = typeof query.fy === "string" ? query.fy : undefined;
 
-  const [fiscalYears, activeYear, departments] = await Promise.all([
+  const [fiscalYears, activeYear, departments, statusOptions] = await Promise.all([
     listFiscalYears(),
     getActiveFiscalYear(),
     listDepartments(),
+    listStatusOptions(),
   ]);
   const fiscalYearId = requestedId ?? activeYear?.id;
   const selectedFiscalYear = fiscalYears.find((fy) => fy.id === fiscalYearId) ?? null;
@@ -54,6 +55,7 @@ export default async function HierarchyPage({
           fiscalYearClosed={!!selectedFiscalYear?.closedAt}
           nodes={nodes}
           departments={departments.map((d) => ({ id: d.id, name: d.name }))}
+          statusOptions={statusOptions}
         />
       )}
     </div>

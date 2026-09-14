@@ -145,6 +145,7 @@ export type SaveKpiSettingsInput = {
   name: string;
   weight: number;
   subGroup: string | null;
+  status: string | null;
   unit: string | null;
   departmentIds: string[];
   deadlineMonth: string | null;
@@ -249,6 +250,7 @@ export type KpiAttributes = {
   code: string;
   name: string;
   subGroup: string | null;
+  status: string | null;
   unit: string | null;
   departmentIds: string[];
   deadlineMonth: string | null;
@@ -282,6 +284,7 @@ export async function getKpiAttributes(kpiId: string): Promise<ActionResult<KpiA
       code: kpi.code,
       name: kpi.name,
       subGroup: kpi.subGroup,
+      status: kpi.status,
       unit: kpi.unit,
       departmentIds: kpi.departments.map((d) => d.departmentId),
       deadlineMonth: kpi.deadlineMonth,
@@ -377,6 +380,7 @@ export async function prepareKpiSettings(input: SaveKpiSettingsInput): Promise<P
   push("code", "Code", existing.code, code);
   push("weight", "Weight % (of group)", `${existing.weight}`, `${input.weight}`);
   push("subGroup", "Sub-group", existing.subGroup ?? "none", input.subGroup?.trim() || "none");
+  push("status", "Status", existing.status ?? "none", input.status?.trim() || "none");
   push("unit", "Unit", existing.unit ?? "empty", input.unit?.trim() || "empty");
   push(
     "deadlineMonth",
@@ -417,6 +421,7 @@ export async function commitKpiSettings(
         code,
         weight: input.weight,
         subGroup: input.subGroup?.trim() || null,
+        status: input.status?.trim() || null,
         unit: input.unit?.trim() || null,
         deadlineMonth: input.deadlineMonth,
         scoreFinalAfterDeadline: input.scoreFinalAfterDeadline,
@@ -442,6 +447,16 @@ export async function commitKpiSettings(
       await tx.kpiValue.deleteMany({ where: { kpiId: input.kpiId } });
     }
 
+    // Saved for reuse: the next KPI's Status field suggests it too.
+    const status = input.status?.trim();
+    if (status) {
+      await tx.kpiStatusOption.upsert({
+        where: { name: status },
+        create: { name: status },
+        update: {},
+      });
+    }
+
     if (audits.length > 0) {
       await tx.kpiAudit.createMany({
         data: audits.map((a) => ({
@@ -464,25 +479,44 @@ export async function commitKpiSettings(
   revalidatePath(`/kpi/${input.kpiId}`);
 }
 
-export async function addKpiUpdate(input: {
-  kpiId: string;
-  period: string;
-  body: string;
-}): Promise<ActionResult> {
+export type AddKpiUpdateInput = { kpiId: string; period: string } & (
+  | { mode: "SIMPLE"; body: string }
+  | { mode: "DETAILED"; currentProgress: string; nextProgress: string; timeCost: string; issues: string }
+);
+
+export async function addKpiUpdate(input: AddKpiUpdateInput): Promise<ActionResult> {
   return attempt(async () => {
     const user = await requireAuth();
 
-    const body = input.body.trim();
-    if (!body) throw new Error("Write something before posting an update.");
+    if (input.mode === "SIMPLE") {
+      const body = input.body.trim();
+      if (!body) throw new Error("Write something before posting an update.");
 
-    await prisma.kpiUpdate.create({
-      data: {
-        kpiId: input.kpiId,
-        period: input.period,
-        body,
-        author: user.username,
-      },
-    });
+      await prisma.kpiUpdate.create({
+        data: { kpiId: input.kpiId, period: input.period, mode: "SIMPLE", body, author: user.username },
+      });
+    } else {
+      const currentProgress = input.currentProgress.trim();
+      const nextProgress = input.nextProgress.trim();
+      const timeCost = input.timeCost.trim();
+      const issues = input.issues.trim();
+      if (!currentProgress && !nextProgress && !timeCost && !issues) {
+        throw new Error("Fill in at least one field before posting an update.");
+      }
+
+      await prisma.kpiUpdate.create({
+        data: {
+          kpiId: input.kpiId,
+          period: input.period,
+          mode: "DETAILED",
+          currentProgress: currentProgress || null,
+          nextProgress: nextProgress || null,
+          timeCost: timeCost || null,
+          issues: issues || null,
+          author: user.username,
+        },
+      });
+    }
 
     revalidatePath(`/kpi/${input.kpiId}`);
   });

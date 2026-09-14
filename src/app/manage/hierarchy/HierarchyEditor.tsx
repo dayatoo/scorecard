@@ -56,12 +56,14 @@ export function HierarchyEditor({
   fiscalYearClosed = false,
   nodes,
   departments,
+  statusOptions,
 }: {
   fiscalYears: { id: string; label: string }[];
   selectedFiscalYearId: string;
   fiscalYearClosed?: boolean;
   nodes: Node[];
   departments: { id: string; name: string }[];
+  statusOptions: string[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -465,6 +467,7 @@ export function HierarchyEditor({
             weight={target.weight}
             globalWeight={target.globalWeight}
             departments={departments}
+            statusOptions={statusOptions}
             onClose={() => setEditingId(null)}
             onSaved={() => {
               setEditingId(null);

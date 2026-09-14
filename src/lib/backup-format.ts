@@ -41,7 +41,12 @@ export type BackupValue = {
 
 export type BackupUpdate = {
   period: string;
-  body: string;
+  mode: "SIMPLE" | "DETAILED";
+  body: string | null;
+  currentProgress: string | null;
+  nextProgress: string | null;
+  timeCost: string | null;
+  issues: string | null;
   author: string | null;
   createdAt: string;
 };
@@ -269,7 +274,12 @@ function parseKpi(entry: unknown, index: number): BackupKpi {
     })),
     updates: list(entry.updates).map((u) => ({
       period: requirePeriod(u.period, `an update on "${name}"`),
-      body: typeof u.body === "string" ? u.body : "",
+      mode: u.mode === "DETAILED" ? "DETAILED" : "SIMPLE",
+      body: stringOrNull(u.body),
+      currentProgress: stringOrNull(u.currentProgress),
+      nextProgress: stringOrNull(u.nextProgress),
+      timeCost: stringOrNull(u.timeCost),
+      issues: stringOrNull(u.issues),
       author: stringOrNull(u.author),
       createdAt: isoOrNow(u.createdAt),
     })),

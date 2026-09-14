@@ -31,6 +31,7 @@ export function KpiEditPanel({
   weight,
   globalWeight,
   departments,
+  statusOptions,
   onClose,
   onSaved,
 }: {
@@ -41,6 +42,7 @@ export function KpiEditPanel({
   weight: number;
   globalWeight: number;
   departments: { id: string; name: string }[];
+  statusOptions: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -71,6 +73,7 @@ export function KpiEditPanel({
         name: fetched.name,
         weight: String(weight),
         subGroup: fetched.subGroup ?? "",
+        status: fetched.status ?? "",
         unit: fetched.unit ?? "",
         departmentIds: [...fetched.departmentIds].sort(),
         deadlineMonth: fetched.deadlineMonth ?? "",
@@ -132,6 +135,7 @@ export function KpiEditPanel({
       name: draft.name,
       weight: Number(draft.weight || 0),
       subGroup: draft.subGroup || null,
+      status: draft.status || null,
       unit: draft.unit || null,
       departmentIds: draft.departmentIds,
       deadlineMonth: draft.deadlineMonth || null,
@@ -198,6 +202,7 @@ export function KpiEditPanel({
                 draft={draft}
                 setField={setField}
                 departments={departments}
+                statusOptions={statusOptions}
                 crossesMetricBoundary={crossesMetricBoundary}
                 readOnly={saving}
               />

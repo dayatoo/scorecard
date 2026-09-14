@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { KpiDetailClient } from "./KpiDetailClient";
-import { getKpiDetail, listDepartments } from "@/lib/data";
+import { getKpiDetail, listDepartments, listStatusOptions } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
 import { requireAuthPage } from "@/lib/session";
 import { ancestorsOf } from "@/lib/kpi-tree";
@@ -25,9 +25,10 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
   const query = await searchParams;
   const period = typeof query.period === "string" ? query.period : undefined;
 
-  const [detail, departments, audits, pendingProposalRow] = await Promise.all([
+  const [detail, departments, statusOptions, audits, pendingProposalRow] = await Promise.all([
     getKpiDetail(id, period),
     listDepartments(),
+    listStatusOptions(),
     prisma.kpiAudit.findMany({ where: { kpiId: id }, orderBy: { createdAt: "desc" }, take: 30 }),
     prisma.kpiChangeProposal.findFirst({
       where: { kpiId: id, status: "PENDING" },
@@ -145,6 +146,7 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
           code: node.code,
           name: node.name,
           subGroup: node.subGroup,
+          status: node.status,
           level: node.level,
           isLeaf: node.isLeaf,
           weight: node.weight,
@@ -171,7 +173,12 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
         updates={updates.map((u) => ({
           id: u.id,
           period: u.period,
+          mode: u.mode,
           body: u.body,
+          currentProgress: u.currentProgress,
+          nextProgress: u.nextProgress,
+          timeCost: u.timeCost,
+          issues: u.issues,
           author: u.author,
           createdAt: u.createdAt.toISOString(),
         }))}
@@ -185,6 +192,7 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
           createdAt: a.createdAt.toISOString(),
         }))}
         departments={departments.map((d) => ({ id: d.id, name: d.name }))}
+        statusOptions={statusOptions}
         period={scorecard.period}
         periods={yearPeriods}
         fiscalYearLabel={scorecard.fiscalYear.label}

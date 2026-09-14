@@ -71,6 +71,12 @@ export async function listDepartments() {
   return prisma.department.findMany({ orderBy: { name: "asc" } });
 }
 
+/** Every Status value ever saved on a KPI, for the Status field's suggestion list. */
+export async function listStatusOptions(): Promise<string[]> {
+  const options = await prisma.kpiStatusOption.findMany({ orderBy: { name: "asc" } });
+  return options.map((o) => o.name);
+}
+
 export async function loadKpiRecords(fiscalYearId: string): Promise<KpiRecord[]> {
   const rows = await prisma.kpi.findMany({
     where: { fiscalYearId },
@@ -83,6 +89,7 @@ export async function loadKpiRecords(fiscalYearId: string): Promise<KpiRecord[]>
     code: row.code,
     name: row.name,
     subGroup: row.subGroup,
+    status: row.status,
     parentId: row.parentId,
     sortOrder: row.sortOrder,
     weight: row.weight,

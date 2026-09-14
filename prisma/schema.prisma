@@ -264,6 +264,17 @@ model Department {
   updatedAt DateTime @updatedAt
 }
 
+// A reusable, company-wide suggestion list for Kpi.status — same shape and
+// scope as Department, but a KPI's status is a plain string (freely typed),
+// not a relation to a row here. Saving a new status value on any KPI adds it
+// here so every other KPI can pick it up as a suggestion afterward.
+model KpiStatusOption {
+  id   String @id @default(cuid())
+  name String @unique
+
+  createdAt DateTime @default(now())
+}
+
 model Kpi {
   id           String     @id @default(cuid())
   fiscalYearId String
@@ -278,6 +289,10 @@ model Kpi {
   // display (Hierarchy page, Weights page, dashboard, /kpis table). Never
   // affects code, level, weight or scoring.
   subGroup String?
+
+  // Free text, suggested from the company-wide KpiStatusOption list (see
+  // that model) but never constrained to it — no relation, just a string.
+  status String?
 
   parentId String?
   parent   Kpi?    @relation("KpiHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
@@ -406,16 +421,31 @@ model KpiValue {
   @@index([kpiId])
 }
 
-// Free-form status updates shown as a history on the KPI detail page.
+enum KpiUpdateMode {
+  SIMPLE
+  DETAILED
+}
+
+// Progress updates shown as a history on the KPI detail page — chosen per
+// post, Simple (one free-text field, `body`) or Detailed (the four
+// `currentProgress`/`nextProgress`/`timeCost`/`issues` fields). Only the
+// columns for the post's own mode are ever set; the other mode's stay null.
 model KpiUpdate {
-  id    String @id @default(cuid())
+  id    String        @id @default(cuid())
   kpiId String
-  kpi   Kpi    @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  kpi   Kpi           @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  mode  KpiUpdateMode @default(SIMPLE)
 
   // The month the update relates to, "YYYY-MM".
   period String
-  body   String
+  body   String?
   author String?
+
+  // Detailed mode only.
+  currentProgress String?
+  nextProgress    String?
+  timeCost        String?
+  issues          String?
 
   createdAt DateTime @default(now())
 

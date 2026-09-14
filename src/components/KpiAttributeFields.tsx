@@ -32,6 +32,7 @@ export type AttributeDraft = {
   name: string;
   weight: string;
   subGroup: string;
+  status: string;
   unit: string;
   departmentIds: string[];
   deadlineMonth: string;
@@ -78,12 +79,13 @@ export function Field({ label, hint, children }: {
 }
 
 export function SettingsPanel({
-  subject, draft, setField, departments, crossesMetricBoundary, readOnly, fiscalYearClosed,
+  subject, draft, setField, departments, statusOptions, crossesMetricBoundary, readOnly, fiscalYearClosed,
 }: {
   subject: { isLeaf: boolean; globalWeight: number };
   draft: AttributeDraft;
   setField: <K extends keyof AttributeDraft>(field: K, value: AttributeDraft[K]) => void;
   departments: { id: string; name: string }[];
+  statusOptions: string[];
   crossesMetricBoundary: boolean;
   readOnly?: boolean;
   fiscalYearClosed?: boolean;
@@ -147,6 +149,21 @@ export function SettingsPanel({
             placeholder="e.g. Revenue-related"
             onChange={(e) => setField("subGroup", e.target.value)}
           />
+        </Field>
+
+        <Field label="Status" hint="Free text — pick a suggestion or type a new one; new values are saved for reuse on other KPIs.">
+          <input
+            className={`mt-1 ${attributeInputClass}`}
+            value={draft.status}
+            list="kpi-status-options"
+            placeholder="e.g. On track"
+            onChange={(e) => setField("status", e.target.value)}
+          />
+          <datalist id="kpi-status-options">
+            {statusOptions.map((option) => (
+              <option key={option} value={option} />
+            ))}
+          </datalist>
         </Field>
 
         <Field label="Reporting frequency">

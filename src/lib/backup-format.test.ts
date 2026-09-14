@@ -69,7 +69,11 @@ describe("parseBackup", () => {
             { period: "2026-05", value: 610000, basis: "ESTIMATE", completionDate: null, note: null },
           ],
           updates: [
-            { period: "2026-05", body: "Pipeline holding up.", author: "admin", createdAt: "2026-05-31T00:00:00.000Z" },
+            {
+              period: "2026-05", mode: "SIMPLE", body: "Pipeline holding up.",
+              currentProgress: null, nextProgress: null, timeCost: null, issues: null,
+              author: "admin", createdAt: "2026-05-31T00:00:00.000Z",
+            },
           ],
           audits: [
             { field: "weight", label: "Weight", from: "50", to: "60", author: "admin", createdAt: "2026-05-01T00:00:00.000Z" },
