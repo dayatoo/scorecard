@@ -128,6 +128,24 @@ describe("example workbook round-trip", () => {
 
     assert.equal(leafTotal, 100);
   });
+
+  it("reads Weight (of group) as a fraction of 1, not a percentage", async () => {
+    const ExcelJS = (await import("exceljs")).default;
+    const { KPI_COLUMNS } = await import("./workbook");
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("KPIs");
+    sheet.addRow([...KPI_COLUMNS]);
+    sheet.addRow([
+      "K1", "A KPI", null, 0.4, "", "QUANTITY", "units", "HIGHER_BETTER", "FIXED",
+      1, 2, 3, 4, 5, 6, null, "No", null, null, null,
+    ]);
+    const bytes = (await workbook.xlsx.writeBuffer()) as unknown;
+    const buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as ArrayBuffer);
+
+    const { kpis, issues } = await parseWorkbook(bytesToArrayBuffer(buffer));
+    assert.deepEqual(issues, []);
+    assert.equal(kpis[0].weight, 40);
+  });
 });
 
 describe("parse errors", () => {
@@ -148,7 +166,7 @@ describe("parse errors", () => {
 
   const row = (overrides: Record<string, string | number | null> = {}) => {
     const base: Record<string, string | number | null> = {
-      Code: "K1", Name: "A KPI", "Parent Code": null, "Weight %": 100,
+      Code: "K1", Name: "A KPI", "Parent Code": null, "Weight (of group)": 1,
       Departments: "Finance", "Metric Type": "QUANTITY", Unit: "units",
       Direction: "HIGHER_BETTER", "Target Mode": "FIXED",
       Poor: 1, "Improvement Needed": 2, Meet: 3, Good: 4, "Very Good": 5, Excellent: 6,
@@ -156,7 +174,7 @@ describe("parse errors", () => {
     };
     const merged: Record<string, string | number | null> = { ...base, ...overrides };
     return [
-      merged.Code, merged.Name, merged["Parent Code"], merged["Weight %"],
+      merged.Code, merged.Name, merged["Parent Code"], merged["Weight (of group)"],
       merged.Departments, merged["Metric Type"], merged.Unit, merged.Direction,
       merged["Target Mode"], merged.Poor, merged["Improvement Needed"], merged.Meet,
       merged.Good, merged["Very Good"], merged.Excellent,
@@ -206,6 +224,28 @@ describe("parse errors", () => {
       assert.deepEqual(result.issues, [], `"${text}" should have parsed`);
       assert.equal(result.kpis[0].deadlineMonth, expected);
     }
+  });
+
+  it("accepts a real Excel date in a month-of-completion Meet cell, ignoring the day", async () => {
+    const ExcelJS = (await import("exceljs")).default;
+    const { KPI_COLUMNS } = await import("./workbook");
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("KPIs");
+    sheet.addRow([...KPI_COLUMNS]);
+    const dataRow = sheet.addRow([
+      "K1", "A milestone", null, 0.5, "", "MONTH_COMPLETION", "", "", "",
+      null, null, null, null, null, null, null, "No", null, null, null,
+    ]);
+    // Meet is the 12th column (Code, Name, Parent Code, Weight, Departments,
+    // Metric Type, Unit, Direction, Target Mode, Poor, Improvement Needed, Meet).
+    dataRow.getCell(12).value = new Date(Date.UTC(2026, 9, 15));
+
+    const bytes = (await workbook.xlsx.writeBuffer()) as unknown;
+    const buffer = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as ArrayBuffer);
+
+    const result = await parseWorkbook(bytesToArrayBuffer(buffer));
+    assert.deepEqual(result.issues, []);
+    assert.deepEqual(JSON.parse(result.kpis[0].targetConfig!), { targetMonth: "2026-10" });
   });
 
   it("rejects a file that is not a workbook", async () => {

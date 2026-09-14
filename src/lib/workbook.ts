@@ -41,17 +41,18 @@ const BAND_COLUMNS: Record<Band, string> = {
 };
 
 // "Weight %" was renamed to "Weight % (of group)" when weights changed from a
-// company-wide share to a share of a KPI's own siblings. The rename matters
-// more than it looks: the parser checks headers and refuses a missing one, so
-// an old global-weight workbook is rejected outright rather than silently
-// misread — a leaf whose global weight of 0.3 sat among siblings totalling 5
-// would otherwise be read as a *local* 0.3 and normalised to 6% of its group,
-// a twentyfold distortion with no warning at all.
+// company-wide share to a share of a KPI's own siblings, and renamed again to
+// "Weight (of group)" when the column's own scale changed from a percentage
+// (0-100) to a fraction (0-1). Both renames matter more than they look: the
+// parser checks headers and refuses a missing one, so an old-format workbook
+// is rejected outright rather than silently misread — a weight of 50 typed
+// against the new fraction column would otherwise be read as 5000% with no
+// warning at all.
 export const KPI_COLUMNS = [
   "Code",
   "Name",
   "Parent Code",
-  "Weight % (of group)",
+  "Weight (of group)",
   "Departments",
   "Metric Type",
   "Unit",
@@ -295,11 +296,15 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
     }
     seenCodes.set(code.toLowerCase(), rowNumber);
 
-    const weightText = get(row, "Weight % (of group)");
-    const weight = weightText ? parseNumber(weightText) : 0;
-    if (weightText && weight === null) {
+    // Entered as a fraction of the group (0.5 for 50%), converted here to the
+    // 0-100 scale every internal weight — and the rest of this file's "weight"
+    // usage — is on.
+    const weightText = get(row, "Weight (of group)");
+    const weightFraction = weightText ? parseNumber(weightText) : 0;
+    if (weightText && weightFraction === null) {
       issues.push({ row: rowNumber, message: `${code}: "${weightText}" is not a valid weight.` });
     }
+    const weight = weightFraction === null ? null : weightFraction * 100;
 
     const frequencyText = get(row, "Frequency").toUpperCase().replace(/[\s-]+/g, "_");
     const frequency: Frequency = FREQUENCIES.includes(frequencyText as Frequency)
@@ -654,21 +659,21 @@ function addReadmeSheet(workbook: ExcelJS.Workbook) {
     ["How this file works", ""],
     ["", "Each row on the KPIs sheet is one KPI. Build the hierarchy by putting a parent's Code in the child's Parent Code column. Leave Parent Code blank for a Strategic Goal."],
     ["", "Only the lowest-level KPIs carry a weight, a metric and targets. A KPI with children is scored as the weighted average of those children, so its own metric columns are ignored."],
-    ["Weights", "Weight % is a share of the whole company. Every lowest-level KPI's weight should add up to 100."],
+    ["Weights", 'Weight is a share of a KPI\'s own siblings, entered as a fraction of 1 — e.g. 0.4 for 40%, not 40. Every group of siblings\' weights should add up to 1 (shown as 100.00% once Excel formats the cell).'],
     ["Values", "Figures entered each month are cumulative year-to-date and are compared against the full-year target. The financial year runs 1 April to 31 March."],
     ["Score bands", BANDS.map((b) => `${bandLabel(b)} ${BAND_BOUNDS[b].lo}-${BAND_BOUNDS[b].hi}`).join("   |   ")],
     ["Metric Type", `${METRIC_TYPES.join(", ")}. Use DOLLAR for money; put the currency (${DEFAULT_CURRENCY}) in the Unit column.`],
     ["Direction", "HIGHER_BETTER when a bigger number is better (revenue, completion %), LOWER_BETTER when a smaller one is (cost, days taken, defects)."],
     ["Target Mode", "FIXED — put a single number in each band column. Reaching a band's target scores the top of that band. Targets normally step by 1 and must get harder from Poor through to Excellent."],
     ["", 'RANGE — put a window in each band column, written "50-69". The score scales across the window between that band\'s lowest and highest score.'],
-    ["Month of completion", "Set Metric Type to MONTH_COMPLETION and put the target month in the Meet column as YYYY-MM. Leave the other band columns blank — finishing one, two or three months early scores Good, Very Good, Excellent, and one or two months late scores Improvement Needed or Poor."],
+    ["Month of completion", "Set Metric Type to MONTH_COMPLETION and put the target month in the Meet column — as YYYY-MM, or as an actual Excel date (the day is ignored, only the month and year count). Leave the other band columns blank — finishing one, two or three months early scores Good, Very Good, Excellent, and one or two months late scores Improvement Needed or Poor."],
     ["Deadline Month", "Optional, YYYY-MM. Use it for a KPI that is time-bound even though its metric is not. It means the last day of that month."],
     ["Score Final After Deadline", 'Yes — the score freezes at whatever it was in the deadline month; later achievement is recorded but does not change it. No (the default) — later achievement still earns partial credit, capped at 2.9 one month late, 2.4 two months late, and 0 after that.'],
     ["Departments", "Who owns the KPI. Separate several with a semicolon, e.g. Finance; Operations. Names should match the Departments sheet."],
     ["Frequency", "How often the KPI is reported: Monthly (the default), Quarterly (due Jun/Sep/Dec/Mar) or Annual (due in March). A KPI not yet due in a month doesn't count as a reporting gap."],
     ["Phasing", 'None (the default) scores the year-to-date figure against the full-year target every month. Even divides the annual target evenly across 12 months. Custom uses the Phase Shares column. Only for cumulative measures — never for rates or stocks.'],
     ["Phase Shares", 'Custom phasing only: 12 monthly shares (April first), summing to 100, separated by semicolons — e.g. "5;5;10;10;10;10;10;10;10;10;5;5".'],
-    ["Global %", "Export only, derived and read-only: this KPI's share of the whole company. Ignored on import — edit Weight % (of group) instead."],
+    ["Global %", "Export only, derived and read-only: this KPI's share of the whole company. Ignored on import — edit Weight (of group) instead."],
     ["Dropdowns", `Metric Type, Direction, Target Mode, Score Final After Deadline, Frequency and Phasing are dropdowns — pick from the list rather than typing, and Excel will refuse anything else. Unit offers ${UNIT_SUGGESTIONS.join(", ")} as a shortcut but accepts any label, so a KPI counted in something else can still be typed in. Every one of them may be left blank on a KPI that has children.`],
     ["Values sheet (optional)", 'Add a sheet named "Values" to load monthly figures alongside the hierarchy, instead of typing them in. Columns: Code, Period, Value, Basis, Completion Date, Note. Period is YYYY-MM. Basis is Actual or Estimate. Completion Date (dd/mm/yyyy) is only for month-of-completion KPIs. A row overwrites whatever is recorded for that KPI and month.'],
   ];
@@ -702,6 +707,9 @@ function addKpiSheet(workbook: ExcelJS.Workbook, options?: { includeGlobalWeight
     header,
     width:
       header === "Name" ? 42 : header === "Departments" ? 26 : header === "Score Final After Deadline" ? 24 : 16,
+    // Stored as a fraction (0.5), displayed as a percentage — standard Excel
+    // convention, and the reason the column no longer needs "%" in its name.
+    style: header === "Weight (of group)" ? { numFmt: "0.00%" } : undefined,
   }));
   styleHeader(sheet);
   addListValidation(sheet);
@@ -812,8 +820,9 @@ function kpiRow(kpi: ExportKpi): (string | number | null)[] {
     kpi.name,
     kpi.parentCode,
     // Every node now carries a meaningful local weight — its share of its own
-    // siblings — parents included, not just leaves.
-    kpi.weight,
+    // siblings — parents included, not just leaves. Written as a fraction
+    // (0.5 for 50%), matching the "Weight (of group)" column's format.
+    kpi.weight / 100,
     kpi.departments.join("; ") || null,
     kpi.metricType,
     kpi.unit,
