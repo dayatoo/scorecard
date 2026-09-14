@@ -274,6 +274,11 @@ model Kpi {
   code String
   name String
 
+  // Purely organizational: clusters sibling KPIs under the same parent for
+  // display (Hierarchy page, Weights page, dashboard, /kpis table). Never
+  // affects code, level, weight or scoring.
+  subGroup String?
+
   parentId String?
   parent   Kpi?    @relation("KpiHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
   children Kpi[]   @relation("KpiHierarchy")

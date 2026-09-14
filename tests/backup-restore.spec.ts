@@ -55,7 +55,8 @@ test("a checkpoint restores a year to how it was", async ({ page }) => {
     await page.goto(`/manage/hierarchy?fy=${fyId}`);
     await page.getByRole("button", { name: "Delete Operate efficiently" }).click();
     await page.getByRole("button", { name: "Confirm and save" }).click();
-    await expect(page.getByRole("link", { name: "Operate efficiently" })).not.toBeVisible();
+    // exact: true — the group's colored "totals to" balance link also carries this name.
+    await expect(page.getByRole("link", { name: "Operate efficiently", exact: true })).not.toBeVisible();
 
     // Put it back.
     await page.goto(`/manage/backups?fy=${fyId}`);
@@ -69,7 +70,7 @@ test("a checkpoint restores a year to how it was", async ({ page }) => {
     await expect(page.getByText(/Restored FY2031\/32/)).toBeVisible();
 
     await page.goto(`/manage/hierarchy?fy=${fyId}`);
-    await expect(page.getByRole("link", { name: "Operate efficiently" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Operate efficiently", exact: true })).toBeVisible();
 
     // The restore itself left an automatic checkpoint behind, so it is undoable.
     await page.goto(`/manage/backups?fy=${fyId}`);

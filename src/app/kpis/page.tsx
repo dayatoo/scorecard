@@ -40,6 +40,7 @@ export default async function KpisPage({ searchParams }: PageProps<"/kpis">) {
       id: node.id,
       code: node.code,
       name: node.name,
+      subGroup: node.subGroup,
       level: node.level,
       isLeaf: node.isLeaf,
       weight: node.weight,

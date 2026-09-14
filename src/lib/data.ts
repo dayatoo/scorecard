@@ -82,6 +82,7 @@ export async function loadKpiRecords(fiscalYearId: string): Promise<KpiRecord[]>
     id: row.id,
     code: row.code,
     name: row.name,
+    subGroup: row.subGroup,
     parentId: row.parentId,
     sortOrder: row.sortOrder,
     weight: row.weight,

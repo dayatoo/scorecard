@@ -11,6 +11,7 @@ export type KpiTableRow = {
   id: string;
   code: string;
   name: string;
+  subGroup: string | null;
   level: number;
   isLeaf: boolean;
   weight: number;
@@ -219,6 +220,11 @@ export function KpiTable({
                   <Link href={`/kpi/${row.id}?period=${period}`} className="hover:text-blue-700 hover:underline">
                     {row.name}
                   </Link>
+                  {row.subGroup && (
+                    <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                      {row.subGroup}
+                    </span>
+                  )}
                   {row.deadlineMonth && (
                     <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-800">
                       due {formatPeriodLabel(row.deadlineMonth)}

@@ -31,6 +31,7 @@ export type AttributeDraft = {
   code: string;
   name: string;
   weight: string;
+  subGroup: string;
   unit: string;
   departmentIds: string[];
   deadlineMonth: string;
@@ -123,12 +124,11 @@ export function SettingsPanel({
           />
         </Field>
 
-        <Field label="Weight % (of its group)" hint="Its share of its own siblings — every group should add to 100%.">
+        <Field label="Weight % (of its group)" hint="Set from the group's Weights page, alongside its siblings.">
           <input
-            type="number" step="any" min="0"
-            className={`mt-1 ${attributeInputClass}`}
-            value={draft.weight}
-            onChange={(e) => setField("weight", e.target.value)}
+            disabled
+            className={`mt-1 ${attributeInputClass} bg-gray-50 text-gray-500`}
+            value={`${Number(draft.weight || 0).toFixed(2)}%`}
           />
         </Field>
 
@@ -137,6 +137,15 @@ export function SettingsPanel({
             disabled
             className={`mt-1 ${attributeInputClass} bg-gray-50 text-gray-500`}
             value={`${subject.globalWeight.toFixed(2)}%`}
+          />
+        </Field>
+
+        <Field label="Sub-group" hint="Optional. Clusters this KPI with siblings sharing the same label — purely organizational, no effect on scoring.">
+          <input
+            className={`mt-1 ${attributeInputClass}`}
+            value={draft.subGroup}
+            placeholder="e.g. Revenue-related"
+            onChange={(e) => setField("subGroup", e.target.value)}
           />
         </Field>
 

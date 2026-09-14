@@ -16,10 +16,14 @@ const NAV = [
   { href: "/entry", label: "Enter Data" },
 ];
 
-const ADMIN_NAV = [
+const MANAGE_KPIS_NAV = [
   { href: "/manage", label: "Manage" },
   { href: "/manage/hierarchy", label: "Hierarchy" },
+  { href: "/manage/hierarchy/weights", label: "Weights" },
   { href: "/import", label: "Import" },
+];
+
+const ADMIN_NAV = [
   { href: "/manage/users", label: "Users" },
   { href: "/manage/approvals", label: "Approvals" },
 ];
@@ -46,6 +50,24 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                     {item.label}
                   </Link>
                 ))}
+                {currentUser.role === "ADMIN" && (
+                  <details className="group relative">
+                    <summary className="cursor-pointer list-none text-gray-600 hover:text-blue-700 marker:content-none">
+                      Manage KPIs
+                    </summary>
+                    <div className="absolute left-0 z-10 mt-1 min-w-40 rounded-md border bg-white py-1 shadow-lg">
+                      {MANAGE_KPIS_NAV.map((item) => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className="block px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-blue-700"
+                        >
+                          {item.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </details>
+                )}
                 {currentUser.role === "ADMIN" &&
                   ADMIN_NAV.map((item) => (
                     <Link

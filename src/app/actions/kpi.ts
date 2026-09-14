@@ -144,6 +144,7 @@ export type SaveKpiSettingsInput = {
   code: string;
   name: string;
   weight: number;
+  subGroup: string | null;
   unit: string | null;
   departmentIds: string[];
   deadlineMonth: string | null;
@@ -247,6 +248,7 @@ function loadExistingKpi(kpiId: string) {
 export type KpiAttributes = {
   code: string;
   name: string;
+  subGroup: string | null;
   unit: string | null;
   departmentIds: string[];
   deadlineMonth: string | null;
@@ -279,6 +281,7 @@ export async function getKpiAttributes(kpiId: string): Promise<ActionResult<KpiA
     return {
       code: kpi.code,
       name: kpi.name,
+      subGroup: kpi.subGroup,
       unit: kpi.unit,
       departmentIds: kpi.departments.map((d) => d.departmentId),
       deadlineMonth: kpi.deadlineMonth,
@@ -373,6 +376,7 @@ export async function prepareKpiSettings(input: SaveKpiSettingsInput): Promise<P
   push("name", "Name", existing.name, name);
   push("code", "Code", existing.code, code);
   push("weight", "Weight % (of group)", `${existing.weight}`, `${input.weight}`);
+  push("subGroup", "Sub-group", existing.subGroup ?? "none", input.subGroup?.trim() || "none");
   push("unit", "Unit", existing.unit ?? "empty", input.unit?.trim() || "empty");
   push(
     "deadlineMonth",
@@ -412,6 +416,7 @@ export async function commitKpiSettings(
         name,
         code,
         weight: input.weight,
+        subGroup: input.subGroup?.trim() || null,
         unit: input.unit?.trim() || null,
         deadlineMonth: input.deadlineMonth,
         scoreFinalAfterDeadline: input.scoreFinalAfterDeadline,

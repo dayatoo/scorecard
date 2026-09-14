@@ -243,11 +243,16 @@ export async function reorderKpi(input: {
       where: { fiscalYearId: kpi.fiscalYearId, parentId: kpi.parentId },
       orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
     });
-    const index = siblings.findIndex((s) => s.id === kpi.id);
+    // Reordering only ever moves a KPI among siblings sharing its own
+    // sub-group (including "no sub-group" as a group of its own) — the
+    // Hierarchy page renders those as one visual cluster, so a move must
+    // stay within it.
+    const clusterSiblings = siblings.filter((s) => (s.subGroup ?? "") === (kpi.subGroup ?? ""));
+    const index = clusterSiblings.findIndex((s) => s.id === kpi.id);
     const swapWith = input.direction === "up" ? index - 1 : index + 1;
-    if (swapWith < 0 || swapWith >= siblings.length) return; // already at an end, nothing to do
+    if (swapWith < 0 || swapWith >= clusterSiblings.length) return; // already at an end, nothing to do
 
-    const other = siblings[swapWith];
+    const other = clusterSiblings[swapWith];
     await prisma.$transaction([
       prisma.kpi.update({ where: { id: kpi.id }, data: { sortOrder: other.sortOrder } }),
       prisma.kpi.update({ where: { id: other.id }, data: { sortOrder: kpi.sortOrder } }),

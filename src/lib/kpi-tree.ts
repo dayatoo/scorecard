@@ -30,6 +30,8 @@ export type KpiRecord = {
   id: string;
   code: string;
   name: string;
+  /** Purely organizational — clusters siblings for display, no scoring effect. */
+  subGroup?: string | null;
   parentId: string | null;
   sortOrder: number;
   /** Local weight — this node's share of its own siblings. */
@@ -81,6 +83,8 @@ export type ScoredNode = {
   id: string;
   code: string;
   name: string;
+  /** Purely organizational — clusters siblings for display, no scoring effect. */
+  subGroup: string | null;
   level: number;
   isLeaf: boolean;
   /** Local weight: this node's share of its own siblings (sums to ~100 per group). */
@@ -206,6 +210,7 @@ export function buildScoredTree(
       id: kpi.id,
       code: kpi.code,
       name: kpi.name,
+      subGroup: kpi.subGroup ?? null,
       level,
       isLeaf,
       weight: kpi.weight,
@@ -365,6 +370,8 @@ export type HierarchyNode = {
   id: string;
   code: string;
   name: string;
+  /** Purely organizational — clusters siblings for display, no scoring effect. */
+  subGroup: string | null;
   level: number;
   parentId: string | null;
   isLeaf: boolean;
@@ -399,6 +406,7 @@ export function buildHierarchyTree(kpis: KpiRecord[]): HierarchyNode[] {
       id: kpi.id,
       code: kpi.code,
       name: kpi.name,
+      subGroup: kpi.subGroup ?? null,
       level,
       parentId: kpi.parentId,
       isLeaf: kids.length === 0,

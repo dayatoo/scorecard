@@ -11,6 +11,7 @@ export type TreeRow = {
   id: string;
   code: string;
   name: string;
+  subGroup: string | null;
   level: number;
   isLeaf: boolean;
   weight: number;
@@ -164,6 +165,11 @@ export function ScoreTree({
                         <span className="font-mono text-xs text-gray-400">{row.code}</span>{" "}
                         {row.name}
                       </Link>
+                      {row.subGroup && (
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                          {row.subGroup}
+                        </span>
+                      )}
                     </div>
                   </th>
 

@@ -61,6 +61,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
     id: node.id,
     code: node.code,
     name: node.name,
+    subGroup: node.subGroup,
     level: node.level,
     isLeaf: node.isLeaf,
     weight: node.weight,

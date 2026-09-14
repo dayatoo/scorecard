@@ -12,12 +12,34 @@ type Node = {
   id: string;
   code: string;
   name: string;
+  subGroup: string | null;
   level: number;
   parentId: string | null;
   isLeaf: boolean;
   weight: number;
   globalWeight: number;
 };
+
+/**
+ * Buckets siblings by `subGroup`, ordered by each label's first appearance —
+ * a named label pulls its members together into one section even when
+ * they're interleaved with others, while every unlabeled child shares one
+ * "" bucket, rendered with no header, exactly like before this feature
+ * existed.
+ */
+function clusterChildren(children: Node[]): { subGroup: string | null; items: Node[] }[] {
+  const order: string[] = [];
+  const buckets = new Map<string, Node[]>();
+  for (const child of children) {
+    const key = child.subGroup ?? "";
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+      order.push(key);
+    }
+    buckets.get(key)!.push(child);
+  }
+  return order.map((key) => ({ subGroup: key || null, items: buckets.get(key)! }));
+}
 
 /**
  * Tracks a continuous run of adds under one parent, entirely outside React
@@ -103,6 +125,22 @@ export function HierarchyEditor({
   const groupTotal = (parentId: string | null) =>
     (childrenOf.get(parentId) ?? []).reduce((sum, n) => sum + n.weight, 0);
 
+  /** The "X totals to Y%" line for a group, colored red/green and linked to its weight page. */
+  const renderBalanceLink = (parentId: string | null, label: string) => {
+    const total = groupTotal(parentId);
+    const balanced = Math.abs(total - 100) <= 0.01;
+    return (
+      <Link
+        href={`/manage/hierarchy/weights/${parentId ?? "root"}`}
+        className={`border-b py-1 text-xs block hover:underline ${
+          balanced ? "font-bold text-emerald-700" : "font-bold text-rose-700"
+        }`}
+      >
+        {label} totals to {total.toFixed(2)}%{!balanced && " - not 100%"}
+      </Link>
+    );
+  };
+
   /** Opens the add row under `parentId` (or "ROOT") with the next code prefilled. */
   const openAdd = (parentId: string | null, target: string | "ROOT") => {
     const parentNode = parentId ? (optimisticNodes.find((n) => n.id === parentId) ?? null) : null;
@@ -147,6 +185,7 @@ export function HierarchyEditor({
       id: `temp-${crypto.randomUUID()}`,
       code,
       name,
+      subGroup: null,
       level: parentNode ? parentNode.level + 1 : 1,
       parentId: session.parentId,
       isLeaf: true,
@@ -227,7 +266,8 @@ export function HierarchyEditor({
   const renderRow = (node: Node): React.ReactNode => {
     const children = childrenOf.get(node.id) ?? [];
     const siblings = childrenOf.get(node.parentId) ?? [];
-    const index = siblings.findIndex((s) => s.id === node.id);
+    const clusterSiblings = siblings.filter((s) => (s.subGroup ?? "") === (node.subGroup ?? ""));
+    const index = clusterSiblings.findIndex((s) => s.id === node.id);
     const excludedForMove = new Set([node.id, ...descendantsOf(node.id)]);
     const isTemp = node.id.startsWith("temp-");
 
@@ -256,7 +296,7 @@ export function HierarchyEditor({
               >↑</button>
               <button type="button" className="rounded border px-1.5 py-0.5 text-xs hover:bg-gray-50" disabled={pending}
                 onClick={() => run(() => reorderKpi({ kpiId: node.id, direction: "down" }))}
-                aria-label={`Move ${node.name} down`} title="Move down" hidden={index >= siblings.length - 1}
+                aria-label={`Move ${node.name} down`} title="Move down" hidden={index >= clusterSiblings.length - 1}
               >↓</button>
               <button type="button" className="rounded border px-2 py-0.5 text-xs hover:bg-gray-50"
                 aria-label={`Edit ${node.name}`}
@@ -311,19 +351,34 @@ export function HierarchyEditor({
 
         {children.length > 0 && (
           <>
-            <div
-              className="border-b py-1 text-xs text-gray-400"
-              style={{ paddingLeft: `${node.level * 1.25}rem` }}
-            >
-              Sub-KPIs total {groupTotal(node.id).toFixed(2)}%
-              {Math.abs(groupTotal(node.id) - 100) > 0.01 && " — not 100%"}
+            <div style={{ paddingLeft: `${node.level * 1.25}rem` }}>
+              {renderBalanceLink(node.id, node.name)}
             </div>
-            <ul>{children.map(renderRow)}</ul>
+            {renderClusteredChildren(children, node.level)}
           </>
         )}
       </li>
     );
   };
+
+  /** Renders a parent's children clustered by sub-group, with a small header over each named cluster. */
+  const renderClusteredChildren = (children: Node[], parentLevel: number) => (
+    <>
+      {clusterChildren(children).map((cluster) => (
+        <div key={cluster.subGroup ?? "__none__"}>
+          {cluster.subGroup && (
+            <div
+              className="pt-1 text-xs font-medium text-gray-400"
+              style={{ paddingLeft: `${parentLevel * 1.25}rem` }}
+            >
+              {cluster.subGroup}
+            </div>
+          )}
+          <ul>{cluster.items.map(renderRow)}</ul>
+        </div>
+      ))}
+    </>
+  );
 
   const roots = childrenOf.get(null) ?? [];
 
@@ -362,17 +417,14 @@ export function HierarchyEditor({
       {error && <p className="text-sm font-medium text-rose-700">{error}</p>}
 
       <div className="rounded-lg border bg-white px-4 py-3">
-        <div className="mb-2 text-xs text-gray-500">
-          Strategic Goals total {groupTotal(null).toFixed(2)}%
-          {Math.abs(groupTotal(null) - 100) > 0.01 && " — not 100%"}
-        </div>
+        <div className="mb-2">{renderBalanceLink(null, "Strategic Goals")}</div>
 
         {addingUnder === "ROOT" && renderAddForm()}
 
         {roots.length === 0 ? (
           <p className="text-sm text-gray-500">No KPIs yet — add a Strategic Goal to get started.</p>
         ) : (
-          <ul>{roots.map(renderRow)}</ul>
+          renderClusteredChildren(roots, 0)
         )}
       </div>
 

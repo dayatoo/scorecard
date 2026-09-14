@@ -60,6 +60,7 @@ export type KpiProps = {
   id: string;
   code: string;
   name: string;
+  subGroup: string | null;
   level: number;
   isLeaf: boolean;
   weight: number;
@@ -92,6 +93,7 @@ type Draft = {
   code: string;
   name: string;
   weight: string;
+  subGroup: string;
   unit: string;
   departmentIds: string[];
   deadlineMonth: string;
@@ -159,6 +161,7 @@ export function KpiDetailClient({
       code: kpi.code,
       name: kpi.name,
       weight: String(kpi.weight),
+      subGroup: kpi.subGroup ?? "",
       unit: kpi.unit ?? "",
       departmentIds: [...kpi.departmentIds].sort(),
       deadlineMonth: kpi.deadlineMonth ?? "",
@@ -307,6 +310,7 @@ export function KpiDetailClient({
           code: d.code,
           name: d.name,
           weight: Number(d.weight || 0),
+          subGroup: d.subGroup || null,
           unit: d.unit || null,
           departmentIds: d.departmentIds,
           deadlineMonth: d.deadlineMonth || null,
