@@ -21,15 +21,9 @@ export function BandTargetHeaderCells({ className }: { className: string }) {
           key={band}
           scope="col"
           className={className}
-          style={{ backgroundColor: bandColumnTint(band) }}
+          style={{ backgroundColor: bandColumnTint(band), color: BAND_STYLES[band].hex }}
         >
-          <span className="inline-flex items-center gap-1">
-            <span
-              className="inline-block h-2 w-2 rounded-full"
-              style={{ backgroundColor: BAND_STYLES[band].hex }}
-            />
-            {bandLabel(band)}
-          </span>
+          {bandLabel(band)}
         </th>
       ))}
     </>

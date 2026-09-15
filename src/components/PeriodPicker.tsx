@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTransition } from "react";
 
 import { formatPeriodLabel } from "@/lib/fiscal";
 import type { DueMode, EstimateMode } from "@/lib/scoring-modes";
@@ -40,11 +41,12 @@ export function PeriodPicker({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
   const navigate = (updates: Record<string, string>) => {
     const params = new URLSearchParams(searchParams.toString());
     for (const [key, value] of Object.entries(updates)) params.set(key, value);
-    router.push(`${pathname}?${params.toString()}`);
+    startTransition(() => router.push(`${pathname}?${params.toString()}`));
   };
 
   const select =
@@ -58,13 +60,14 @@ export function PeriodPicker({
           <select
             className={select}
             value={fiscalYearId}
+            disabled={isPending}
             // Changing year clears the month, so the new year opens on a month
             // that actually belongs to it.
             onChange={(e) => {
               const params = new URLSearchParams(searchParams.toString());
               params.set("fy", e.target.value);
               params.delete("period");
-              router.push(`${pathname}?${params.toString()}`);
+              startTransition(() => router.push(`${pathname}?${params.toString()}`));
             }}
           >
             {fiscalYears.map((fy) => (
@@ -81,6 +84,7 @@ export function PeriodPicker({
         <select
           className={select}
           value={period}
+          disabled={isPending}
           onChange={(e) => navigate({ period: e.target.value })}
         >
           {periods.map((p) => (
@@ -97,7 +101,7 @@ export function PeriodPicker({
           <select
             className={select}
             value={dueMode}
-            disabled={closed}
+            disabled={closed || isPending}
             title={closed ? "Disabled — a closed year shows its frozen, board-approved scores" : undefined}
             onChange={(e) => navigate({ dueMode: e.target.value })}
           >
@@ -116,7 +120,7 @@ export function PeriodPicker({
           <select
             className={select}
             value={estimateMode}
-            disabled={closed}
+            disabled={closed || isPending}
             title={closed ? "Disabled — a closed year shows its frozen, board-approved scores" : undefined}
             onChange={(e) => navigate({ estimateMode: e.target.value })}
           >
@@ -127,6 +131,16 @@ export function PeriodPicker({
             ))}
           </select>
         </label>
+      )}
+
+      {isPending && (
+        <span className="flex items-center gap-1.5 text-sm text-gray-500" role="status">
+          <span
+            aria-hidden
+            className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"
+          />
+          Updating…
+        </span>
       )}
     </div>
   );

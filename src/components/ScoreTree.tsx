@@ -124,19 +124,26 @@ export function ScoreTree({
   // this feature existed.
   const visible = ROW_ANIMATION_ENABLED ? rows : rows.filter(isRowVisible);
 
-  // Cell props that collapse a row's height via padding/line-height rather
-  // than `height` (which table cells don't animate reliably): both are 0
-  // when a row is hidden, transitioning smoothly when it isn't.
+  // Cell props that collapse a row via a `max-height` cap rather than
+  // `height` (which table cells don't animate reliably). The cap, not just
+  // padding/line-height, is what's needed: nested content like a score
+  // badge or the coverage pill carries its own padding independent of the
+  // cell's, so only clipping the whole box via `overflow-hidden` + a numeric
+  // `max-height` actually collapses it instead of leaving a gap. Both states
+  // need an explicit numeric max-height (not "none") so the transition has
+  // two real endpoints — the expanded cap is generous enough for normal row
+  // content (a single line plus small badges/buttons) to never be clipped.
   const collapseCellProps = (
     rowVisible: boolean
   ): { className: string; style: CSSProperties | undefined } => ({
     className: ROW_ANIMATION_ENABLED
-      ? "overflow-hidden transition-[padding-top,padding-bottom,line-height,opacity] duration-200 ease-out motion-reduce:transition-none"
+      ? "overflow-hidden transition-[max-height,padding-top,padding-bottom,opacity] duration-200 ease-out motion-reduce:transition-none"
       : "",
-    style:
-      ROW_ANIMATION_ENABLED && !rowVisible
-        ? { paddingTop: 0, paddingBottom: 0, lineHeight: 0, opacity: 0 }
-        : undefined,
+    style: ROW_ANIMATION_ENABLED
+      ? rowVisible
+        ? { maxHeight: "3.5rem" }
+        : { maxHeight: 0, paddingTop: 0, paddingBottom: 0, opacity: 0 }
+      : undefined,
   });
 
   const allExpanded = expanded.size >= hasChildren.size;
