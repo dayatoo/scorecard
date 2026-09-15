@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { IssueBanner } from "@/components/IssueBanner";
 import { PeriodPicker } from "@/components/PeriodPicker";
 import { ScoreTree, type TreeRow } from "@/components/ScoreTree";
-import { bandStyle } from "@/lib/band-style";
+import { bandStyle, type BandStyle } from "@/lib/band-style";
 import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
 import { flattenTree, isKpiComplete, leavesOf } from "@/lib/kpi-tree";
 import { getScorecard, listFiscalYears } from "@/lib/data";
@@ -170,11 +170,17 @@ function TotalScoreHero({
   const lightText = style?.text !== "dark";
   const textClass = lightText ? "text-white" : "text-gray-900";
   const eyebrowClass = lightText ? "text-white/70" : "text-gray-900/60";
-  const mutedClass = lightText ? "text-white/65" : "text-gray-900/65";
+
+  const scoredLabel = `${total.scoredLeafCount}/${total.leafCount} KPIs scored`;
+  const flagLabels = [
+    proratedCount > 0 ? `${proratedCount} pro-rated` : null,
+    estimateCount > 0 ? `${estimateCount} estimate${estimateCount === 1 ? "" : "s"}` : null,
+    completeCount > 0 ? `${completeCount} complete` : null,
+  ].filter((label): label is string => label !== null);
 
   return (
     <section
-      className={`rounded-2xl p-7 shadow-sm ${textClass}`}
+      className={`relative overflow-hidden rounded-2xl p-7 shadow-sm ${textClass}`}
       style={{
         background: style
           ? style.hex
@@ -182,26 +188,60 @@ function TotalScoreHero({
             "linear-gradient(155deg, #04336A 0%, #032853 55%, #021A38 100%)",
       }}
     >
-      <div className={`text-xs font-bold tracking-widest uppercase ${eyebrowClass}`}>
-        Total score — {formatPeriodLabel(period)}
-      </div>
-      <div className="mt-2 flex flex-wrap items-baseline gap-3.5">
-        <span className="font-heading text-5xl font-extrabold">
-          {total.score !== null ? total.score.toFixed(1) : "—"}
-        </span>
-        {style && <span className="text-3xl font-bold opacity-90">{style.label}</span>}
-      </div>
-      <div className={`tabular mt-2.5 text-xs ${mutedClass}`}>
-        {[
-          `${total.scoredLeafCount}/${total.leafCount} KPIs scored`,
-          proratedCount > 0 ? `${proratedCount} pro-rated` : null,
-          estimateCount > 0 ? `${estimateCount} estimate${estimateCount === 1 ? "" : "s"}` : null,
-          completeCount > 0 ? `${completeCount} complete` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
+      {/* A faint sheen over the flat band color, echoing the highlight the
+          fixed navy gradient used to carry, so a solid color doesn't read as
+          a plain paint swatch. */}
+      {style && (
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background: `radial-gradient(480px 260px at 88% -20%, rgba(255,255,255,${lightText ? 0.22 : 0.35}), transparent 65%)`,
+          }}
+        />
+      )}
+      <div className="relative">
+        <div className={`text-xs font-bold tracking-widest uppercase ${eyebrowClass}`}>
+          Total score — {formatPeriodLabel(period)}
+        </div>
+        <div className="mt-2 flex flex-wrap items-baseline gap-3.5">
+          <span className="font-heading text-5xl font-extrabold">
+            {total.score !== null ? total.score.toFixed(1) : "—"}
+          </span>
+          {style && <span className="text-3xl font-bold opacity-90">{style.label}</span>}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <HeroPill style={style}>{scoredLabel}</HeroPill>
+          {flagLabels.length > 0 && (
+            <span className={`mx-0.5 h-4 w-px ${lightText ? "bg-white/50" : "bg-gray-900/35"}`} />
+          )}
+          {flagLabels.map((label) => (
+            <HeroPill key={label} style={style}>
+              {label}
+            </HeroPill>
+          ))}
+        </div>
       </div>
     </section>
+  );
+}
+
+/** A coverage-stat pill on the hero: tinted with the band's own color when
+    there is one, or a plain translucent chip on the fallback navy gradient. */
+function HeroPill({ style, children }: { style: BandStyle | null; children: React.ReactNode }) {
+  if (!style) {
+    return (
+      <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white/85">
+        {children}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="rounded-full border px-2.5 py-1 text-[11px] font-bold tracking-wide text-gray-900"
+      style={{ background: style.pillTint, borderColor: style.pillBorder }}
+    >
+      {children}
+    </span>
   );
 }
 

@@ -14,6 +14,10 @@ export type BandStyle = {
   hex: string;
   /** Which text tone reads well directly on `hex` — light bands need dark text. */
   text: "light" | "dark";
+  /** A ~50%-lightened tint of `hex`, for a pill sitting on the band's own solid background. */
+  pillTint: string;
+  /** A translucent version of `hex`, as that pill's border — keeps it visible on a light band. */
+  pillBorder: string;
 };
 
 export const BAND_STYLES: Record<Band, BandStyle> = {
@@ -23,6 +27,8 @@ export const BAND_STYLES: Record<Band, BandStyle> = {
     soft: "bg-red-50 text-red-900 ring-1 ring-inset ring-red-200",
     hex: "#ff0000",
     text: "light",
+    pillTint: "#ff8080",
+    pillBorder: "rgba(255,0,0,0.35)",
   },
   IMPROVEMENT_NEEDED: {
     label: BAND_BOUNDS.IMPROVEMENT_NEEDED.label,
@@ -30,6 +36,8 @@ export const BAND_STYLES: Record<Band, BandStyle> = {
     soft: "bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-200",
     hex: "#ffc000",
     text: "dark",
+    pillTint: "#ffe080",
+    pillBorder: "rgba(255,192,0,0.35)",
   },
   MEET: {
     label: BAND_BOUNDS.MEET.label,
@@ -37,6 +45,8 @@ export const BAND_STYLES: Record<Band, BandStyle> = {
     soft: "bg-lime-50 text-lime-900 ring-1 ring-inset ring-lime-200",
     hex: "#92d050",
     text: "dark",
+    pillTint: "#c9e8a8",
+    pillBorder: "rgba(146,208,80,0.4)",
   },
   GOOD: {
     label: BAND_BOUNDS.GOOD.label,
@@ -44,6 +54,8 @@ export const BAND_STYLES: Record<Band, BandStyle> = {
     soft: "bg-green-50 text-green-900 ring-1 ring-inset ring-green-200",
     hex: "#00b050",
     text: "light",
+    pillTint: "#80d8a8",
+    pillBorder: "rgba(0,176,80,0.35)",
   },
   VERY_GOOD: {
     label: BAND_BOUNDS.VERY_GOOD.label,
@@ -51,6 +63,8 @@ export const BAND_STYLES: Record<Band, BandStyle> = {
     soft: "bg-sky-50 text-sky-900 ring-1 ring-inset ring-sky-200",
     hex: "#00b0f0",
     text: "light",
+    pillTint: "#80d8f8",
+    pillBorder: "rgba(0,176,240,0.35)",
   },
   EXCELLENT: {
     label: BAND_BOUNDS.EXCELLENT.label,
@@ -58,6 +72,8 @@ export const BAND_STYLES: Record<Band, BandStyle> = {
     soft: "bg-blue-50 text-blue-900 ring-1 ring-inset ring-blue-200",
     hex: "#0070c0",
     text: "light",
+    pillTint: "#80b8e0",
+    pillBorder: "rgba(0,112,192,0.35)",
   },
 };
 
