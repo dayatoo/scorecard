@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { BrandMark } from "@/components/BrandMark";
-import { HeroPattern } from "@/components/HeroPattern";
 import { LoginForm } from "./LoginForm";
 
 export const metadata = { title: "Sign in — KPI Scorecard" };
@@ -12,7 +11,15 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
   return (
     <div className="relative isolate flex min-h-[calc(100vh-61px)] items-center justify-center overflow-hidden bg-blue-600 px-4 py-12">
-      <HeroPattern className="top-1/2 right-[-60px] h-80 w-[560px] -translate-y-1/2" />
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+        src="https://www.belts.com.bn/wp-content/uploads/2024/05/Background-Video-Side.mp4"
+      />
+      <div className="absolute inset-0 bg-blue-950/50" aria-hidden="true" />
       <div className="relative w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
         <BrandMark className="h-10 w-10" />
         <h1 className="mt-3 text-lg">KPI Scorecard</h1>
