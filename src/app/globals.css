@@ -43,6 +43,7 @@ h1, h2, h3 {
   font-family: var(--font-heading);
   font-weight: 800;
   letter-spacing: -0.01em;
+  color: var(--color-blue-800);
 }
 
 /* Numbers in a score column should line up and read as data, so tabular

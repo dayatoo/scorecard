@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Manrope, Source_Sans_3 } from "next/font/google";
 import Link from "next/link";
 
+import { BrandMark } from "@/components/BrandMark";
+import { HeroPattern } from "@/components/HeroPattern";
 import { NavLinkPendingDot } from "@/components/NavLinkPendingDot";
 import { getCurrentUser } from "@/lib/session";
 import "./globals.css";
@@ -47,21 +49,22 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`h-full ${manrope.variable} ${sourceSans.variable} ${jetbrainsMono.variable}`}
     >
       <body className="flex min-h-full flex-col text-gray-900 antialiased">
-        <header className="border-b bg-white">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-            <Link
-              href="/"
-              className="font-heading text-sm font-extrabold tracking-tight text-blue-600"
-            >
-              KPI Scorecard
+        <header className="relative overflow-hidden bg-blue-600">
+          <HeroPattern className="top-1/2 right-0 h-40 w-[420px] -translate-y-1/2" />
+          <div className="relative mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+            <Link href="/" className="flex items-center gap-2.5">
+              <BrandMark className="h-8 w-8 shrink-0" />
+              <span className="font-heading text-sm font-extrabold tracking-tight text-white">
+                KPI Scorecard
+              </span>
             </Link>
             {currentUser && (
-              <nav className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+              <nav className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm font-semibold">
                 {NAV.map((item) => (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="text-gray-600 hover:text-blue-700"
+                    className="text-white/75 transition-colors hover:text-blue-300"
                   >
                     {item.label}
                     <NavLinkPendingDot />
@@ -69,15 +72,16 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                 ))}
                 {currentUser.role === "ADMIN" && (
                   <details className="group relative">
-                    <summary className="cursor-pointer list-none text-gray-600 hover:text-blue-700 marker:content-none">
+                    <summary className="flex cursor-pointer list-none items-center gap-1 text-white/75 transition-colors hover:text-blue-300 marker:content-none">
                       Manage KPIs
+                      <span className="text-[10px] transition-transform group-open:rotate-180">▾</span>
                     </summary>
-                    <div className="absolute left-0 z-10 mt-1 min-w-40 rounded-md border bg-white py-1 shadow-lg">
+                    <div className="absolute left-0 z-10 mt-2 min-w-40 rounded-md border border-blue-100 bg-white py-1 shadow-lg">
                       {MANAGE_KPIS_NAV.map((item) => (
                         <Link
                           key={item.href}
                           href={item.href}
-                          className="block px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-blue-700"
+                          className="block px-3 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-50 hover:text-blue-600"
                         >
                           {item.label}
                           <NavLinkPendingDot />
@@ -91,7 +95,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      className="text-gray-600 hover:text-blue-700"
+                      className="text-white/75 transition-colors hover:text-blue-300"
                     >
                       {item.label}
                       <NavLinkPendingDot />
@@ -101,11 +105,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             )}
             {currentUser && (
               <div className="ml-auto flex items-center gap-3 text-sm">
-                <span className="text-gray-600">{currentUser.username}</span>
+                <span className="text-white/60">{currentUser.username}</span>
                 <form action="/api/logout" method="post">
                   <button
                     type="submit"
-                    className="text-sm text-gray-500 hover:text-gray-900"
+                    className="rounded border border-white/30 px-3 py-1 text-sm font-semibold text-white/90 transition-colors hover:border-blue-300 hover:text-blue-300"
                   >
                     Sign out
                   </button>
