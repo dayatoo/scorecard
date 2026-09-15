@@ -290,3 +290,70 @@ describe("isKpiComplete", () => {
     assert.equal(isKpiComplete(byId.get("N")!, "2026-09"), false);
   });
 });
+
+describe("scoring toggles", () => {
+  const percentMetric = {
+    metricType: "PERCENTAGE" as const,
+    direction: "HIGHER_BETTER" as const,
+    targetMode: "FIXED" as const,
+    targetConfig: JSON.stringify({
+      POOR: 0, IMPROVEMENT_NEEDED: 25, MEET: 50, GOOD: 75, VERY_GOOD: 90, EXCELLENT: 100,
+    }),
+    unit: "%",
+  };
+
+  it("with no options passed, buildScoredTree behaves exactly as before (assumed always false)", () => {
+    const kpis: KpiRecord[] = [kpi({ id: "N", weight: 100, ...percentMetric })];
+    const { byId } = buildScoredTree(kpis, [], "2026-04");
+    const n = byId.get("N")!;
+    assert.equal(n.score, null);
+    assert.equal(n.assumed, false);
+    assert.equal(n.assumedWeight, 0);
+  });
+
+  it("assume-meet-decay flags an unreported leaf as assumed and rolls the weight up", () => {
+    const kpis: KpiRecord[] = [
+      kpi({ id: "Root", weight: 100 }),
+      kpi({ id: "A", parentId: "Root", weight: 60, ...percentMetric }),
+      kpi({ id: "B", parentId: "Root", weight: 40, ...percentMetric }),
+    ];
+    const values: ValueRecord[] = [
+      { kpiId: "B", period: "2026-04", value: 50, basis: "ACTUAL", completionDate: null, note: null },
+    ];
+    const { byId } = buildScoredTree(kpis, values, "2026-04", undefined, {
+      dueMode: "assume-meet-decay",
+      estimateMode: "count",
+    });
+
+    const a = byId.get("A")!;
+    assert.equal(a.assumed, true);
+    assert.equal(a.score, 3.4);
+    assert.equal(a.assumedWeight, 60);
+
+    const b = byId.get("B")!;
+    assert.equal(b.assumed, false);
+    assert.equal(b.assumedWeight, 0);
+
+    // The parent's assumedWeight is A's weight (60), nested-rescaled exactly
+    // like scoredWeight/provisionalWeight already are for this same tree
+    // shape — A and B together are the whole of Root's own weight.
+    const root = byId.get("Root")!;
+    assert.equal(root.assumed, true);
+    assert.ok(Math.abs(root.assumedWeight - 60) < 1e-9);
+  });
+
+  it("estimateMode zero scores an ESTIMATE-basis leaf as 0 without flagging it assumed", () => {
+    const kpis: KpiRecord[] = [kpi({ id: "A", weight: 100, ...percentMetric })];
+    const values: ValueRecord[] = [
+      { kpiId: "A", period: "2026-04", value: 80, basis: "ESTIMATE", completionDate: null, note: null },
+    ];
+    const { byId } = buildScoredTree(kpis, values, "2026-04", undefined, {
+      dueMode: "exclude",
+      estimateMode: "zero",
+    });
+    const a = byId.get("A")!;
+    assert.equal(a.score, 0);
+    assert.equal(a.provisional, false);
+    assert.equal(a.assumed, false);
+  });
+});

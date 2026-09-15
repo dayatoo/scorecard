@@ -37,6 +37,7 @@ export type TreeRow = {
       coverage: number;
       provisional: boolean;
       prorated: boolean;
+      assumed: boolean;
       notYetDueShare: number;
       leafCount: number;
       scoredLeafCount: number;
@@ -71,6 +72,7 @@ export function ScoreTree({
         coverage: number;
         provisional: boolean;
         prorated: boolean;
+        assumed: boolean;
         notYetDueShare: number;
         leafCount: number;
         scoredLeafCount: number;
@@ -267,12 +269,8 @@ export function ScoreTree({
                     ) : (
                       <>
                         {row.value.toLocaleString()}
-                        {row.metricType === "VARIANCE" ? (
-                          <span className="ml-0.5 text-gray-400">%</span>
-                        ) : (
-                          row.unit && (
-                            <span className="ml-0.5 text-gray-400">{row.unit}</span>
-                          )
+                        {row.unit && (
+                          <span className="ml-0.5 text-gray-400">{row.unit}</span>
                         )}
                         {row.basis === "ESTIMATE" && (
                           <span className="ml-1 text-amber-700">est</span>
@@ -290,6 +288,7 @@ export function ScoreTree({
                           band={entry?.band ?? null}
                           provisional={entry?.provisional}
                           prorated={entry?.prorated}
+                          assumed={entry?.assumed}
                           size="sm"
                           placeholder={
                             period === currentPeriod && row.pendingReason === "NOT_YET_DUE"
@@ -331,6 +330,7 @@ export function ScoreTree({
                       band={entry?.band ?? null}
                       provisional={entry?.provisional}
                       prorated={entry?.prorated}
+                      assumed={entry?.assumed}
                       size="sm"
                     />
                   </td>
@@ -353,6 +353,8 @@ export function ScoreTree({
         out of the score average rather than counted as zero.{" "}
         <strong>est</strong> marks a score based on an estimate.
         <strong> n/d</strong> means a milestone is not yet due.
+        <strong> asm</strong> marks a score assumed by the &ldquo;unreported&rdquo;
+        toggle rather than reported.
       </p>
     </div>
   );

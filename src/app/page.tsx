@@ -9,6 +9,7 @@ import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
 import { flattenTree, isKpiComplete, leavesOf } from "@/lib/kpi-tree";
 import { getScorecard, listFiscalYears } from "@/lib/data";
 import { BANDS, type Band } from "@/lib/scoring";
+import { DEFAULT_SCORING_OPTIONS, type DueMode, type EstimateMode } from "@/lib/scoring-modes";
 import { requireAuthPage } from "@/lib/session";
 import { describeBandTarget, describeMeetTarget } from "@/lib/targets";
 
@@ -23,9 +24,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   const fiscalYearId = typeof params.fy === "string" ? params.fy : undefined;
   const period = typeof params.period === "string" ? params.period : undefined;
 
+  const dueMode: DueMode =
+    params.dueMode === "assume-meet-decay" ? "assume-meet-decay" : DEFAULT_SCORING_OPTIONS.dueMode;
+  const estimateMode: EstimateMode =
+    params.estimateMode === "exclude" || params.estimateMode === "zero"
+      ? params.estimateMode
+      : DEFAULT_SCORING_OPTIONS.estimateMode;
+
   const [, scorecard, fiscalYears] = await Promise.all([
     requireAuthPage(),
-    getScorecard({ fiscalYearId, period }),
+    getScorecard({ fiscalYearId, period, scoring: { dueMode, estimateMode } }),
     listFiscalYears(),
   ]);
 
@@ -47,7 +55,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   if (nodes.length === 0) {
     return (
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
-        <Header scorecard={scorecard} fiscalYears={fiscalYears} />
+        <Header scorecard={scorecard} fiscalYears={fiscalYears} dueMode={dueMode} estimateMode={estimateMode} />
         <EmptyState
           title={`${scorecard.fiscalYear.label} has no KPIs yet`}
           description="Import your Strategic Goals, KPIs and sub-KPIs from a spreadsheet — download the template, fill it in, and upload it back."
@@ -87,6 +95,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           coverage: 0,
           provisional: false,
           prorated: false,
+          assumed: false,
           notYetDueShare: 0,
           leafCount: node.leafCount,
           scoredLeafCount: 0,
@@ -107,6 +116,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             coverage: t?.coverage ?? 0,
             provisional: (t?.provisionalShare ?? 0) > 0,
             prorated: (t?.proratedWeight ?? 0) > 0,
+            assumed: false,
             notYetDueShare: t?.notYetDueShare ?? 0,
             leafCount: t?.leafCount ?? 0,
             scoredLeafCount: t?.scoredLeafCount ?? 0,
@@ -118,7 +128,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
-      <Header scorecard={scorecard} fiscalYears={fiscalYears} />
+      <Header scorecard={scorecard} fiscalYears={fiscalYears} dueMode={dueMode} estimateMode={estimateMode} />
       <IssueBanner issues={scorecard.issues} />
 
       {/* Total score gets its own band — deliberately unlike the Strategic
@@ -139,6 +149,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             band={goal.band}
             provisional={goal.provisional}
             prorated={goal.prorated}
+            assumed={goal.assumed}
             footer={`${goal.scoredLeafCount}/${goal.leafCount} of ${goal.weight.toFixed(0)}% weight`}
           />
         ))}
@@ -166,6 +177,7 @@ function TotalScoreHero({
   const proratedCount = leaves.filter((n) => n.prorated).length;
   const estimateCount = leaves.filter((n) => n.provisional).length;
   const completeCount = leaves.filter((n) => isKpiComplete(n, period)).length;
+  const assumedCount = leaves.filter((n) => n.assumed).length;
 
   const lightText = style?.text !== "dark";
   const textClass = lightText ? "text-white" : "text-gray-900";
@@ -176,6 +188,7 @@ function TotalScoreHero({
     proratedCount > 0 ? `${proratedCount} pro-rated` : null,
     estimateCount > 0 ? `${estimateCount} estimate${estimateCount === 1 ? "" : "s"}` : null,
     completeCount > 0 ? `${completeCount} complete` : null,
+    assumedCount > 0 ? `${assumedCount} assumed` : null,
   ].filter((label): label is string => label !== null);
 
   return (
@@ -248,9 +261,13 @@ function HeroPill({ style, children }: { style: BandStyle | null; children: Reac
 function Header({
   scorecard,
   fiscalYears,
+  dueMode,
+  estimateMode,
 }: {
   scorecard: NonNullable<Awaited<ReturnType<typeof getScorecard>>>;
   fiscalYears: { id: string; label: string; startYear: number }[];
+  dueMode: DueMode;
+  estimateMode: EstimateMode;
 }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
@@ -274,6 +291,9 @@ function Header({
           periods={periodsOfFiscalYear(scorecard.fiscalYear.startYear)}
           fiscalYears={fiscalYears}
           fiscalYearId={scorecard.fiscalYear.id}
+          dueMode={dueMode}
+          estimateMode={estimateMode}
+          closed={scorecard.fiscalYear.closedAt !== null}
         />
         <Link
           href={`/api/export?fy=${scorecard.fiscalYear.id}&period=${scorecard.period}`}
@@ -293,6 +313,7 @@ function SummaryCard({
   band,
   provisional,
   prorated,
+  assumed,
   footer,
   href,
 }: {
@@ -301,6 +322,7 @@ function SummaryCard({
   band: Band | null;
   provisional?: boolean;
   prorated?: boolean;
+  assumed?: boolean;
   footer?: React.ReactNode;
   href?: string;
 }) {
@@ -319,6 +341,7 @@ function SummaryCard({
           {score !== null ? score.toFixed(1) : "—"}
           {provisional && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">est</sup>}
           {prorated && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">pro</sup>}
+          {assumed && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">asm</sup>}
         </span>
         {style && <span className="text-sm font-bold">{style.label}</span>}
       </div>
@@ -326,7 +349,7 @@ function SummaryCard({
     </>
   );
 
-  const className = `rounded-lg px-4 py-3 ${!style ? "bg-gray-100" : ""} ${textClass}`;
+  const className = `rounded-lg px-4 py-3 ${!style ? "bg-gray-200" : ""} ${textClass}`;
   const bg = style ? { background: style.hex } : undefined;
   return href ? (
     <Link href={href} className={`${className} block hover:brightness-95`} style={bg}>

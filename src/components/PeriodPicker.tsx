@@ -3,18 +3,39 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { formatPeriodLabel } from "@/lib/fiscal";
+import type { DueMode, EstimateMode } from "@/lib/scoring-modes";
 
-/** Switches the reporting month, and the fiscal year, via the query string. */
+const DUE_MODE_LABELS: Record<DueMode, string> = {
+  exclude: "Unreported: excluded",
+  "assume-meet-decay": "Unreported: assume Meet, decaying",
+};
+
+const ESTIMATE_MODE_LABELS: Record<EstimateMode, string> = {
+  count: "Estimates: count at face value",
+  exclude: "Estimates: excluded",
+  zero: "Estimates: score as 0",
+};
+
+/** Switches the reporting month, fiscal year, and Dashboard-only scoring
+    toggles, via the query string. */
 export function PeriodPicker({
   period,
   periods,
   fiscalYears,
   fiscalYearId,
+  dueMode,
+  estimateMode,
+  closed = false,
 }: {
   period: string;
   periods: string[];
   fiscalYears: { id: string; label: string }[];
   fiscalYearId: string;
+  /** Omit to hide the scoring-mode toggles entirely (pages other than the Dashboard). */
+  dueMode?: DueMode;
+  estimateMode?: EstimateMode;
+  /** A closed fiscal year reads a frozen snapshot — the toggles would have nothing to apply to. */
+  closed?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -69,6 +90,44 @@ export function PeriodPicker({
           ))}
         </select>
       </label>
+
+      {dueMode && (
+        <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          <span className="sr-only">Unreported KPI handling</span>
+          <select
+            className={select}
+            value={dueMode}
+            disabled={closed}
+            title={closed ? "Disabled — a closed year shows its frozen, board-approved scores" : undefined}
+            onChange={(e) => navigate({ dueMode: e.target.value })}
+          >
+            {(Object.keys(DUE_MODE_LABELS) as DueMode[]).map((mode) => (
+              <option key={mode} value={mode}>
+                {DUE_MODE_LABELS[mode]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {estimateMode && (
+        <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          <span className="sr-only">Estimate handling</span>
+          <select
+            className={select}
+            value={estimateMode}
+            disabled={closed}
+            title={closed ? "Disabled — a closed year shows its frozen, board-approved scores" : undefined}
+            onChange={(e) => navigate({ estimateMode: e.target.value })}
+          >
+            {(Object.keys(ESTIMATE_MODE_LABELS) as EstimateMode[]).map((mode) => (
+              <option key={mode} value={mode}>
+                {ESTIMATE_MODE_LABELS[mode]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </div>
   );
 }

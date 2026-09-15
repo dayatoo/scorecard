@@ -225,24 +225,24 @@ export async function saveDepartments(
 
     const keptIds = departments.map((d) => d.id).filter(Boolean) as string[];
 
-    await prisma.$transaction(async (tx) => {
+    // A batch of operations sent together, rather than an interactive
+    // transaction — the latter holds one DB session open across several
+    // round-trips, which the production transaction-pooling connection
+    // (see docs/deploy.md) doesn't reliably preserve, surfacing as
+    // "Transaction not found... was obtained before disconnecting."
+    const ops = [
       // Removing a department detaches it from its KPIs rather than deleting
       // them; ownership is metadata, not the KPI itself.
-      await tx.department.deleteMany({ where: { id: { notIn: keptIds } } });
-
-      for (const department of departments) {
-        const name = department.name.trim();
-        if (!name) continue;
-        if (department.id) {
-          await tx.department.update({
-            where: { id: department.id },
-            data: { name },
-          });
-        } else {
-          await tx.department.create({ data: { name } });
-        }
-      }
-    });
+      prisma.department.deleteMany({ where: { id: { notIn: keptIds } } }),
+      ...departments
+        .filter((d) => d.name.trim())
+        .map((d) =>
+          d.id
+            ? prisma.department.update({ where: { id: d.id }, data: { name: d.name.trim() } })
+            : prisma.department.create({ data: { name: d.name.trim() } })
+        ),
+    ];
+    await prisma.$transaction(ops);
 
     revalidatePath("/manage");
     revalidatePath("/kpis");

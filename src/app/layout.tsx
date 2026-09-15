@@ -50,8 +50,10 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`h-full ${manrope.variable} ${sourceSans.variable} ${jetbrainsMono.variable}`}
     >
       <body className="flex min-h-full flex-col text-gray-900 antialiased">
-        <header className="relative overflow-hidden bg-blue-600">
-          <HeroPattern className="top-1/2 right-0 h-40 w-[420px] -translate-y-1/2" />
+        <header className="relative bg-blue-600">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            <HeroPattern className="top-1/2 right-0 h-40 w-[420px] -translate-y-1/2" />
+          </div>
           <div className="relative mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
             <Link href="/" className="flex items-center">
               <Image

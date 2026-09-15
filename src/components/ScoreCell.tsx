@@ -10,6 +10,8 @@ export type ScoreCellProps = {
   prorated?: boolean;
   /** Marks a score an admin has manually calibrated, overriding the formula. */
   calibrated?: boolean;
+  /** Marks a score synthesized by the "assume Meet, decaying" toggle rather than reported. */
+  assumed?: boolean;
   /** Why there is no score, shown in place of one. */
   placeholder?: string;
   size?: "sm" | "md" | "lg";
@@ -33,6 +35,7 @@ export function ScoreCell({
   provisional = false,
   prorated = false,
   calibrated = false,
+  assumed = false,
   placeholder = "—",
   size = "md",
   showBandLabel = false,
@@ -54,12 +57,13 @@ export function ScoreCell({
     <span className="inline-flex items-center gap-1.5">
       <span
         className={`tabular inline-flex items-center justify-center rounded font-semibold ${style.chip} ${SIZES[size]}`}
-        title={`${style.label}${provisional ? " — provisional, scored from an estimate" : ""}${prorated ? " — pro-rated against a phased target" : ""}${calibrated ? " — manually calibrated by an admin" : ""}`}
+        title={`${style.label}${provisional ? " — provisional, scored from an estimate" : ""}${prorated ? " — pro-rated against a phased target" : ""}${calibrated ? " — manually calibrated by an admin" : ""}${assumed ? " — assumed, not yet reported" : ""}`}
       >
         {score.toFixed(1)}
         {provisional && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">est</sup>}
         {prorated && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">pro</sup>}
         {calibrated && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">cal</sup>}
+        {assumed && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">asm</sup>}
       </span>
       {showBandLabel && (
         <span className="text-xs text-gray-600">{style.label}</span>

@@ -25,6 +25,7 @@ import {
 } from "./kpi-tree";
 import { validateHierarchy, type Issue } from "./validation";
 import type { Band, Rollup } from "./scoring";
+import type { ScoringOptions } from "./scoring-modes";
 
 export type PeriodScores = Map<
   string,
@@ -34,6 +35,7 @@ export type PeriodScores = Map<
     coverage: number;
     provisional: boolean;
     prorated: boolean;
+    assumed: boolean;
     notYetDueShare: number;
     leafCount: number;
     scoredLeafCount: number;
@@ -135,6 +137,8 @@ export async function getHierarchyTree(fiscalYearId: string): Promise<HierarchyN
 export async function getScorecard(options?: {
   fiscalYearId?: string;
   period?: string;
+  /** Dashboard-only "what if" toggles. Never reaches a closed year's frozen snapshot. */
+  scoring?: ScoringOptions;
 }): Promise<Scorecard | null> {
   const fiscalYear = options?.fiscalYearId
     ? await prisma.fiscalYear.findUnique({ where: { id: options.fiscalYearId } })
@@ -187,14 +191,18 @@ export async function getScorecard(options?: {
   }
 
   const periods = trailingPeriods(period);
-  const { roots, total, byId } = buildScoredTree(kpiRecords, values, period, overrides);
+  const { roots, total, byId } = buildScoredTree(kpiRecords, values, period, overrides, options?.scoring);
 
   // Recompute the tree for each trailing month so the columns show what the
-  // scorecard actually said then, not today's numbers back-dated.
+  // scorecard actually said then, not today's numbers back-dated. The
+  // toggles apply here too, so the whole table reflects one consistent lens.
   const scoresByPeriod = new Map<string, PeriodScores>();
   const totalsByPeriod = new Map<string, Rollup>();
   for (const p of periods) {
-    const snapshot = p === period ? { roots, total, byId } : buildScoredTree(kpiRecords, values, p, overrides);
+    const snapshot =
+      p === period
+        ? { roots, total, byId }
+        : buildScoredTree(kpiRecords, values, p, overrides, options?.scoring);
     const lookup: PeriodScores = new Map();
     for (const node of flattenTree(snapshot.roots)) {
       lookup.set(node.id, {
@@ -203,6 +211,7 @@ export async function getScorecard(options?: {
         coverage: node.coverage,
         provisional: node.provisional,
         prorated: node.prorated,
+        assumed: node.assumed,
         notYetDueShare: node.notYetDueShare,
         leafCount: node.leafCount,
         scoredLeafCount: node.scoredLeafCount,
@@ -239,6 +248,10 @@ export async function getScorecard(options?: {
  * recomputing live — so a board-approved historical year can never move
  * under a future change to the scoring engine itself. Returns null if
  * somehow no snapshot exists (the caller falls back to a live read).
+ *
+ * Deliberately takes no `scoring` option: there is no live scoring call
+ * here to parameterize, so a closed year's Dashboard toggles have nothing
+ * to apply to and are disabled in the UI instead.
  */
 async function getClosedScorecard(
   fiscalYear: { id: string; startYear: number; label: string; closedAt: Date | null },
@@ -281,6 +294,8 @@ async function getClosedScorecard(
         coverage: node.coverage,
         provisional: node.provisional,
         prorated: node.prorated,
+        // Older snapshots predate this field — absent means false.
+        assumed: node.assumed ?? false,
         notYetDueShare: node.notYetDueShare,
         leafCount: node.leafCount,
         scoredLeafCount: node.scoredLeafCount,

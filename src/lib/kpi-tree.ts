@@ -25,6 +25,12 @@ import {
   type TargetConfig,
   type TargetMode,
 } from "./scoring";
+import {
+  applyScoringMode,
+  filterEntriesForMode,
+  DEFAULT_SCORING_OPTIONS,
+  type ScoringOptions,
+} from "./scoring-modes";
 
 export type KpiRecord = {
   id: string;
@@ -137,6 +143,10 @@ export type ScoredNode = {
   provisional: boolean;
   /** True when any of this node's score rests on a phased (pro-rated) target. */
   prorated: boolean;
+  /** True when any of this node's score was synthesized by the `assume-meet-decay` toggle rather than reported. */
+  assumed: boolean;
+  /** Absolute weight beneath this node whose score was synthesized by the `assume-meet-decay` toggle. */
+  assumedWeight: number;
   /** Leaf detail — null on rollup nodes. */
   leaf: LeafScore | null;
 };
@@ -186,8 +196,10 @@ export function buildScoredTree(
   kpis: KpiRecord[],
   values: ValueRecord[],
   period: string,
-  overrides?: Map<string, ScoreOverrideRecord[]>
+  overrides?: Map<string, ScoreOverrideRecord[]>,
+  scoringOptions?: ScoringOptions
 ): { roots: ScoredNode[]; total: Rollup; byId: Map<string, ScoredNode> } {
+  const options = scoringOptions ?? DEFAULT_SCORING_OPTIONS;
   const entriesByKpi = new Map<string, Entry[]>();
   for (const v of values) {
     const list = entriesByKpi.get(v.kpiId) ?? [];
@@ -252,13 +264,18 @@ export function buildScoredTree(
       proratedShare: 0,
       provisional: false,
       prorated: false,
+      assumed: false,
+      assumedWeight: 0,
       leaf: null,
       leafCount: isLeaf ? 1 : 0,
       scoredLeafCount: 0,
     };
 
     if (isLeaf) {
-      let leaf = scoreLeaf(toDefinition(kpi), entriesByKpi.get(kpi.id) ?? [], period);
+      const definition = toDefinition(kpi);
+      const entries = filterEntriesForMode(entriesByKpi.get(kpi.id) ?? [], options.estimateMode);
+      const engineLeaf = scoreLeaf(definition, entries, period);
+      let leaf = applyScoringMode(engineLeaf, definition, entries, period, options);
 
       // A calibrated score replaces the computed score/band for display and
       // for every rollup above it — the reported value/basis are left
@@ -274,6 +291,7 @@ export function buildScoredTree(
           score,
           band: bandForScore(score),
           pendingReason: null,
+          assumed: false,
           override: {
             score,
             reason: override.reason,
@@ -291,9 +309,11 @@ export function buildScoredTree(
       node.band = leaf.band;
       node.provisional = leaf.provisional;
       node.prorated = leaf.prorated;
+      node.assumed = leaf.assumed;
       node.scoredWeight = scored ? kpi.weight : 0;
       node.provisionalWeight = scored && leaf.provisional ? kpi.weight : 0;
       node.proratedWeight = scored && leaf.prorated ? kpi.weight : 0;
+      node.assumedWeight = scored && leaf.assumed ? kpi.weight : 0;
       node.notYetDueWeight = notYetDue ? kpi.weight : 0;
       const dueWeight = Math.max(0, kpi.weight - node.notYetDueWeight);
       node.coverage = dueWeight > 0 ? node.scoredWeight / dueWeight : 0;
@@ -331,11 +351,16 @@ export function buildScoredTree(
       node.provisionalWeight = rescale(result.provisionalWeight);
       node.notYetDueWeight = rescale(result.notYetDueWeight);
       node.proratedWeight = rescale(result.proratedWeight);
+      // assumedWeight isn't known to rollup() (scoring.ts stays untouched by
+      // this feature) — summed here the same way, then rescaled with the
+      // same factor as the fields above.
+      node.assumedWeight = rescale(node.children.reduce((sum, c) => sum + c.assumedWeight, 0));
       node.notYetDueShare = result.notYetDueShare;
       node.proratedShare = result.proratedShare;
-      // A parent is provisional/prorated if any scored weight beneath it is.
+      // A parent is provisional/prorated/assumed if any scored weight beneath it is.
       node.provisional = result.provisionalWeight > 0;
       node.prorated = result.proratedWeight > 0;
+      node.assumed = node.assumedWeight > 0;
       // Leaf counts are plain sums, not weight quantities on a local scale —
       // no rescale() needed, unlike scoredWeight etc. above.
       node.leafCount = node.children.reduce((sum, c) => sum + c.leafCount, 0);
