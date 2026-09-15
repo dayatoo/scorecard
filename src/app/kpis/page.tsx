@@ -60,6 +60,8 @@ export default async function KpisPage({ searchParams }: PageProps<"/kpis">) {
       score: node.score,
       band: node.band,
       coverage: node.coverage,
+      leafCount: node.leafCount,
+      scoredLeafCount: node.scoredLeafCount,
       provisional: node.provisional,
       pendingReason: node.leaf?.pendingReason ?? null,
     };

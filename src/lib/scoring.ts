@@ -682,6 +682,10 @@ export type RollupInput = {
   notYetDueWeight?: number;
   /** How much of the scored weight rests on a phased (pro-rated) target. */
   proratedWeight?: number;
+  /** Count of leaf KPIs beneath this child (1 for a leaf itself). */
+  leafCount: number;
+  /** How many of those leaves have a figure recorded this period. */
+  scoredLeafCount: number;
 };
 
 export type Rollup = {
@@ -703,6 +707,10 @@ export type Rollup = {
   notYetDueWeight: number;
   proratedWeight: number;
   totalWeight: number;
+  /** Count of leaf KPIs beneath this rollup. */
+  leafCount: number;
+  /** How many of those leaves have a figure recorded this period. */
+  scoredLeafCount: number;
 };
 
 /**
@@ -732,6 +740,8 @@ export function rollup(children: RollupInput[]): Rollup {
     (sum, c) => sum + Math.max(0, c.proratedWeight ?? 0),
     0
   );
+  const leafCount = children.reduce((sum, c) => sum + c.leafCount, 0);
+  const scoredLeafCount = children.reduce((sum, c) => sum + c.scoredLeafCount, 0);
   // The denominator for coverage: total weight, minus what isn't due yet — a
   // KPI that can't have been reported on shouldn't read as a gap.
   const dueWeight = Math.max(0, totalWeight - notYetDueWeight);
@@ -752,6 +762,8 @@ export function rollup(children: RollupInput[]): Rollup {
       notYetDueWeight,
       proratedWeight: 0,
       totalWeight,
+      leafCount,
+      scoredLeafCount,
     };
   }
 
@@ -775,5 +787,7 @@ export function rollup(children: RollupInput[]): Rollup {
     notYetDueWeight,
     proratedWeight,
     totalWeight,
+    leafCount,
+    scoredLeafCount,
   };
 }

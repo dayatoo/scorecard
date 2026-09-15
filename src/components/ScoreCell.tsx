@@ -68,37 +68,35 @@ export function ScoreCell({
   );
 }
 
-/** "82% reported · 8% not yet due" — how complete a rolled-up score is. */
+/** "3/4" — how many leaf KPIs in this branch have a figure recorded. */
 export function CoverageBadge({
-  coverage,
+  scoredLeafCount,
+  leafCount,
   provisionalShare = 0,
-  notYetDueShare = 0,
 }: {
-  /** Share of *due* weight with a figure behind it, 0..1. */
-  coverage: number;
-  /** Share of weight whose figure is an estimate, 0..1. */
+  /** How many leaf KPIs beneath this node have a figure recorded this period. */
+  scoredLeafCount: number;
+  /** Total leaf KPIs beneath this node. */
+  leafCount: number;
+  /** Share of weight whose figure is an estimate, 0..1 — only used for the "est" marker. */
   provisionalShare?: number;
-  /** Share of total weight not yet due to be reported, 0..1. */
-  notYetDueShare?: number;
 }) {
-  const percent = Math.round(coverage * 100);
-  const tone =
-    percent >= 95 ? "text-gray-500" : percent >= 60 ? "text-amber-700" : "text-rose-700";
-  const notDuePercent = Math.round(notYetDueShare * 100);
+  const ratio = leafCount > 0 ? scoredLeafCount / leafCount : 0;
+  const tone = ratio >= 0.95 ? "text-gray-500" : ratio >= 0.6 ? "text-amber-700" : "text-rose-700";
 
   const title = [
-    notYetDueShare > 0
-      ? `${percent}% of this score's due weight has a figure recorded; ${notDuePercent}% of its weight is not yet due.`
-      : `${percent}% of this score's weight has a figure recorded.`,
-    provisionalShare > 0 ? `${Math.round(provisionalShare * 100)}% of it is estimated.` : null,
+    `${scoredLeafCount} of ${leafCount} KPI${leafCount === 1 ? "" : "s"} in this branch ${
+      leafCount === 1 ? "has" : "have"
+    } a figure recorded this month.`,
+    provisionalShare > 0 ? `${Math.round(provisionalShare * 100)}% of the score is estimated.` : null,
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
     <span className={`tabular text-xs ${tone}`} title={title}>
-      {percent}%{provisionalShare > 0 && <span className="ml-0.5 opacity-70">est</span>}
-      {notYetDueShare > 0 && <span className="ml-1 text-gray-400"> · {notDuePercent}% not due</span>}
+      {scoredLeafCount}/{leafCount}
+      {provisionalShare > 0 && <span className="ml-0.5 opacity-70">est</span>}
     </span>
   );
 }

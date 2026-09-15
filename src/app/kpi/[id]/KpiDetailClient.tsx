@@ -57,6 +57,8 @@ type HistoryRow = {
   score: number | null;
   band: Band | null;
   coverage: number;
+  leafCount: number;
+  scoredLeafCount: number;
   provisional: boolean;
 };
 
@@ -84,6 +86,8 @@ export type KpiProps = {
   score: number | null;
   band: Band | null;
   coverage: number;
+  leafCount: number;
+  scoredLeafCount: number;
   provisional: boolean;
   leaf: LeafScore | null;
 };
@@ -145,8 +149,9 @@ export function KpiDetailClient({
 }: {
   kpi: KpiProps;
   subKpis: {
-    id: string; code: string; name: string; weight: number;
-    score: number | null; band: Band | null; coverage: number; provisional: boolean;
+    id: string; code: string; name: string; isLeaf: boolean; weight: number;
+    score: number | null; band: Band | null; coverage: number;
+    leafCount: number; scoredLeafCount: number; provisional: boolean;
     exactScore: number | null; scoredWeight: number;
     meetTarget: string | null; bandTargets: Record<Band, string | null>;
     unit: string | null; metricType: MetricType | null;
@@ -581,10 +586,12 @@ function Header({
             showBandLabel
             placeholder={kpi.leaf?.pendingReason === "NOT_YET_DUE" ? "not due" : "no data"}
           />
-          <div className="mt-1">
-            <CoverageBadge coverage={kpi.coverage} />
-            <span className="ml-1 text-xs text-gray-500">scored</span>
-          </div>
+          {!kpi.isLeaf && (
+            <div className="mt-1">
+              <CoverageBadge scoredLeafCount={kpi.scoredLeafCount} leafCount={kpi.leafCount} />
+              <span className="ml-1 text-xs text-gray-500">scored</span>
+            </div>
+          )}
           <select
             aria-label="Reporting month"
             value={period}
@@ -932,8 +939,9 @@ function ChildrenPanel({ subKpis, period }: {
 
 function ChildrenTable({ subKpis, period }: {
   subKpis: {
-    id: string; code: string; name: string; weight: number;
-    score: number | null; band: Band | null; coverage: number; provisional: boolean;
+    id: string; code: string; name: string; isLeaf: boolean; weight: number;
+    score: number | null; band: Band | null; coverage: number;
+    leafCount: number; scoredLeafCount: number; provisional: boolean;
     meetTarget: string | null; bandTargets: Record<Band, string | null>;
     unit: string | null; metricType: MetricType | null;
   }[];
@@ -1020,7 +1028,12 @@ function ChildrenTable({ subKpis, period }: {
                   />
                 </td>
                 <td className="py-1.5 text-right">
-                  <CoverageBadge coverage={child.coverage} />
+                  {!child.isLeaf && (
+                    <CoverageBadge
+                      scoredLeafCount={child.scoredLeafCount}
+                      leafCount={child.leafCount}
+                    />
+                  )}
                 </td>
               </tr>
             ))}
@@ -1057,7 +1070,7 @@ function HistoryTable({
                 <th scope="col" className="py-2">Completed</th>
               )}
               <th scope="col" className="px-3 py-2 text-center">Score</th>
-              <th scope="col" className="px-3 py-2 text-right">Scored</th>
+              {!kpi.isLeaf && <th scope="col" className="px-3 py-2 text-right">Scored</th>}
               <th scope="col" className="py-2 pl-3">Note</th>
             </tr>
           </thead>
@@ -1125,13 +1138,15 @@ function HistoryTable({
                     placeholder={row.isFuture ? "—" : "—"}
                   />
                 </td>
-                <td className="px-3 py-1.5 text-right">
-                  {row.isFuture ? (
-                    <span className="text-xs text-gray-400">to come</span>
-                  ) : (
-                    <CoverageBadge coverage={row.coverage} />
-                  )}
-                </td>
+                {!kpi.isLeaf && (
+                  <td className="px-3 py-1.5 text-right">
+                    {row.isFuture ? (
+                      <span className="text-xs text-gray-400">to come</span>
+                    ) : (
+                      <CoverageBadge scoredLeafCount={row.scoredLeafCount} leafCount={row.leafCount} />
+                    )}
+                  </td>
+                )}
                 <td className="py-1.5 pl-3 text-xs text-gray-600">{row.note}</td>
               </tr>
             ))}

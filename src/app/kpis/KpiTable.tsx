@@ -29,6 +29,8 @@ export type KpiTableRow = {
   score: number | null;
   band: Band | null;
   coverage: number;
+  leafCount: number;
+  scoredLeafCount: number;
   provisional: boolean;
   pendingReason: string | null;
 };
@@ -303,7 +305,9 @@ export function KpiTable({
                   />
                 </td>
                 <td className="px-3 py-1.5 text-right">
-                  <CoverageBadge coverage={row.coverage} />
+                  {!row.isLeaf && (
+                    <CoverageBadge scoredLeafCount={row.scoredLeafCount} leafCount={row.leafCount} />
+                  )}
                 </td>
               </tr>
             ))}

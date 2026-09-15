@@ -78,6 +78,8 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
       provisional: scored?.provisional ?? false,
       prorated: scored?.prorated ?? false,
       notYetDueShare: scored?.notYetDueShare ?? 0,
+      leafCount: scored?.leafCount ?? 0,
+      scoredLeafCount: scored?.scoredLeafCount ?? 0,
     };
   };
 
@@ -101,6 +103,8 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
       band: (scored?.band ?? null) as Band | null,
       coverage: scored?.coverage ?? 0,
       provisional: scored?.provisional ?? false,
+      leafCount: scored?.leafCount ?? 0,
+      scoredLeafCount: scored?.scoredLeafCount ?? 0,
     };
   });
 
@@ -108,10 +112,13 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
     id: child.id,
     code: child.code,
     name: child.name,
+    isLeaf: child.isLeaf,
     weight: child.weight,
     score: child.score,
     band: child.band,
     coverage: child.coverage,
+    leafCount: child.leafCount,
+    scoredLeafCount: child.scoredLeafCount,
     provisional: child.provisional,
     meetTarget: describeMeetTarget(child.targetConfig, child.metricType),
     bandTargets: Object.fromEntries(
@@ -173,6 +180,8 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
           score: node.score,
           band: node.band,
           coverage: node.coverage,
+          leafCount: node.leafCount,
+          scoredLeafCount: node.scoredLeafCount,
           provisional: node.provisional,
           leaf: node.leaf,
         }}

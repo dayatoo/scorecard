@@ -35,6 +35,8 @@ export type PeriodScores = Map<
     provisional: boolean;
     prorated: boolean;
     notYetDueShare: number;
+    leafCount: number;
+    scoredLeafCount: number;
   }
 >;
 
@@ -202,6 +204,8 @@ export async function getScorecard(options?: {
         provisional: node.provisional,
         prorated: node.prorated,
         notYetDueShare: node.notYetDueShare,
+        leafCount: node.leafCount,
+        scoredLeafCount: node.scoredLeafCount,
       });
     }
     scoresByPeriod.set(p, lookup);
@@ -278,6 +282,8 @@ async function getClosedScorecard(
         provisional: node.provisional,
         prorated: node.prorated,
         notYetDueShare: node.notYetDueShare,
+        leafCount: node.leafCount,
+        scoredLeafCount: node.scoredLeafCount,
       });
     }
     scoresByPeriod.set(p, lookup);

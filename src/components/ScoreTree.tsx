@@ -35,6 +35,8 @@ export type TreeRow = {
       provisional: boolean;
       prorated: boolean;
       notYetDueShare: number;
+      leafCount: number;
+      scoredLeafCount: number;
     }
   >;
   pendingReason: string | null;
@@ -67,6 +69,8 @@ export function ScoreTree({
         provisional: boolean;
         prorated: boolean;
         notYetDueShare: number;
+        leafCount: number;
+        scoredLeafCount: number;
       }
     >;
   };
@@ -75,6 +79,11 @@ export function ScoreTree({
     () => new Set(rows.filter((r) => r.level === 1).map((r) => r.id))
   );
   const [showBands, setShowBands] = useState(false);
+  // The three months before the current one start hidden — a KPI list reads
+  // as "where do we stand now," and the trailing months are for comparison
+  // once asked for, not clutter on every load.
+  const [showTrailingMonths, setShowTrailingMonths] = useState(false);
+  const visiblePeriods = showTrailingMonths ? periods : periods.filter((p) => p === currentPeriod);
 
   const toggle = (id: string) =>
     setExpanded((current) => {
@@ -104,6 +113,16 @@ export function ScoreTree({
       <div className="flex items-center justify-between border-b bg-gray-50 px-4 py-2">
         <h2 className="font-heading text-sm font-bold text-gray-700">Scorecard</h2>
         <div className="flex items-center gap-3">
+          {periods.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setShowTrailingMonths((v) => !v)}
+              aria-expanded={showTrailingMonths}
+              className="text-xs font-medium text-blue-700 hover:text-blue-900"
+            >
+              {showTrailingMonths ? "Hide past months" : "Show past 3 months"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowBands((v) => !v)}
@@ -135,7 +154,7 @@ export function ScoreTree({
                 <th scope="col" className="px-2 py-2 text-right">Meet Target</th>
               )}
               <th scope="col" className="px-2 py-2 text-right">YTD</th>
-              {periods.map((period) => (
+              {visiblePeriods.map((period) => (
                 <th
                   key={period}
                   scope="col"
@@ -249,7 +268,7 @@ export function ScoreTree({
                     )}
                   </td>
 
-                  {periods.map((period) => {
+                  {visiblePeriods.map((period) => {
                     const entry = row.scores[period];
                     return (
                       <td key={period} className="px-2 py-1.5 text-center">
@@ -270,7 +289,12 @@ export function ScoreTree({
                   })}
 
                   <td className="px-3 py-1.5 text-right">
-                    <CoverageBadge coverage={current?.coverage ?? 0} notYetDueShare={current?.notYetDueShare} />
+                    {!row.isLeaf && (
+                      <CoverageBadge
+                        scoredLeafCount={current?.scoredLeafCount ?? 0}
+                        leafCount={current?.leafCount ?? 0}
+                      />
+                    )}
                   </td>
                 </tr>
               );
@@ -285,7 +309,7 @@ export function ScoreTree({
               {showBands
                 ? BANDS.map((band) => <td key={band} className="px-2 py-2.5" />)
                 : <td className="px-2 py-2.5" />}
-              {periods.map((period) => {
+              {visiblePeriods.map((period) => {
                 const entry = total.scores[period];
                 return (
                   <td key={period} className="px-2 py-2.5 text-center">
@@ -301,8 +325,8 @@ export function ScoreTree({
               })}
               <td className="px-3 py-2.5 text-right">
                 <CoverageBadge
-                  coverage={total.scores[currentPeriod]?.coverage ?? 0}
-                  notYetDueShare={total.scores[currentPeriod]?.notYetDueShare}
+                  scoredLeafCount={total.scores[currentPeriod]?.scoredLeafCount ?? 0}
+                  leafCount={total.scores[currentPeriod]?.leafCount ?? 0}
                 />
               </td>
             </tr>
@@ -311,9 +335,10 @@ export function ScoreTree({
       </div>
 
       <p className="border-t bg-gray-50 px-4 py-2 text-xs text-gray-500">
-        <strong>Scored</strong> is the share of a KPI&rsquo;s weight that has a figure
-        recorded this month; unreported KPIs are left out of the average rather than
-        counted as zero. <strong>est</strong> marks a score based on an estimate.
+        <strong>Scored</strong> is how many of the leaf KPIs in a branch have a
+        figure recorded this month, out of the total; unreported KPIs are left
+        out of the score average rather than counted as zero.{" "}
+        <strong>est</strong> marks a score based on an estimate.
         <strong> n/d</strong> means a milestone is not yet due.
       </p>
     </div>

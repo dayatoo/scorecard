@@ -88,6 +88,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           provisional: false,
           prorated: false,
           notYetDueShare: 0,
+          leafCount: node.leafCount,
+          scoredLeafCount: 0,
         },
       ])
     ),
@@ -106,6 +108,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             provisional: (t?.provisionalShare ?? 0) > 0,
             prorated: (t?.proratedWeight ?? 0) > 0,
             notYetDueShare: t?.notYetDueShare ?? 0,
+            leafCount: t?.leafCount ?? 0,
+            scoredLeafCount: t?.scoredLeafCount ?? 0,
           },
         ];
       })
@@ -137,7 +141,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             prorated={goal.prorated}
             footer={
               <>
-                <CoverageBadge coverage={goal.coverage} notYetDueShare={goal.notYetDueShare} />
+                <CoverageBadge scoredLeafCount={goal.scoredLeafCount} leafCount={goal.leafCount} />
                 <span className="ml-1 text-xs text-gray-500">
                   of {goal.weight.toFixed(0)}% weight
                 </span>
@@ -189,8 +193,7 @@ function TotalScoreHero({
         )}
       </div>
       <div className="tabular mt-2.5 text-xs text-white/65">
-        {Math.round(total.coverage * 100)}% scored
-        {total.notYetDueShare > 0 && ` · ${Math.round(total.notYetDueShare * 100)}% not due`}
+        {total.scoredLeafCount}/{total.leafCount} KPIs scored
         {total.proratedShare > 0 && ` · ${Math.round(total.proratedShare * 100)}% pro-rated`}
       </div>
     </section>

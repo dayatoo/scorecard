@@ -527,6 +527,8 @@ describe("rollup", () => {
     weight,
     scoredWeight: score === null ? 0 : weight,
     provisionalWeight: score !== null && provisional ? weight : 0,
+    leafCount: 1,
+    scoredLeafCount: score === null ? 0 : 1,
   });
 
   // A rolled-up node, seen as a child of the level above it.
@@ -536,6 +538,8 @@ describe("rollup", () => {
     weight: r.totalWeight,
     scoredWeight: r.scoredWeight,
     provisionalWeight: r.provisionalWeight,
+    leafCount: r.leafCount,
+    scoredLeafCount: r.scoredLeafCount,
   });
 
   it("weights children by their share of scored weight", () => {
@@ -610,5 +614,19 @@ describe("rollup", () => {
     // treating both branches as equal halves would have produced.
     assert.equal(total.score, 1.7);
     assert.equal(total.coverage, 0.6);
+  });
+
+  it("counts scored and total leaves, including unreported ones", () => {
+    const result = rollup([leaf(4, 15), leaf(null, 10), leaf(3, 25)]);
+    assert.equal(result.leafCount, 3);
+    assert.equal(result.scoredLeafCount, 2);
+  });
+
+  it("sums leaf counts through a nested rollup", () => {
+    const branchA = rollup([leaf(5, 10), leaf(null, 40)]);
+    const branchB = rollup([leaf(1, 25), leaf(2, 25)]);
+    const total = rollup([branchA, branchB].map(asChild));
+    assert.equal(total.leafCount, 4);
+    assert.equal(total.scoredLeafCount, 3);
   });
 });

@@ -129,6 +129,10 @@ export type ScoredNode = {
   notYetDueShare: number;
   /** Share of this node's total weight that is pro-rated, 0..1. */
   proratedShare: number;
+  /** Count of leaf KPIs beneath this node (1 for a leaf itself). */
+  leafCount: number;
+  /** How many of those leaves have a figure recorded this period. */
+  scoredLeafCount: number;
   /** True when any of this node's score rests on an estimate. */
   provisional: boolean;
   /** True when any of this node's score rests on a phased (pro-rated) target. */
@@ -249,6 +253,8 @@ export function buildScoredTree(
       provisional: false,
       prorated: false,
       leaf: null,
+      leafCount: isLeaf ? 1 : 0,
+      scoredLeafCount: 0,
     };
 
     if (isLeaf) {
@@ -293,6 +299,7 @@ export function buildScoredTree(
       node.coverage = dueWeight > 0 ? node.scoredWeight / dueWeight : 0;
       node.notYetDueShare = kpi.weight > 0 ? node.notYetDueWeight / kpi.weight : 0;
       node.proratedShare = kpi.weight > 0 ? node.proratedWeight / kpi.weight : 0;
+      node.scoredLeafCount = scored ? 1 : 0;
     } else {
       const total = groupTotal(kids);
       node.children = kids.map((child) =>
@@ -329,6 +336,10 @@ export function buildScoredTree(
       // A parent is provisional/prorated if any scored weight beneath it is.
       node.provisional = result.provisionalWeight > 0;
       node.prorated = result.proratedWeight > 0;
+      // Leaf counts are plain sums, not weight quantities on a local scale —
+      // no rescale() needed, unlike scoredWeight etc. above.
+      node.leafCount = node.children.reduce((sum, c) => sum + c.leafCount, 0);
+      node.scoredLeafCount = node.children.reduce((sum, c) => sum + c.scoredLeafCount, 0);
     }
 
     byId.set(node.id, node);
@@ -355,6 +366,8 @@ function toRollupInput(node: ScoredNode) {
     provisionalWeight: node.provisionalWeight,
     notYetDueWeight: node.notYetDueWeight,
     proratedWeight: node.proratedWeight,
+    leafCount: node.leafCount,
+    scoredLeafCount: node.scoredLeafCount,
   };
 }
 
