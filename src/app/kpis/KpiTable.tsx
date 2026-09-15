@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 
 import { BandTargetCells, BandTargetHeaderCells } from "@/components/BandColumns";
 import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
-import { formatDate } from "@/lib/dates";
+import { formatDateAbbrev } from "@/lib/dates";
 import { formatPeriodLabel } from "@/lib/fiscal";
 import { BANDS, bandLabel, type Band, type MetricType } from "@/lib/scoring";
 
@@ -296,7 +296,7 @@ export function KpiTable({
                       <span className="text-gray-300">—</span>
                     ) : (
                       <>
-                        {formatDate(row.completionDate)}
+                        {formatDateAbbrev(row.completionDate)}
                         {row.basis === "ESTIMATE" && <span className="ml-1 text-xs text-amber-700">est</span>}
                       </>
                     )

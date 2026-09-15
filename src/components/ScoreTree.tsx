@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { BandTargetCells, BandTargetHeaderCells } from "./BandColumns";
 import { CoverageBadge, ScoreCell } from "./ScoreCell";
-import { formatDate } from "@/lib/dates";
+import { formatDateAbbrev } from "@/lib/dates";
 import { formatPeriodShort } from "@/lib/fiscal";
 import { BANDS, type Band, type MetricType } from "@/lib/scoring";
 
@@ -256,7 +256,7 @@ export function ScoreTree({
                         "—"
                       ) : (
                         <>
-                          {formatDate(row.completionDate)}
+                          {formatDateAbbrev(row.completionDate)}
                           {row.basis === "ESTIMATE" && (
                             <span className="ml-1 text-amber-700">est</span>
                           )}

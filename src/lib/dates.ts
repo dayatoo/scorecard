@@ -35,6 +35,15 @@ export function formatDate(value: string | Date | null | undefined): string {
   return `${match[3]}/${match[2]}/${match[1]}`;
 }
 
+/** ISO "2026-03-09" to "9 Mar 2026". Empty input gives "". */
+export function formatDateAbbrev(value: string | null | undefined): string {
+  if (!value) return "";
+  const match = value.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return `${Number(day)} ${MONTH_ABBR[Number(month) - 1]} ${year}`;
+}
+
 /**
  * "09/03/2026" to ISO "2026-03-09", or null if it is not a real date.
  *
