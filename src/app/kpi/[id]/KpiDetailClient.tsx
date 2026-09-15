@@ -831,7 +831,7 @@ function EntryPanel({
       )}
       <fieldset disabled={readOnly} className="flex flex-wrap items-start gap-x-8 gap-y-3">
         {isMilestone ? (
-          <Field label="Enter completion date or latest estimate" hint="Leave blank until it is finished.">
+          <Field label="Completion date" hint="Enter completion date or latest estimate">
             <DateField
               className={`mt-1 ${inputClass}`}
               value={draft.completionDate}
