@@ -4,10 +4,12 @@ import { describe, it } from "node:test";
 import {
   autoFormatDateInput,
   autoFormatMonthInput,
+  calendarWeeks,
   formatDate,
   formatMonth,
   isValidDateInput,
   isValidMonthInput,
+  isoDate,
   parseDate,
   parseMonth,
   periodOfDateInput,
@@ -214,5 +216,45 @@ describe("isValidMonthInput", () => {
     assert.equal(isValidMonthInput("03/"), false);
     assert.equal(isValidMonthInput("13/2026"), false);
     assert.equal(isValidMonthInput("03/2026"), true);
+  });
+});
+
+describe("isoDate", () => {
+  it("builds an ISO date from year/month/day parts", () => {
+    assert.equal(isoDate(2026, 3, 9), "2026-03-09");
+    assert.equal(isoDate(2026, 1, 2), "2026-01-02");
+  });
+
+  it("normalizes overflow, so a calendar grid can walk past month/year edges", () => {
+    assert.equal(isoDate(2026, 13, 1), "2027-01-01"); // month 13 rolls to next year
+    assert.equal(isoDate(2026, 3, 0), "2026-02-28"); // day 0 is the last day of the prior month
+    assert.equal(isoDate(2026, 3, 32), "2026-04-01"); // past the month's end rolls forward
+  });
+});
+
+describe("calendarWeeks", () => {
+  it("returns six Monday-first weeks of seven ISO dates each", () => {
+    const weeks = calendarWeeks(2026, 3);
+    assert.equal(weeks.length, 6);
+    for (const week of weeks) assert.equal(week.length, 7);
+  });
+
+  it("includes every day of the month, in order, on a Monday-first grid", () => {
+    // March 2026 starts on a Sunday, so the first row is Feb's last Monday..Sunday.
+    const weeks = calendarWeeks(2026, 3);
+    const marchDays = weeks.flat().filter((iso) => iso.startsWith("2026-03"));
+    assert.deepEqual(
+      marchDays,
+      Array.from({ length: 31 }, (_, i) => `2026-03-${String(i + 1).padStart(2, "0")}`)
+    );
+    assert.equal(weeks[0][6], "2026-03-01"); // Sunday of the first row
+    assert.equal(weeks[0][0], "2026-02-23"); // Monday of the first row
+  });
+
+  it("pads a month that fits in five weeks with a sixth, from the following month", () => {
+    // April 2026 starts on a Wednesday and has 30 days — five weeks of grid
+    // cover it, so the sixth is entirely May.
+    const weeks = calendarWeeks(2026, 4);
+    assert.ok(weeks[5].every((iso) => iso.startsWith("2026-05")));
   });
 });

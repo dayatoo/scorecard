@@ -8,6 +8,15 @@
 
 export const DATE_PLACEHOLDER = "dd/mm/yyyy";
 
+// Fixed English names, not `toLocaleDateString` — a calendar picker's month
+// names are exactly the kind of thing that would otherwise render in the
+// viewer's own browser language, the same problem this file exists to avoid.
+export const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+export const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 /** ISO "2026-03-09" (or a Date) to "09/03/2026". Empty input gives "". */
 export function formatDate(value: string | Date | null | undefined): string {
   if (!value) return "";
@@ -75,6 +84,23 @@ export function autoFormatDateInput(text: string): string {
 export function periodOfDateInput(text: string): string | null {
   const iso = parseDate(text);
   return iso ? iso.slice(0, 7) : null;
+}
+
+/** ISO "yyyy-mm-dd" for a given year and 1-12 month/day, normalizing overflow (month 13 rolls into next year). */
+export function isoDate(year: number, month: number, day: number): string {
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
+ * A Monday-first 6-week grid of ISO dates covering the given month, padded
+ * with the leading/trailing days of adjacent months needed to fill whole
+ * weeks — for a calendar picker's day grid.
+ */
+export function calendarWeeks(year: number, month: number): string[][] {
+  const firstWeekday = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7; // 0 = Monday
+  const days = Array.from({ length: 42 }, (_, i) => isoDate(year, month, i - firstWeekday + 1));
+  return Array.from({ length: 6 }, (_, i) => days.slice(i * 7, i * 7 + 7));
 }
 
 // --------------------------------------------------------------------------
