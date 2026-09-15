@@ -7,7 +7,7 @@ import { ScoreTree, type TreeRow } from "@/components/ScoreTree";
 import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
 import { bandStyle } from "@/lib/band-style";
 import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
-import { flattenTree } from "@/lib/kpi-tree";
+import { flattenTree, isKpiComplete, leavesOf } from "@/lib/kpi-tree";
 import { getScorecard, listFiscalYears } from "@/lib/data";
 import { BANDS, type Band } from "@/lib/scoring";
 import { requireAuthPage } from "@/lib/session";
@@ -170,6 +170,11 @@ function TotalScoreHero({
   const { total, period } = scorecard;
   const style = bandStyle(total.band);
 
+  const leaves = leavesOf(scorecard.roots);
+  const proratedCount = leaves.filter((n) => n.prorated).length;
+  const estimateCount = leaves.filter((n) => n.provisional).length;
+  const completeCount = leaves.filter((n) => isKpiComplete(n, period)).length;
+
   return (
     <section
       className="rounded-2xl p-7 text-white shadow-sm"
@@ -194,8 +199,14 @@ function TotalScoreHero({
         )}
       </div>
       <div className="tabular mt-2.5 text-xs text-white/65">
-        {total.scoredLeafCount}/{total.leafCount} KPIs scored
-        {total.proratedShare > 0 && ` · ${Math.round(total.proratedShare * 100)}% pro-rated`}
+        {[
+          `${total.scoredLeafCount}/${total.leafCount} KPIs scored`,
+          proratedCount > 0 ? `${proratedCount} pro-rated` : null,
+          estimateCount > 0 ? `${estimateCount} estimate${estimateCount === 1 ? "" : "s"}` : null,
+          completeCount > 0 ? `${completeCount} complete` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       </div>
     </section>
   );

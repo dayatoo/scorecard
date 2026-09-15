@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildScoredTree, type KpiRecord, type ScoreOverrideRecord, type ValueRecord } from "./kpi-tree";
+import {
+  buildScoredTree,
+  isKpiComplete,
+  type KpiRecord,
+  type ScoreOverrideRecord,
+  type ValueRecord,
+} from "./kpi-tree";
 
 function kpi(overrides: Partial<KpiRecord> & { id: string }): KpiRecord {
   return {
@@ -212,5 +218,75 @@ describe("score calibration overrides", () => {
     const { byId } = buildScoredTree(kpis, values, "2026-05", overrides);
     assert.equal(byId.get("A")!.leaf!.override, null);
     assert.equal(byId.get("A")!.score, 3.4); // the plain Meet score, not the override
+  });
+});
+
+describe("isKpiComplete", () => {
+  const percentMetric = {
+    metricType: "PERCENTAGE" as const,
+    direction: "HIGHER_BETTER" as const,
+    targetMode: "FIXED" as const,
+    targetConfig: JSON.stringify({
+      POOR: 0, IMPROVEMENT_NEEDED: 25, MEET: 50, GOOD: 75, VERY_GOOD: 90, EXCELLENT: 100,
+    }),
+    unit: "%",
+  };
+  const milestoneMetric = {
+    metricType: "MONTH_COMPLETION" as const,
+    targetConfig: JSON.stringify({ targetMonth: "2026-12" }),
+  };
+
+  it("a milestone reported Actual is complete", () => {
+    const kpis: KpiRecord[] = [kpi({ id: "M", weight: 100, ...milestoneMetric })];
+    const values: ValueRecord[] = [
+      { kpiId: "M", period: "2026-09", value: null, basis: "ACTUAL", completionDate: new Date("2026-09-05"), note: null },
+    ];
+    const { byId } = buildScoredTree(kpis, values, "2026-09");
+    assert.equal(isKpiComplete(byId.get("M")!, "2026-09"), true);
+  });
+
+  it("a milestone reported Estimate is not complete", () => {
+    const kpis: KpiRecord[] = [kpi({ id: "M", weight: 100, ...milestoneMetric })];
+    const values: ValueRecord[] = [
+      { kpiId: "M", period: "2026-09", value: null, basis: "ESTIMATE", completionDate: new Date("2026-09-05"), note: null },
+    ];
+    const { byId } = buildScoredTree(kpis, values, "2026-09");
+    assert.equal(isKpiComplete(byId.get("M")!, "2026-09"), false);
+  });
+
+  it("a numeric KPI past its deadline reported Actual is complete", () => {
+    const kpis: KpiRecord[] = [kpi({ id: "N", weight: 100, deadlineMonth: "2026-08", ...percentMetric })];
+    const values: ValueRecord[] = [
+      { kpiId: "N", period: "2026-09", value: 80, basis: "ACTUAL", completionDate: null, note: null },
+    ];
+    const { byId } = buildScoredTree(kpis, values, "2026-09");
+    assert.equal(isKpiComplete(byId.get("N")!, "2026-09"), true);
+  });
+
+  it("a numeric KPI past its deadline reported Estimate is not complete", () => {
+    const kpis: KpiRecord[] = [kpi({ id: "N", weight: 100, deadlineMonth: "2026-08", ...percentMetric })];
+    const values: ValueRecord[] = [
+      { kpiId: "N", period: "2026-09", value: 80, basis: "ESTIMATE", completionDate: null, note: null },
+    ];
+    const { byId } = buildScoredTree(kpis, values, "2026-09");
+    assert.equal(isKpiComplete(byId.get("N")!, "2026-09"), false);
+  });
+
+  it("a numeric KPI reported Actual before its deadline is not complete", () => {
+    const kpis: KpiRecord[] = [kpi({ id: "N", weight: 100, deadlineMonth: "2026-12", ...percentMetric })];
+    const values: ValueRecord[] = [
+      { kpiId: "N", period: "2026-09", value: 80, basis: "ACTUAL", completionDate: null, note: null },
+    ];
+    const { byId } = buildScoredTree(kpis, values, "2026-09");
+    assert.equal(isKpiComplete(byId.get("N")!, "2026-09"), false);
+  });
+
+  it("a numeric KPI with no deadlineMonth is never complete", () => {
+    const kpis: KpiRecord[] = [kpi({ id: "N", weight: 100, ...percentMetric })];
+    const values: ValueRecord[] = [
+      { kpiId: "N", period: "2026-09", value: 80, basis: "ACTUAL", completionDate: null, note: null },
+    ];
+    const { byId } = buildScoredTree(kpis, values, "2026-09");
+    assert.equal(isKpiComplete(byId.get("N")!, "2026-09"), false);
   });
 });

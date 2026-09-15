@@ -386,6 +386,19 @@ export function leavesOf(roots: ScoredNode[]): ScoredNode[] {
   return flattenTree(roots).filter((n) => n.isLeaf);
 }
 
+/**
+ * A leaf KPI counts as complete for the period when its figure is reported
+ * as Actual, and — for anything other than a milestone — its own deadline
+ * has been reached. A milestone (MONTH_COMPLETION) needs no deadline check:
+ * reporting it Actual *is* completion. A KPI with no deadlineMonth can never
+ * be "complete" under this definition.
+ */
+export function isKpiComplete(node: ScoredNode, period: string): boolean {
+  if (!node.isLeaf || node.leaf?.basis !== "ACTUAL") return false;
+  if (node.metricType === "MONTH_COMPLETION") return true;
+  return node.deadlineMonth !== null && period >= node.deadlineMonth;
+}
+
 /** The structural fields of a scored tree, with none of the scoring. */
 export type HierarchyNode = {
   id: string;
