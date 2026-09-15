@@ -22,7 +22,7 @@ function childrenMap(kpis: KpiRecord[]) {
     map.set(kpi.parentId, list);
   }
   for (const list of map.values()) {
-    list.sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
+    list.sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code, undefined, { numeric: true }));
   }
   return map;
 }

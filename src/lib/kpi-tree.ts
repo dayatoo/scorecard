@@ -204,7 +204,7 @@ export function buildScoredTree(
     childrenOf.set(kpi.parentId, list);
   }
   for (const list of childrenOf.values()) {
-    list.sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
+    list.sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code, undefined, { numeric: true }));
   }
 
   const byId = new Map<string, ScoredNode>();
@@ -404,7 +404,7 @@ export function buildHierarchyTree(kpis: KpiRecord[]): HierarchyNode[] {
     childrenOf.set(kpi.parentId, list);
   }
   for (const list of childrenOf.values()) {
-    list.sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
+    list.sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code, undefined, { numeric: true }));
   }
 
   const out: HierarchyNode[] = [];

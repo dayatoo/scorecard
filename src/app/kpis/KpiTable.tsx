@@ -101,7 +101,7 @@ export function KpiTable({
       if (av === null) return 1;
       if (bv === null) return -1;
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * factor;
-      return String(av).localeCompare(String(bv)) * factor;
+      return String(av).localeCompare(String(bv), undefined, { numeric: true }) * factor;
     });
   }, [filtered, sort]);
 
