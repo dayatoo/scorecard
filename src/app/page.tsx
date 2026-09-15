@@ -4,7 +4,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { IssueBanner } from "@/components/IssueBanner";
 import { PeriodPicker } from "@/components/PeriodPicker";
 import { ScoreTree, type TreeRow } from "@/components/ScoreTree";
-import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
 import { bandStyle } from "@/lib/band-style";
 import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
 import { flattenTree, isKpiComplete, leavesOf } from "@/lib/kpi-tree";
@@ -140,14 +139,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             band={goal.band}
             provisional={goal.provisional}
             prorated={goal.prorated}
-            footer={
-              <>
-                <CoverageBadge scoredLeafCount={goal.scoredLeafCount} leafCount={goal.leafCount} />
-                <span className="ml-1 text-xs text-gray-500">
-                  of {goal.weight.toFixed(0)}% weight
-                </span>
-              </>
-            }
+            footer={`${goal.scoredLeafCount}/${goal.leafCount} of ${goal.weight.toFixed(0)}% weight`}
           />
         ))}
       </section>
@@ -175,30 +167,31 @@ function TotalScoreHero({
   const estimateCount = leaves.filter((n) => n.provisional).length;
   const completeCount = leaves.filter((n) => isKpiComplete(n, period)).length;
 
+  const lightText = style?.text !== "dark";
+  const textClass = lightText ? "text-white" : "text-gray-900";
+  const eyebrowClass = lightText ? "text-white/70" : "text-gray-900/60";
+  const mutedClass = lightText ? "text-white/65" : "text-gray-900/65";
+
   return (
     <section
-      className="rounded-2xl p-7 text-white shadow-sm"
+      className={`rounded-2xl p-7 shadow-sm ${textClass}`}
       style={{
-        background:
-          "radial-gradient(480px 260px at 88% -20%, rgba(32,176,236,0.35), transparent 65%), " +
-          "linear-gradient(155deg, #04336A 0%, #032853 55%, #021A38 100%)",
+        background: style
+          ? style.hex
+          : "radial-gradient(480px 260px at 88% -20%, rgba(32,176,236,0.35), transparent 65%), " +
+            "linear-gradient(155deg, #04336A 0%, #032853 55%, #021A38 100%)",
       }}
     >
-      <div className="text-xs font-bold tracking-widest text-blue-400 uppercase">
+      <div className={`text-xs font-bold tracking-widest uppercase ${eyebrowClass}`}>
         Total score — {formatPeriodLabel(period)}
       </div>
-      <div className="mt-2 flex flex-wrap items-baseline gap-3">
+      <div className="mt-2 flex flex-wrap items-baseline gap-3.5">
         <span className="font-heading text-5xl font-extrabold">
           {total.score !== null ? total.score.toFixed(1) : "—"}
         </span>
-        {style && (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/10 px-3 py-1 text-xs font-bold">
-            <span className="h-2 w-2 rounded-full" style={{ background: style.hex }} />
-            {style.label}
-          </span>
-        )}
+        {style && <span className="text-3xl font-bold opacity-90">{style.label}</span>}
       </div>
-      <div className="tabular mt-2.5 text-xs text-white/65">
+      <div className={`tabular mt-2.5 text-xs ${mutedClass}`}>
         {[
           `${total.scoredLeafCount}/${total.leafCount} KPIs scored`,
           proratedCount > 0 ? `${proratedCount} pro-rated` : null,
@@ -265,37 +258,43 @@ function SummaryCard({
 }: {
   label: string;
   score: number | null;
-  band: Parameters<typeof ScoreCell>[0]["band"];
+  band: Band | null;
   provisional?: boolean;
   prorated?: boolean;
   footer?: React.ReactNode;
   href?: string;
 }) {
+  const style = bandStyle(band);
+  const lightText = style ? style.text !== "dark" : false;
+  const textClass = !style ? "text-gray-400" : lightText ? "text-white" : "text-gray-900";
+  const mutedClass = !style ? "text-gray-400" : lightText ? "text-white/80" : "text-gray-900/75";
+
   const inner = (
     <>
-      <div className="truncate text-xs font-medium text-gray-500" title={label}>
+      <div className={`truncate text-xs font-medium ${mutedClass}`} title={label}>
         {label}
       </div>
-      <div className="mt-2">
-        <ScoreCell
-          score={score}
-          band={band}
-          provisional={provisional}
-          prorated={prorated}
-          size="lg"
-          showBandLabel
-        />
+      <div className="mt-2 flex items-baseline gap-1.5">
+        <span className="tabular text-2xl font-semibold">
+          {score !== null ? score.toFixed(1) : "—"}
+          {provisional && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">est</sup>}
+          {prorated && <sup className="ml-0.5 text-[0.6em] font-normal opacity-90">pro</sup>}
+        </span>
+        {style && <span className="text-sm font-bold">{style.label}</span>}
       </div>
-      <div className="mt-2">{footer}</div>
+      <div className={`mt-2 text-xs ${mutedClass}`}>{footer}</div>
     </>
   );
 
-  const className = "rounded-lg border bg-white px-4 py-3";
+  const className = `rounded-lg px-4 py-3 ${!style ? "bg-gray-100" : ""} ${textClass}`;
+  const bg = style ? { background: style.hex } : undefined;
   return href ? (
-    <Link href={href} className={`${className} block hover:border-blue-300 hover:shadow-sm`}>
+    <Link href={href} className={`${className} block hover:brightness-95`} style={bg}>
       {inner}
     </Link>
   ) : (
-    <div className={className}>{inner}</div>
+    <div className={className} style={bg}>
+      {inner}
+    </div>
   );
 }

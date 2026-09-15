@@ -12,6 +12,8 @@ export type BandStyle = {
   soft: string;
   /** Hex, for SVG charts and the Excel export, which cannot use classes. */
   hex: string;
+  /** Which text tone reads well directly on `hex` — light bands need dark text. */
+  text: "light" | "dark";
 };
 
 export const BAND_STYLES: Record<Band, BandStyle> = {
@@ -20,36 +22,42 @@ export const BAND_STYLES: Record<Band, BandStyle> = {
     chip: "bg-[#ff0000] text-white",
     soft: "bg-red-50 text-red-900 ring-1 ring-inset ring-red-200",
     hex: "#ff0000",
+    text: "light",
   },
   IMPROVEMENT_NEEDED: {
     label: BAND_BOUNDS.IMPROVEMENT_NEEDED.label,
     chip: "bg-[#ffc000] text-amber-950",
     soft: "bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-200",
     hex: "#ffc000",
+    text: "dark",
   },
   MEET: {
     label: BAND_BOUNDS.MEET.label,
     chip: "bg-[#92d050] text-lime-950",
     soft: "bg-lime-50 text-lime-900 ring-1 ring-inset ring-lime-200",
     hex: "#92d050",
+    text: "dark",
   },
   GOOD: {
     label: BAND_BOUNDS.GOOD.label,
     chip: "bg-[#00b050] text-white",
     soft: "bg-green-50 text-green-900 ring-1 ring-inset ring-green-200",
     hex: "#00b050",
+    text: "light",
   },
   VERY_GOOD: {
     label: BAND_BOUNDS.VERY_GOOD.label,
     chip: "bg-[#00b0f0] text-white",
     soft: "bg-sky-50 text-sky-900 ring-1 ring-inset ring-sky-200",
     hex: "#00b0f0",
+    text: "light",
   },
   EXCELLENT: {
     label: BAND_BOUNDS.EXCELLENT.label,
     chip: "bg-[#0070c0] text-white",
     soft: "bg-blue-50 text-blue-900 ring-1 ring-inset ring-blue-200",
     hex: "#0070c0",
+    text: "light",
   },
 };
 
