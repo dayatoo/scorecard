@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 
 import { BandTargetCells, BandTargetHeaderCells } from "./BandColumns";
 import { CoverageBadge, ScoreCell } from "./ScoreCell";
@@ -45,6 +45,13 @@ export type TreeRow = {
   >;
   pendingReason: string | null;
 };
+
+/**
+ * Reversible kill switch for the row expand/collapse animation below. Flip
+ * to `false` to fall straight back to the old instant unmount/mount
+ * behavior with no other code changes, if the animation ever misbehaves.
+ */
+const ROW_ANIMATION_ENABLED = true;
 
 /**
  * The scorecard hierarchy: Strategic Goals expandable down to the lowest KPI,
@@ -102,13 +109,34 @@ export function ScoreTree({
   const byId = new Map(rows.map((r) => [r.id, r]));
 
   // A row shows only when every ancestor above it is expanded.
-  const visible = rows.filter((row) => {
+  const isRowVisible = (row: TreeRow) => {
     let parentId = row.parentId;
     while (parentId) {
       if (!expanded.has(parentId)) return false;
       parentId = byId.get(parentId)?.parentId ?? null;
     }
     return true;
+  };
+
+  // With the row animation on, every row stays mounted (so a collapse has
+  // something to transition out) and CSS + aria-hidden do the hiding;
+  // otherwise a collapsed row is unmounted entirely, exactly like before
+  // this feature existed.
+  const visible = ROW_ANIMATION_ENABLED ? rows : rows.filter(isRowVisible);
+
+  // Cell props that collapse a row's height via padding/line-height rather
+  // than `height` (which table cells don't animate reliably): both are 0
+  // when a row is hidden, transitioning smoothly when it isn't.
+  const collapseCellProps = (
+    rowVisible: boolean
+  ): { className: string; style: CSSProperties | undefined } => ({
+    className: ROW_ANIMATION_ENABLED
+      ? "overflow-hidden transition-[padding-top,padding-bottom,line-height,opacity] duration-200 ease-out motion-reduce:transition-none"
+      : "",
+    style:
+      ROW_ANIMATION_ENABLED && !rowVisible
+        ? { paddingTop: 0, paddingBottom: 0, lineHeight: 0, opacity: 0 }
+        : undefined,
   });
 
   const allExpanded = expanded.size >= hasChildren.size;
@@ -176,15 +204,24 @@ export function ScoreTree({
               const expandable = hasChildren.has(row.id);
               const isOpen = expanded.has(row.id);
               const current = row.scores[currentPeriod];
+              const rowVisible = ROW_ANIMATION_ENABLED ? isRowVisible(row) : true;
+              const cell = collapseCellProps(rowVisible);
 
               return (
                 <tr
                   key={row.id}
-                  className={`border-b last:border-0 hover:bg-blue-50/40 ${
-                    row.level === 1 ? "bg-blue-50/70 font-medium" : ""
-                  }`}
+                  aria-hidden={ROW_ANIMATION_ENABLED && !rowVisible ? true : undefined}
+                  className={`${
+                    ROW_ANIMATION_ENABLED
+                      ? `border-b last:border-0 transition-colors duration-200 motion-reduce:transition-none ${
+                          rowVisible
+                            ? "hover:bg-blue-50/40"
+                            : "border-transparent pointer-events-none"
+                        }`
+                      : "border-b last:border-0 hover:bg-blue-50/40"
+                  } ${row.level === 1 ? "bg-blue-50/70 font-medium" : ""}`}
                 >
-                  <th scope="row" className="px-4 py-1.5 text-left font-normal">
+                  <th scope="row" className={`px-4 py-1.5 text-left font-normal ${cell.className}`} style={cell.style}>
                     <div
                       className="flex items-center gap-1.5"
                       style={{ paddingLeft: `${(row.level - 1) * 1.25}rem` }}
@@ -195,6 +232,7 @@ export function ScoreTree({
                           onClick={() => toggle(row.id)}
                           aria-expanded={isOpen}
                           aria-label={`${isOpen ? "Collapse" : "Expand"} ${row.name}`}
+                          tabIndex={rowVisible ? 0 : -1}
                           className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700"
                         >
                           <span aria-hidden className="text-[0.65rem]">
@@ -206,6 +244,7 @@ export function ScoreTree({
                       )}
                       <Link
                         href={`/kpi/${row.id}?period=${currentPeriod}`}
+                        tabIndex={rowVisible ? undefined : -1}
                         className={`hover:text-blue-700 hover:underline ${
                           row.level === 1 ? "font-semibold" : ""
                         }`}
@@ -221,7 +260,7 @@ export function ScoreTree({
                     </div>
                   </th>
 
-                  <td className="tabular px-2 py-1.5 text-right text-xs text-gray-500">
+                  <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.className}`} style={cell.style}>
                     {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
                   </td>
 
@@ -230,10 +269,11 @@ export function ScoreTree({
                       bandTargets={row.bandTargets}
                       unit={row.unit}
                       metricType={row.metricType}
-                      className="tabular px-2 py-1.5 text-right text-xs text-gray-500"
+                      className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.className}`}
+                      cellStyle={cell.style}
                     />
                   ) : (
-                    <td className="tabular px-2 py-1.5 text-right text-xs text-gray-500">
+                    <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.className}`} style={cell.style}>
                       {row.meetTarget === null ? (
                         "—"
                       ) : (
@@ -252,7 +292,7 @@ export function ScoreTree({
                     </td>
                   )}
 
-                  <td className="tabular px-2 py-1.5 text-right text-xs text-gray-500">
+                  <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.className}`} style={cell.style}>
                     {row.metricType === "MONTH_COMPLETION" ? (
                       row.completionDate === null ? (
                         "—"
@@ -282,7 +322,7 @@ export function ScoreTree({
                   {visiblePeriods.map((period) => {
                     const entry = row.scores[period];
                     return (
-                      <td key={period} className="px-2 py-1.5 text-center">
+                      <td key={period} className={`px-2 py-1.5 text-center ${cell.className}`} style={cell.style}>
                         <ScoreCell
                           score={entry?.score ?? null}
                           band={entry?.band ?? null}
@@ -300,7 +340,7 @@ export function ScoreTree({
                     );
                   })}
 
-                  <td className="px-3 py-1.5 text-right">
+                  <td className={`px-3 py-1.5 text-right ${cell.className}`} style={cell.style}>
                     {!row.isLeaf && (
                       <CoverageBadge
                         scoredLeafCount={current?.scoredLeafCount ?? 0}

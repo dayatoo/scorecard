@@ -3,14 +3,26 @@
 // each already has a single Meet Target column driven by
 // `describeBandTarget`; expanding swaps it for one of these per band.
 
+import type { CSSProperties } from "react";
+
 import { BAND_STYLES } from "@/lib/band-style";
 import { BANDS, bandLabel, type Band, type MetricType } from "@/lib/scoring";
+
+/** A light wash of a band's own color, for tinting its whole column. */
+function bandColumnTint(band: Band): string {
+  return `color-mix(in srgb, ${BAND_STYLES[band].hex} 14%, transparent)`;
+}
 
 export function BandTargetHeaderCells({ className }: { className: string }) {
   return (
     <>
       {BANDS.map((band) => (
-        <th key={band} scope="col" className={className}>
+        <th
+          key={band}
+          scope="col"
+          className={className}
+          style={{ backgroundColor: bandColumnTint(band) }}
+        >
           <span className="inline-flex items-center gap-1">
             <span
               className="inline-block h-2 w-2 rounded-full"
@@ -29,18 +41,26 @@ export function BandTargetCells({
   unit,
   metricType,
   className,
+  cellStyle,
 }: {
   bandTargets: Record<Band, string | null>;
   unit: string | null;
   metricType: MetricType | null;
   className: string;
+  /** Extra inline styles merged onto every cell, e.g. a caller's own row-collapse animation. */
+  cellStyle?: CSSProperties;
 }) {
   return (
     <>
       {BANDS.map((band) => {
         const value = bandTargets[band];
         return (
-          <td key={band} className={className}>
+          <td
+            key={band}
+            className={className}
+            style={{ backgroundColor: bandColumnTint(band), ...cellStyle }}
+          >
+
             {value === null ? (
               <span className="text-gray-300">—</span>
             ) : (
