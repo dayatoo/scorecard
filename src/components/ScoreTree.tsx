@@ -124,25 +124,38 @@ export function ScoreTree({
   // this feature existed.
   const visible = ROW_ANIMATION_ENABLED ? rows : rows.filter(isRowVisible);
 
-  // Cell props that collapse a row via a `max-height` cap rather than
-  // `height` (which table cells don't animate reliably). The cap, not just
-  // padding/line-height, is what's needed: nested content like a score
-  // badge or the coverage pill carries its own padding independent of the
-  // cell's, so only clipping the whole box via `overflow-hidden` + a numeric
-  // `max-height` actually collapses it instead of leaving a gap. Both states
-  // need an explicit numeric max-height (not "none") so the transition has
-  // two real endpoints — the expanded cap is generous enough for normal row
-  // content (a single line plus small badges/buttons) to never be clipped.
+  // Collapse props for a row's cells. `max-height` on a `<td>`/`<th>` itself
+  // is silently ignored by browsers in table layout (a table cell's height
+  // always follows its content, however small the cap) — confirmed by
+  // inspecting a collapsed cell's computed height staying at its natural
+  // ~21px despite `max-height: 0px` being correctly applied. Only a nested
+  // block-level element actually honors `max-height` + `overflow-hidden`,
+  // so the cap has to live on an inner wrapper inside each cell; the cell
+  // itself then naturally shrinks to fit that wrapper's collapsed height,
+  // with its own padding zeroed too so it doesn't add height on top of it.
   const collapseCellProps = (
     rowVisible: boolean
-  ): { className: string; style: CSSProperties | undefined } => ({
-    className: ROW_ANIMATION_ENABLED
-      ? "overflow-hidden transition-[max-height,padding-top,padding-bottom,opacity] duration-200 ease-out motion-reduce:transition-none"
+  ): {
+    cellClassName: string;
+    cellStyle: CSSProperties | undefined;
+    innerClassName: string;
+    innerStyle: CSSProperties | undefined;
+  } => ({
+    cellClassName: ROW_ANIMATION_ENABLED
+      ? "transition-[padding-top,padding-bottom] duration-200 ease-out motion-reduce:transition-none"
       : "",
-    style: ROW_ANIMATION_ENABLED
+    cellStyle: ROW_ANIMATION_ENABLED && !rowVisible ? { paddingTop: 0, paddingBottom: 0 } : undefined,
+    // No `block`/`display` utility here: some callers apply this to an
+    // already-block-level element (e.g. a `flex` div), where adding one
+    // would fight the element's own display value in the cascade. Callers
+    // wrapping plain inline content add `block` themselves alongside this.
+    innerClassName: ROW_ANIMATION_ENABLED
+      ? "overflow-hidden transition-[max-height,opacity] duration-200 ease-out motion-reduce:transition-none"
+      : "",
+    innerStyle: ROW_ANIMATION_ENABLED
       ? rowVisible
         ? { maxHeight: "3.5rem" }
-        : { maxHeight: 0, paddingTop: 0, paddingBottom: 0, opacity: 0 }
+        : { maxHeight: 0, opacity: 0 }
       : undefined,
   });
 
@@ -228,10 +241,10 @@ export function ScoreTree({
                       : "border-b last:border-0 hover:bg-blue-50/40"
                   } ${row.level === 1 ? "bg-blue-50/70 font-medium" : ""}`}
                 >
-                  <th scope="row" className={`px-4 py-1.5 text-left font-normal ${cell.className}`} style={cell.style}>
+                  <th scope="row" className={`px-4 py-1.5 text-left font-normal ${cell.cellClassName}`} style={cell.cellStyle}>
                     <div
-                      className="flex items-center gap-1.5"
-                      style={{ paddingLeft: `${(row.level - 1) * 1.25}rem` }}
+                      className={`flex items-center gap-1.5 ${cell.innerClassName}`}
+                      style={{ paddingLeft: `${(row.level - 1) * 1.25}rem`, ...cell.innerStyle }}
                     >
                       {expandable ? (
                         <button
@@ -267,8 +280,10 @@ export function ScoreTree({
                     </div>
                   </th>
 
-                  <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.className}`} style={cell.style}>
-                    {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
+                  <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.cellClassName}`} style={cell.cellStyle}>
+                    <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
+                      {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
+                    </span>
                   </td>
 
                   {showBands ? (
@@ -276,84 +291,94 @@ export function ScoreTree({
                       bandTargets={row.bandTargets}
                       unit={row.unit}
                       metricType={row.metricType}
-                      className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.className}`}
-                      cellStyle={cell.style}
+                      className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.cellClassName}`}
+                      cellStyle={cell.cellStyle}
+                      innerClassName={cell.innerClassName}
+                      innerStyle={cell.innerStyle}
                     />
                   ) : (
-                    <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.className}`} style={cell.style}>
-                      {row.meetTarget === null ? (
-                        "—"
-                      ) : (
-                        <>
-                          {row.meetTarget}
-                          {row.metricType === "VARIANCE" ? (
-                            <span className="ml-0.5 text-gray-400">%</span>
-                          ) : (
-                            row.unit &&
-                            row.metricType !== "MONTH_COMPLETION" && (
-                              <span className="ml-0.5 text-gray-400">{row.unit}</span>
-                            )
-                          )}
-                        </>
-                      )}
+                    <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.cellClassName}`} style={cell.cellStyle}>
+                      <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
+                        {row.meetTarget === null ? (
+                          "—"
+                        ) : (
+                          <>
+                            {row.meetTarget}
+                            {row.metricType === "VARIANCE" ? (
+                              <span className="ml-0.5 text-gray-400">%</span>
+                            ) : (
+                              row.unit &&
+                              row.metricType !== "MONTH_COMPLETION" && (
+                                <span className="ml-0.5 text-gray-400">{row.unit}</span>
+                              )
+                            )}
+                          </>
+                        )}
+                      </span>
                     </td>
                   )}
 
-                  <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.className}`} style={cell.style}>
-                    {row.metricType === "MONTH_COMPLETION" ? (
-                      row.completionDate === null ? (
+                  <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.cellClassName}`} style={cell.cellStyle}>
+                    <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
+                      {row.metricType === "MONTH_COMPLETION" ? (
+                        row.completionDate === null ? (
+                          "—"
+                        ) : (
+                          <>
+                            {formatDateAbbrev(row.completionDate)}
+                            {row.basis === "ESTIMATE" && (
+                              <span className="ml-1 text-amber-700">est</span>
+                            )}
+                          </>
+                        )
+                      ) : row.value === null ? (
                         "—"
                       ) : (
                         <>
-                          {formatDateAbbrev(row.completionDate)}
+                          {row.value.toLocaleString()}
+                          {row.unit && (
+                            <span className="ml-0.5 text-gray-400">{row.unit}</span>
+                          )}
                           {row.basis === "ESTIMATE" && (
                             <span className="ml-1 text-amber-700">est</span>
                           )}
                         </>
-                      )
-                    ) : row.value === null ? (
-                      "—"
-                    ) : (
-                      <>
-                        {row.value.toLocaleString()}
-                        {row.unit && (
-                          <span className="ml-0.5 text-gray-400">{row.unit}</span>
-                        )}
-                        {row.basis === "ESTIMATE" && (
-                          <span className="ml-1 text-amber-700">est</span>
-                        )}
-                      </>
-                    )}
+                      )}
+                    </span>
                   </td>
 
                   {visiblePeriods.map((period) => {
                     const entry = row.scores[period];
                     return (
-                      <td key={period} className={`px-2 py-1.5 text-center ${cell.className}`} style={cell.style}>
-                        <ScoreCell
-                          score={entry?.score ?? null}
-                          band={entry?.band ?? null}
-                          provisional={entry?.provisional}
-                          prorated={entry?.prorated}
-                          assumed={entry?.assumed}
-                          size="sm"
-                          placeholder={
-                            period === currentPeriod && row.pendingReason === "NOT_YET_DUE"
-                              ? "n/d"
-                              : "—"
-                          }
-                        />
+                      <td key={period} className={`px-2 py-1.5 text-center ${cell.cellClassName}`} style={cell.cellStyle}>
+                        <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
+                          <ScoreCell
+                            score={entry?.score ?? null}
+                            band={entry?.band ?? null}
+                            provisional={entry?.provisional}
+                            prorated={entry?.prorated}
+                            assumed={entry?.assumed}
+                            size="sm"
+                            placeholder={
+                              period === currentPeriod && row.pendingReason === "NOT_YET_DUE"
+                                ? "n/d"
+                                : "—"
+                            }
+                          />
+                        </span>
                       </td>
                     );
                   })}
 
-                  <td className={`px-3 py-1.5 text-right ${cell.className}`} style={cell.style}>
-                    {!row.isLeaf && (
-                      <CoverageBadge
-                        scoredLeafCount={current?.scoredLeafCount ?? 0}
-                        leafCount={current?.leafCount ?? 0}
-                      />
-                    )}
+                  <td className={`px-3 py-1.5 text-right ${cell.cellClassName}`} style={cell.cellStyle}>
+                    <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
+                      {!row.isLeaf && (
+                        <CoverageBadge
+                          scoredLeafCount={current?.scoredLeafCount ?? 0}
+                          leafCount={current?.leafCount ?? 0}
+                        />
+                      )}
+                    </span>
                   </td>
                 </tr>
               );

@@ -36,6 +36,8 @@ export function BandTargetCells({
   metricType,
   className,
   cellStyle,
+  innerClassName,
+  innerStyle,
 }: {
   bandTargets: Record<Band, string | null>;
   unit: string | null;
@@ -43,6 +45,11 @@ export function BandTargetCells({
   className: string;
   /** Extra inline styles merged onto every cell, e.g. a caller's own row-collapse animation. */
   cellStyle?: CSSProperties;
+  /** Classes for an inner wrapper around the cell's content — a `<td>` itself
+      doesn't reliably honor `max-height`, so a caller doing a row-collapse
+      animation needs the cap on this wrapper instead, not on `cellStyle`. */
+  innerClassName?: string;
+  innerStyle?: CSSProperties;
 }) {
   return (
     <>
@@ -54,22 +61,23 @@ export function BandTargetCells({
             className={className}
             style={{ backgroundColor: bandColumnTint(band), ...cellStyle }}
           >
-
-            {value === null ? (
-              <span className="text-gray-300">—</span>
-            ) : (
-              <>
-                {value}
-                {metricType === "VARIANCE" ? (
-                  <span className="ml-0.5 text-xs text-gray-400">%</span>
-                ) : (
-                  unit &&
-                  metricType !== "MONTH_COMPLETION" && (
-                    <span className="ml-0.5 text-xs text-gray-400">{unit}</span>
-                  )
-                )}
-              </>
-            )}
+            <span className={`block ${innerClassName ?? ""}`} style={innerStyle}>
+              {value === null ? (
+                <span className="text-gray-300">—</span>
+              ) : (
+                <>
+                  {value}
+                  {metricType === "VARIANCE" ? (
+                    <span className="ml-0.5 text-xs text-gray-400">%</span>
+                  ) : (
+                    unit &&
+                    metricType !== "MONTH_COMPLETION" && (
+                      <span className="ml-0.5 text-xs text-gray-400">{unit}</span>
+                    )
+                  )}
+                </>
+              )}
+            </span>
           </td>
         );
       })}
