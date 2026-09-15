@@ -1,6 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
 
-import { BrandMark } from "@/components/BrandMark";
 import { LoginForm } from "./LoginForm";
 
 export const metadata = { title: "Sign in — KPI Scorecard" };
@@ -21,7 +21,13 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       />
       <div className="absolute inset-0 bg-blue-950/50" aria-hidden="true" />
       <div className="relative w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
-        <BrandMark className="h-10 w-10" />
+        <Image
+          src="/brand/logomark-blue.png"
+          alt=""
+          width={384}
+          height={335}
+          className="h-10 w-auto"
+        />
         <h1 className="mt-3 text-lg">KPI Scorecard</h1>
         <p className="mt-1 text-sm text-gray-600">
           Sign in with your username and password.

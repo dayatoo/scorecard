@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Manrope, Source_Sans_3 } from "next/font/google";
 import Link from "next/link";
 
-import { BrandMark } from "@/components/BrandMark";
+import Image from "next/image";
+
 import { HeroPattern } from "@/components/HeroPattern";
 import { NavLinkPendingDot } from "@/components/NavLinkPendingDot";
 import { getCurrentUser } from "@/lib/session";
@@ -52,11 +53,15 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <header className="relative overflow-hidden bg-blue-600">
           <HeroPattern className="top-1/2 right-0 h-40 w-[420px] -translate-y-1/2" />
           <div className="relative mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-            <Link href="/" className="flex items-center gap-2.5">
-              <BrandMark className="h-8 w-8 shrink-0" />
-              <span className="font-heading text-sm font-extrabold tracking-tight text-white">
-                KPI Scorecard
-              </span>
+            <Link href="/" className="flex items-center">
+              <Image
+                src="/brand/logo-horizontal-white.png"
+                alt="KPI Scorecard"
+                width={1080}
+                height={335}
+                priority
+                className="h-8 w-auto"
+              />
             </Link>
             {currentUser && (
               <nav className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm font-semibold">
