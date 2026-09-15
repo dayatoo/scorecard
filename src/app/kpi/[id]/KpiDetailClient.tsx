@@ -146,6 +146,9 @@ export function KpiDetailClient({
   fiscalYearClosed,
   currentUser,
   pendingProposal,
+  prevKpiId,
+  nextKpiId,
+  navOptions,
 }: {
   kpi: KpiProps;
   subKpis: {
@@ -172,6 +175,9 @@ export function KpiDetailClient({
   fiscalYearClosed: boolean;
   currentUser: { id: string; username: string; role: "MEMBER" | "ADMIN"; departmentId: string };
   pendingProposal: PendingProposal | null;
+  prevKpiId: string | null;
+  nextKpiId: string | null;
+  navOptions: { id: string; code: string; name: string }[];
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -397,6 +403,9 @@ export function KpiDetailClient({
         fiscalYearLabel={fiscalYearLabel}
         isAdmin={currentUser.role === "ADMIN"}
         fiscalYearClosed={fiscalYearClosed}
+        prevKpiId={prevKpiId}
+        nextKpiId={nextKpiId}
+        navOptions={navOptions}
       />
 
       {fiscalYearClosed && (
@@ -525,14 +534,47 @@ export function KpiDetailClient({
 
 function Header({
   kpi, period, periods, fiscalYearLabel, isAdmin, fiscalYearClosed,
+  prevKpiId, nextKpiId, navOptions,
 }: {
   kpi: KpiProps; period: string; periods: string[]; fiscalYearLabel: string; isAdmin: boolean;
   fiscalYearClosed: boolean;
+  prevKpiId: string | null;
+  nextKpiId: string | null;
+  navOptions: { id: string; code: string; name: string }[];
 }) {
   const router = useRouter();
 
   return (
     <div className="rounded-lg border bg-white p-5">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={!prevKpiId}
+          onClick={() => prevKpiId && router.push(`/kpi/${prevKpiId}?period=${period}`)}
+          className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ← Previous
+        </button>
+        <select
+          aria-label="Jump to KPI"
+          value={kpi.isLeaf ? kpi.id : ""}
+          onChange={(e) => e.target.value && router.push(`/kpi/${e.target.value}?period=${period}`)}
+          className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+        >
+          {!kpi.isLeaf && <option value="">Jump to KPI…</option>}
+          {navOptions.map((o) => (
+            <option key={o.id} value={o.id}>{o.code} — {o.name}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={!nextKpiId}
+          onClick={() => nextKpiId && router.push(`/kpi/${nextKpiId}?period=${period}`)}
+          className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next →
+        </button>
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { BandTargetCells, BandTargetHeaderCells } from "@/components/BandColumns";
 import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
+import { formatDate } from "@/lib/dates";
 import { formatPeriodLabel } from "@/lib/fiscal";
 import { BANDS, bandLabel, type Band, type MetricType } from "@/lib/scoring";
 
@@ -25,6 +26,8 @@ export type KpiTableRow = {
   unit: string | null;
   deadlineMonth: string | null;
   value: number | null;
+  /** MONTH_COMPLETION only — the recorded completion date, as an ISO string. */
+  completionDate: string | null;
   basis: "ACTUAL" | "ESTIMATE" | null;
   score: number | null;
   band: Band | null;
@@ -226,7 +229,7 @@ export function KpiTable({
               ) : (
                 <th scope="col" className="px-3 py-2 text-right">Meet Target</th>
               )}
-              <th scope="col" className="px-3 py-2 text-right">YTD</th>
+              <th scope="col" className="px-3 py-2 text-right">YTD/LE</th>
               <SortHeader label="Score" sortKey="score" sort={sort} onSort={toggleSort} align="center" />
               <SortHeader label="Scored" sortKey="coverage" sort={sort} onSort={toggleSort} align="right" />
             </tr>
@@ -288,7 +291,16 @@ export function KpiTable({
                   </td>
                 )}
                 <td className="tabular px-3 py-1.5 text-right text-gray-700">
-                  {row.value === null ? (
+                  {row.metricType === "MONTH_COMPLETION" ? (
+                    row.completionDate === null ? (
+                      <span className="text-gray-300">—</span>
+                    ) : (
+                      <>
+                        {formatDate(row.completionDate)}
+                        {row.basis === "ESTIMATE" && <span className="ml-1 text-xs text-amber-700">est</span>}
+                      </>
+                    )
+                  ) : row.value === null ? (
                     <span className="text-gray-300">—</span>
                   ) : (
                     <>

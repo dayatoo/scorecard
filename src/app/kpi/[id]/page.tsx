@@ -5,7 +5,7 @@ import { KpiDetailClient } from "./KpiDetailClient";
 import { getKpiDetail, listDepartments, listStatusOptions } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
 import { requireAuthPage } from "@/lib/session";
-import { ancestorsOf } from "@/lib/kpi-tree";
+import { ancestorsOf, flattenTree } from "@/lib/kpi-tree";
 import { periodsOfFiscalYear } from "@/lib/fiscal";
 import { BANDS, type Band } from "@/lib/scoring";
 import { describeBandTarget, describeMeetTarget } from "@/lib/targets";
@@ -55,6 +55,16 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
   const { scorecard, node, updates } = detail;
   const ancestors = ancestorsOf(node, scorecard.byId);
   const yearPeriods = periodsOfFiscalYear(scorecard.fiscalYear.startYear);
+
+  // Quick navigation steps through leaf KPIs only — the ones with their own
+  // reportable data — in the same depth-first order used everywhere else
+  // (the Dashboard tree, the /kpis list).
+  const leaves = flattenTree(scorecard.roots).filter((n) => n.isLeaf);
+  const leafIndex = leaves.findIndex((n) => n.id === node.id);
+  const prevKpiId = leafIndex > 0 ? leaves[leafIndex - 1].id : null;
+  const nextKpiId =
+    leafIndex >= 0 && leafIndex < leaves.length - 1 ? leaves[leafIndex + 1].id : null;
+  const navOptions = leaves.map((n) => ({ id: n.id, code: n.code, name: n.name }));
 
   // The KPI's own recorded figures, month by month, for the history table and
   // the charts. Scores come from re-running the tree per month, so what the
@@ -216,6 +226,9 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
         fiscalYearClosed={!!scorecard.fiscalYear.closedAt}
         currentUser={currentUser}
         pendingProposal={pendingProposal}
+        prevKpiId={prevKpiId}
+        nextKpiId={nextKpiId}
+        navOptions={navOptions}
       />
     </div>
   );

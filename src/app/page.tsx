@@ -76,6 +76,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
     unit: node.unit,
     metricType: node.metricType,
     value: node.leaf?.value ?? null,
+    completionDate: node.leaf?.completionDate ?? null,
     basis: node.leaf?.basis ?? null,
     pendingReason: node.leaf?.pendingReason ?? null,
     scores: Object.fromEntries(

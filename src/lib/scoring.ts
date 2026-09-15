@@ -442,6 +442,8 @@ export type LeafScore = {
   value: number | null;
   /** VARIANCE metrics only — the period's target/budget figure `value` is compared against. */
   plannedValue: number | null;
+  /** MONTH_COMPLETION only — ISO date, set once the milestone is recorded. `value` has no room to express a date-based result. */
+  completionDate: string | null;
   basis: ValueBasis | null;
   /** True when scored from an estimate, so the score is provisional. */
   provisional: boolean;
@@ -467,6 +469,7 @@ const NO_SCORE = (pendingReason: LeafScore["pendingReason"]): LeafScore => ({
   band: null,
   value: null,
   plannedValue: null,
+  completionDate: null,
   basis: null,
   provisional: false,
   deadline: null,
@@ -569,6 +572,7 @@ export function scoreLeaf(
     band: bandForScore(score),
     value: entry.value,
     plannedValue: entry.plannedValue ?? null,
+    completionDate: null,
     basis: entry.basis,
     provisional: entry.basis === "ESTIMATE",
     deadline: kpi.deadlineMonth ? deadline : null,
@@ -623,6 +627,7 @@ function scoreMilestoneLeaf(
       band: bandForScore(score),
       value: null,
       plannedValue: null,
+      completionDate: completed.completionDate!.toISOString().slice(0, 10),
       basis: completed.basis,
       provisional: completed.basis === "ESTIMATE",
       deadline: null,
@@ -644,6 +649,7 @@ function scoreMilestoneLeaf(
     band: bandForScore(score),
     value: null,
     plannedValue: null,
+    completionDate: null,
     basis: null,
     provisional: false,
     deadline: null,

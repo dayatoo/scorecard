@@ -56,6 +56,7 @@ export default async function KpisPage({ searchParams }: PageProps<"/kpis">) {
       ) as Record<Band, string | null>,
       deadlineMonth: node.deadlineMonth,
       value: node.leaf?.value ?? null,
+      completionDate: node.leaf?.completionDate ?? null,
       basis: node.leaf?.basis ?? null,
       score: node.score,
       band: node.band,

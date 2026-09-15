@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { BandTargetCells, BandTargetHeaderCells } from "./BandColumns";
 import { CoverageBadge, ScoreCell } from "./ScoreCell";
+import { formatDate } from "@/lib/dates";
 import { formatPeriodShort } from "@/lib/fiscal";
 import { BANDS, type Band, type MetricType } from "@/lib/scoring";
 
@@ -24,6 +25,8 @@ export type TreeRow = {
   metricType: MetricType | null;
   /** The KPI's own reported year-to-date figure, shown next to Meet Target. */
   value: number | null;
+  /** MONTH_COMPLETION only — the recorded completion date, as an ISO string. */
+  completionDate: string | null;
   basis: "ACTUAL" | "ESTIMATE" | null;
   /** Score per period, keyed by period. */
   scores: Record<
@@ -153,7 +156,7 @@ export function ScoreTree({
               ) : (
                 <th scope="col" className="px-2 py-2 text-right">Meet Target</th>
               )}
-              <th scope="col" className="px-2 py-2 text-right">YTD</th>
+              <th scope="col" className="px-2 py-2 text-right">YTD/LE</th>
               {visiblePeriods.map((period) => (
                 <th
                   key={period}
@@ -248,7 +251,18 @@ export function ScoreTree({
                   )}
 
                   <td className="tabular px-2 py-1.5 text-right text-xs text-gray-500">
-                    {row.value === null ? (
+                    {row.metricType === "MONTH_COMPLETION" ? (
+                      row.completionDate === null ? (
+                        "—"
+                      ) : (
+                        <>
+                          {formatDate(row.completionDate)}
+                          {row.basis === "ESTIMATE" && (
+                            <span className="ml-1 text-amber-700">est</span>
+                          )}
+                        </>
+                      )
+                    ) : row.value === null ? (
                       "—"
                     ) : (
                       <>
@@ -256,8 +270,7 @@ export function ScoreTree({
                         {row.metricType === "VARIANCE" ? (
                           <span className="ml-0.5 text-gray-400">%</span>
                         ) : (
-                          row.unit &&
-                          row.metricType !== "MONTH_COMPLETION" && (
+                          row.unit && (
                             <span className="ml-0.5 text-gray-400">{row.unit}</span>
                           )
                         )}
