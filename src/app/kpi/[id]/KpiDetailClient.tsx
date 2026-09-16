@@ -418,6 +418,21 @@ export function KpiDetailClient({
         <DeadlineNotice deadline={kpi.leaf.deadline} deadlineMonth={kpi.deadlineMonth} />
       )}
 
+      {kpi.isLeaf && (
+        <Panel title={`Report for ${formatPeriodLabel(period)}`}>
+          <EntryPanel
+            kpi={kpi}
+            draft={draft}
+            setField={setField}
+            period={period}
+            readOnly={!canEditFigures}
+            fiscalYearClosed={fiscalYearClosed}
+            embedded
+          />
+          <ProgressUpdatesPanel kpiId={kpi.id} period={period} updates={updates} embedded />
+        </Panel>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <ScoreChart
           points={history
@@ -442,18 +457,9 @@ export function KpiDetailClient({
         {!kpi.isLeaf && <ChildrenPanel subKpis={subKpis} period={period} />}
       </div>
 
-      {kpi.isLeaf && (
-        <EntryPanel
-          kpi={kpi}
-          draft={draft}
-          setField={setField}
-          period={period}
-          readOnly={!canEditFigures}
-          fiscalYearClosed={fiscalYearClosed}
-        />
+      {!kpi.isLeaf && (
+        <ProgressUpdatesPanel kpiId={kpi.id} period={period} updates={updates} />
       )}
-
-      <ProgressUpdatesPanel kpiId={kpi.id} period={period} updates={updates} />
 
       {pendingProposal && (
         <PendingProposalPanel proposal={pendingProposal} isAdmin={currentUser.role === "ADMIN"} />
@@ -853,7 +859,7 @@ function BasisToggle({
 }
 
 function EntryPanel({
-  kpi, draft, setField, period, readOnly, fiscalYearClosed,
+  kpi, draft, setField, period, readOnly, fiscalYearClosed, embedded,
 }: {
   kpi: KpiProps;
   draft: Draft;
@@ -861,6 +867,7 @@ function EntryPanel({
   period: string;
   readOnly?: boolean;
   fiscalYearClosed?: boolean;
+  embedded?: boolean;
 }) {
   const isMilestone = draft.metricType === "MONTH_COMPLETION";
   const isVariance = draft.metricType === "VARIANCE";
@@ -869,8 +876,8 @@ function EntryPanel({
       ? varianceMagnitude(Number(draft.value), Number(draft.plannedValue))
       : null;
 
-  return (
-    <Panel title={`Report for ${formatPeriodLabel(period)}`}>
+  const content = (
+    <>
       {readOnly && (
         <p className="mb-3 text-xs text-amber-700">
           {fiscalYearClosed
@@ -951,7 +958,11 @@ function EntryPanel({
           />
         </Field>
       </fieldset>
-    </Panel>
+    </>
+  );
+
+  return embedded ? content : (
+    <Panel title={`Report for ${formatPeriodLabel(period)}`}>{content}</Panel>
   );
 }
 
@@ -1200,7 +1211,7 @@ function HistoryTable({
 }
 
 function ProgressUpdatesPanel({
-  kpiId, period, updates,
+  kpiId, period, updates, embedded,
 }: {
   kpiId: string;
   period: string;
@@ -1210,6 +1221,7 @@ function ProgressUpdatesPanel({
     timeCost: string | null; issues: string | null;
     author: string | null; createdAt: string;
   }[];
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<"SIMPLE" | "DETAILED">("DETAILED");
@@ -1251,11 +1263,8 @@ function ProgressUpdatesPanel({
     });
   };
 
-  return (
-    <Panel
-      title="Progress updates"
-      description="Narrative about this KPI, newest first. Posted immediately, separately from the Save button."
-    >
+  const content = (
+    <>
       <div className="space-y-2">
         <div className="inline-flex overflow-hidden rounded border border-gray-300">
           <button
@@ -1365,6 +1374,23 @@ function ProgressUpdatesPanel({
           ))}
         </ul>
       )}
+    </>
+  );
+
+  return embedded ? (
+    <div className="mt-6 border-t pt-4">
+      <h3 className="text-sm font-semibold text-gray-900">Progress updates</h3>
+      <p className="mt-0.5 mb-3 text-xs text-gray-500">
+        Narrative about this KPI, newest first. Posted immediately, separately from the Save button.
+      </p>
+      {content}
+    </div>
+  ) : (
+    <Panel
+      title="Progress updates"
+      description="Narrative about this KPI, newest first. Posted immediately, separately from the Save button."
+    >
+      {content}
     </Panel>
   );
 }

@@ -16,20 +16,21 @@ test.afterAll(() => {
   execFileSync("npx", ["tsx", "prisma/seed.ts"], { stdio: "inherit" });
 });
 
-test("Progress updates sits directly under Report, with no lingering \"Status updates\" text", async ({ page }) => {
+test("Progress updates shares a card with Report, at the top of the page, with no lingering \"Status updates\" text", async ({ page }) => {
   await page.goto(`/kpis?period=${PERIOD}`);
   await page.getByRole("link", { name: "New customer revenue" }).click();
   await expect(page.getByRole("heading", { name: "New customer revenue" })).toBeVisible();
 
   await expect(page.getByText("Status updates")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Progress updates" })).toBeVisible();
 
-  // The Report panel's heading and the Progress updates panel should be
-  // adjacent, with nothing else (like Definition) between them.
-  const headings = page.locator("h2");
-  const texts = await headings.allTextContents();
-  const reportIndex = texts.findIndex((t) => t.startsWith("Report for"));
-  expect(texts[reportIndex + 1]).toBe("Progress updates");
+  // Report and Progress updates share one card: one h2 ("Report for ...")
+  // with a "Progress updates" h3 inside it, and that card is the first
+  // panel on the page (right after the KPI header).
+  const reportCard = page.locator("section", { has: page.getByRole("heading", { level: 2, name: /^Report for/ }) });
+  await expect(reportCard.getByRole("heading", { level: 3, name: "Progress updates" })).toBeVisible();
+
+  const panelHeadings = page.locator("h2");
+  await expect(panelHeadings.first()).toHaveText(/^Report for/);
 });
 
 test("posting a Simple update and a Detailed update on the same KPI renders each in its own format", async ({ page }) => {
