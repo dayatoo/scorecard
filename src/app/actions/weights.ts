@@ -149,12 +149,13 @@ export async function setGroupWeights(input: {
     const finalWeights =
       children.length === 1 ? [{ id: children[0].id, weight: 100 }] : input.weights;
 
-    await prisma.$transaction(async (tx) => {
-      for (const { id, weight } of finalWeights) {
-        const before = byId.get(id);
-        if (!before || before.weight === weight) continue;
-        await tx.kpi.update({ where: { id }, data: { weight } });
-        await tx.kpiAudit.create({
+    const ops = [];
+    for (const { id, weight } of finalWeights) {
+      const before = byId.get(id);
+      if (!before || before.weight === weight) continue;
+      ops.push(prisma.kpi.update({ where: { id }, data: { weight } }));
+      ops.push(
+        prisma.kpiAudit.create({
           data: {
             kpiId: id,
             field: "weight",
@@ -163,9 +164,10 @@ export async function setGroupWeights(input: {
             to: `${weight.toFixed(2)}%`,
             author: user.username,
           },
-        });
-      }
-    });
+        })
+      );
+    }
+    if (ops.length > 0) await prisma.$transaction(ops);
 
     revalidatePath("/manage/hierarchy");
     revalidatePath("/manage/hierarchy/weights");
