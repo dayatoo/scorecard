@@ -37,6 +37,9 @@ export type AttributeDraft = {
   departmentIds: string[];
   deadlineMonth: string;
   scoreFinalAfterDeadline: boolean;
+  completed: boolean;
+  /** "YYYY-MM" — set automatically to the period being viewed when completed is switched on. */
+  completedPeriod: string;
   frequency: Frequency;
   metricType: MetricType | "";
   targetMode: TargetMode | "";
@@ -278,6 +281,29 @@ export function SettingsPanel({
             )}
 
           </>
+        )}
+
+        {!subject.isLeaf && draft.metricType !== "" && (
+          <p className="flex flex-wrap items-center justify-between gap-3 sm:col-span-2 lg:col-span-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <span>
+              This KPI now has sub-KPIs, so its own metric definition is unused — its score is the
+              weighted average of its children instead. It stays on record until cleared.
+            </span>
+            <button
+              type="button"
+              disabled={readOnly}
+              onClick={() => {
+                setField("metricType", "");
+                setField("direction", "");
+                setField("targetMode", "");
+                setField("targetMonth", "");
+                setField("targets", { POOR: "", IMPROVEMENT_NEEDED: "", MEET: "", GOOD: "", VERY_GOOD: "", EXCELLENT: "" });
+              }}
+              className="shrink-0 rounded border border-amber-300 bg-white px-2 py-1 font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+            >
+              Clear its leftover metric
+            </button>
+          </p>
         )}
 
         {subject.isLeaf && !isMilestone && draft.metricType !== "" && (

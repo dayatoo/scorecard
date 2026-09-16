@@ -66,6 +66,8 @@ async function readWorkbook(formData: FormData, fiscalYearId?: string): Promise<
     unit: kpi.unit,
     deadlineMonth: kpi.deadlineMonth,
     scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+    completed: false,
+    completedPeriod: null,
     departments: [],
   }));
 

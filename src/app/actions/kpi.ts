@@ -158,6 +158,10 @@ export type SaveKpiSettingsInput = {
   departmentIds: string[];
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
+  /** True once this KPI's value is frozen; see completedPeriod. Leaf-only. */
+  completed: boolean;
+  /** "YYYY-MM" the KPI was marked complete in — the period whose figure gets frozen and carried forward. Required when completed is true. */
+  completedPeriod: string | null;
   metric: MetricInput;
   /** Confirms clearing figures that would otherwise block a numeric <-> month-completion change. */
   clearFiguresForMetricChange?: boolean;
@@ -248,7 +252,7 @@ function loadExistingKpi(kpiId: string) {
     where: { id: kpiId },
     include: {
       _count: { select: { children: true, values: true } },
-      values: { select: { period: true, value: true, completionDate: true } },
+      values: { select: { period: true, value: true, completionDate: true, basis: true } },
       departments: true,
       fiscalYear: { select: { closedAt: true, label: true } },
     },
@@ -264,6 +268,8 @@ export type KpiAttributes = {
   departmentIds: string[];
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
+  completed: boolean;
+  completedPeriod: string | null;
   frequency: Frequency;
   metricType: MetricType | null;
   direction: Direction | null;
@@ -298,6 +304,8 @@ export async function getKpiAttributes(kpiId: string): Promise<ActionResult<KpiA
       departmentIds: kpi.departments.map((d) => d.departmentId),
       deadlineMonth: kpi.deadlineMonth,
       scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+      completed: kpi.completed,
+      completedPeriod: kpi.completedPeriod,
       frequency: kpi.frequency,
       metricType: kpi.metricType,
       direction: kpi.direction,
@@ -357,11 +365,32 @@ export async function prepareKpiSettings(input: SaveKpiSettingsInput): Promise<P
   if (input.deadlineMonth && !/^\d{4}-(0[1-9]|1[0-2])$/.test(input.deadlineMonth)) {
     throw new Error("A deadline must be a month in YYYY-MM form.");
   }
+  if (input.completedPeriod && !/^\d{4}-(0[1-9]|1[0-2])$/.test(input.completedPeriod)) {
+    throw new Error("A completion period must be a month in YYYY-MM form.");
+  }
+  if (input.completed && !input.completedPeriod) {
+    throw new Error("Marking a KPI complete needs the period it was completed in.");
+  }
 
   const existing = await loadExistingKpi(input.kpiId);
   if (!existing) throw new Error("That KPI no longer exists.");
   assertFiscalYearOpen(existing.fiscalYear);
   const isLeaf = existing._count.children === 0;
+
+  if (input.completed && !isLeaf) {
+    throw new Error("Only a leaf KPI (one with no sub-KPIs) can be marked complete.");
+  }
+  if (
+    input.completed &&
+    existing.metricType !== "MONTH_COMPLETION" &&
+    !existing.values.some(
+      (v) => v.basis === "ACTUAL" && v.value !== null && v.period <= input.completedPeriod!
+    )
+  ) {
+    throw new Error(
+      "This KPI has no actual figure on record yet to freeze — report one first, then mark it complete."
+    );
+  }
 
   // Code uniqueness, checked ourselves rather than left to Prisma's raw P2002
   // error, so the message names the actual problem.
@@ -433,6 +462,12 @@ export async function prepareKpiSettings(input: SaveKpiSettingsInput): Promise<P
     existing.deadlineMonth ? formatPeriodLabel(existing.deadlineMonth) : "none",
     input.deadlineMonth ? formatPeriodLabel(input.deadlineMonth) : "none"
   );
+  push(
+    "completed",
+    "Mark complete",
+    existing.completed ? `complete as of ${formatPeriodLabel(existing.completedPeriod!)}` : "not complete",
+    input.completed ? `complete as of ${formatPeriodLabel(input.completedPeriod!)}` : "not complete"
+  );
   push("frequency", "Reporting frequency", existing.frequency, input.frequency);
   push("phasing", "Phasing", existing.phasing, phasing);
   if (metricChanged) {
@@ -470,6 +505,8 @@ export async function commitKpiSettings(
         unit: input.unit?.trim() || null,
         deadlineMonth: input.deadlineMonth,
         scoreFinalAfterDeadline: input.scoreFinalAfterDeadline,
+        completed: input.completed,
+        completedPeriod: input.completed ? input.completedPeriod : null,
         frequency: input.frequency,
         phasing,
         phaseConfig,

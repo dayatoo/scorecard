@@ -368,6 +368,17 @@ model Kpi {
   //          it is (see applyDeadline in scoring.ts).
   scoreFinalAfterDeadline Boolean @default(false)
 
+  // Leaf-only. When true, this KPI's value is frozen as of completedPeriod
+  // and carries forward unchanged through the rest of the fiscal year,
+  // rather than requiring a fresh entry every month. Deadline logic (above)
+  // still applies on top of the carried-forward value — a score already
+  // frozen by scoreFinalAfterDeadline is not reopened by completing the KPI.
+  completed       Boolean @default(false)
+  // "YYYY-MM" — the period this KPI was marked complete in. The frozen value
+  // is whichever actual was on record as of this period; null when not
+  // completed.
+  completedPeriod String?
+
   departments KpiDepartment[]
   values      KpiValue[]
   updates     KpiUpdate[]

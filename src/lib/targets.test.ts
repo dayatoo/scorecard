@@ -219,12 +219,14 @@ describe("describeBandTarget", () => {
     assert.equal(describeBandTarget(fixed, "DAYS", "EXCELLENT"), "7");
   });
 
-  it("gives a milestone's target month only for Meet — every other band has nothing to show", () => {
+  it("gives a milestone's target month shifted to each band's rung on the completion ladder", () => {
     const month = { targetMonth: "2026-10" };
+    assert.equal(describeBandTarget(month, "MONTH_COMPLETION", "EXCELLENT"), "Jul 2026 or earlier");
+    assert.equal(describeBandTarget(month, "MONTH_COMPLETION", "VERY_GOOD"), "Aug 2026");
+    assert.equal(describeBandTarget(month, "MONTH_COMPLETION", "GOOD"), "Sep 2026");
     assert.equal(describeBandTarget(month, "MONTH_COMPLETION", "MEET"), "Oct 2026");
-    for (const band of ["POOR", "IMPROVEMENT_NEEDED", "GOOD", "VERY_GOOD", "EXCELLENT"] as const) {
-      assert.equal(describeBandTarget(month, "MONTH_COMPLETION", band), null);
-    }
+    assert.equal(describeBandTarget(month, "MONTH_COMPLETION", "IMPROVEMENT_NEEDED"), "Nov 2026");
+    assert.equal(describeBandTarget(month, "MONTH_COMPLETION", "POOR"), "Dec 2026 or later");
   });
 
   it("returns null for a rollup with no config", () => {

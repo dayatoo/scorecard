@@ -424,6 +424,44 @@ describe("selectEntry — actual versus estimate", () => {
   });
 });
 
+describe("selectEntry — completed (frozen) KPIs", () => {
+  const entries: Entry[] = [
+    { period: "2026-04", value: 10, basis: "ACTUAL", completionDate: null },
+    { period: "2026-06", value: 40, basis: "ACTUAL", completionDate: null },
+    { period: "2026-07", value: 50, basis: "ESTIMATE", completionDate: null },
+  ];
+
+  it("carries the last actual on record as of the completion period forward indefinitely", () => {
+    const picked = selectEntry(entries, "2026-12", "2026-06");
+    assert.equal(picked?.value, 40);
+    assert.equal(picked?.basis, "ACTUAL");
+  });
+
+  it("carries forward from the completion period itself", () => {
+    assert.equal(selectEntry(entries, "2026-06", "2026-06")?.value, 40);
+  });
+
+  it("prefers the last actual even when a later estimate exists before the completion period", () => {
+    const picked = selectEntry(entries, "2026-08", "2026-07");
+    assert.equal(picked?.value, 40);
+    assert.equal(picked?.basis, "ACTUAL");
+  });
+
+  it("does not affect periods before the completion period", () => {
+    const picked = selectEntry(entries, "2026-04", "2026-06");
+    assert.equal(picked?.value, 10);
+  });
+
+  it("falls through to normal resolution when there is no actual on record yet", () => {
+    const estimateOnly: Entry[] = [
+      { period: "2026-05", value: 25, basis: "ESTIMATE", completionDate: null },
+    ];
+    const picked = selectEntry(estimateOnly, "2026-08", "2026-06");
+    assert.equal(picked?.value, 25);
+    assert.equal(picked?.basis, "ESTIMATE");
+  });
+});
+
 describe("scoreLeaf", () => {
   const numericKpi: KpiDefinition = {
     metricType: "QUANTITY",
@@ -495,6 +533,47 @@ describe("scoreLeaf", () => {
       { period: "2026-11", value: 103, basis: "ACTUAL", completionDate: null },
     ];
     assert.equal(scoreLeaf(frozenKpi, entries, "2026-11").score, 0);
+  });
+
+  it("carries a completed KPI's last actual value forward", () => {
+    const entries: Entry[] = [
+      { period: "2026-06", value: 100, basis: "ACTUAL", completionDate: null },
+    ];
+    const completedKpi: KpiDefinition = { ...numericKpi, completed: true, completedPeriod: "2026-06" };
+    const result = scoreLeaf(completedKpi, entries, "2026-09");
+    assert.equal(result.value, 100);
+    assert.equal(result.basis, "ACTUAL");
+    assert.equal(result.score, 3.4);
+  });
+
+  it("does not retroactively change a period before the KPI was marked complete", () => {
+    const entries: Entry[] = [
+      { period: "2026-05", value: 98, basis: "ACTUAL", completionDate: null },
+      { period: "2026-06", value: 100, basis: "ACTUAL", completionDate: null },
+    ];
+    const completedKpi: KpiDefinition = { ...numericKpi, completed: true, completedPeriod: "2026-06" };
+    assert.equal(scoreLeaf(completedKpi, entries, "2026-05").value, 98);
+  });
+
+  it("does not let completing a KPI reopen a score already frozen by its deadline", () => {
+    const frozenKpi: KpiDefinition = {
+      ...numericKpi,
+      deadlineMonth: "2026-10",
+      scoreFinalAfterDeadline: true,
+    };
+    const entries: Entry[] = [
+      { period: "2026-10", value: 100, basis: "ACTUAL", completionDate: null },
+      { period: "2026-11", value: 103, basis: "ACTUAL", completionDate: null },
+    ];
+    const beforeCompletion = scoreLeaf(frozenKpi, entries, "2026-11").score;
+    assert.equal(beforeCompletion, 3.4);
+
+    // Marking it complete afterwards, carrying the higher 103 value forward,
+    // must not move the score already frozen at the deadline month.
+    const completedKpi: KpiDefinition = { ...frozenKpi, completed: true, completedPeriod: "2026-11" };
+    const afterCompletion = scoreLeaf(completedKpi, entries, "2026-12").score;
+
+    assert.equal(afterCompletion, beforeCompletion);
   });
 });
 

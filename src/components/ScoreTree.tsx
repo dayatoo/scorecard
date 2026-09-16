@@ -226,6 +226,11 @@ export function ScoreTree({
               const current = row.scores[currentPeriod];
               const rowVisible = ROW_ANIMATION_ENABLED ? isRowVisible(row) : true;
               const cell = collapseCellProps(rowVisible);
+              // The group-row wash only goes on cells that don't already carry
+              // their own band tint — layering it under a band column's
+              // semi-transparent color would muddy that column relative to
+              // the same band on every other row.
+              const groupRowBg = row.level === 1 ? "bg-blue-50/70" : "";
 
               return (
                 <tr
@@ -239,9 +244,9 @@ export function ScoreTree({
                             : "border-transparent pointer-events-none"
                         }`
                       : "border-b last:border-0 hover:bg-blue-50/40"
-                  } ${row.level === 1 ? "bg-blue-50/70 font-medium" : ""}`}
+                  } ${row.level === 1 ? "font-medium" : ""}`}
                 >
-                  <th scope="row" className={`px-4 py-1.5 text-left font-normal ${cell.cellClassName}`} style={cell.cellStyle}>
+                  <th scope="row" className={`px-4 py-1.5 text-left font-normal ${groupRowBg} ${cell.cellClassName}`} style={cell.cellStyle}>
                     <div
                       className={`flex items-center gap-1.5 ${cell.innerClassName}`}
                       style={{ paddingLeft: `${(row.level - 1) * 1.25}rem`, ...cell.innerStyle }}
@@ -280,7 +285,7 @@ export function ScoreTree({
                     </div>
                   </th>
 
-                  <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.cellClassName}`} style={cell.cellStyle}>
+                  <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${groupRowBg} ${cell.cellClassName}`} style={cell.cellStyle}>
                     <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
                       {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
                     </span>
@@ -297,7 +302,7 @@ export function ScoreTree({
                       innerStyle={cell.innerStyle}
                     />
                   ) : (
-                    <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.cellClassName}`} style={cell.cellStyle}>
+                    <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${groupRowBg} ${cell.cellClassName}`} style={cell.cellStyle}>
                       <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
                         {row.meetTarget === null ? (
                           "—"
@@ -318,7 +323,7 @@ export function ScoreTree({
                     </td>
                   )}
 
-                  <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${cell.cellClassName}`} style={cell.cellStyle}>
+                  <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${groupRowBg} ${cell.cellClassName}`} style={cell.cellStyle}>
                     <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
                       {row.metricType === "MONTH_COMPLETION" ? (
                         row.completionDate === null ? (
@@ -350,7 +355,7 @@ export function ScoreTree({
                   {visiblePeriods.map((period) => {
                     const entry = row.scores[period];
                     return (
-                      <td key={period} className={`px-2 py-1.5 text-center ${cell.cellClassName}`} style={cell.cellStyle}>
+                      <td key={period} className={`px-2 py-1.5 text-center ${groupRowBg} ${cell.cellClassName}`} style={cell.cellStyle}>
                         <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
                           <ScoreCell
                             score={entry?.score ?? null}
@@ -370,7 +375,7 @@ export function ScoreTree({
                     );
                   })}
 
-                  <td className={`px-3 py-1.5 text-right ${cell.cellClassName}`} style={cell.cellStyle}>
+                  <td className={`px-3 py-1.5 text-right ${groupRowBg} ${cell.cellClassName}`} style={cell.cellStyle}>
                     <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
                       {!row.isLeaf && (
                         <CoverageBadge

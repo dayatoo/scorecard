@@ -72,6 +72,8 @@ export async function serializeFiscalYear(fiscalYearId: string): Promise<FiscalY
     unit: row.unit,
     deadlineMonth: row.deadlineMonth,
     scoreFinalAfterDeadline: row.scoreFinalAfterDeadline,
+    completed: row.completed,
+    completedPeriod: row.completedPeriod,
     departments: row.departments.map((d) => d.department.name),
     values: row.values.map((v) => ({
       period: v.period,
@@ -238,6 +240,8 @@ export async function restoreInto(
         unit: kpi.unit,
         deadlineMonth: kpi.deadlineMonth,
         scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+        completed: kpi.completed,
+        completedPeriod: kpi.completedPeriod,
         departments: {
           createMany: {
             data: kpi.departments

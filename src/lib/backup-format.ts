@@ -87,6 +87,8 @@ export type BackupKpi = {
   unit: string | null;
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
+  completed: boolean;
+  completedPeriod: string | null;
   /** Department names, resolved (and created if missing) on restore. */
   departments: string[];
   values: BackupValue[];
@@ -194,6 +196,8 @@ export function parseBackup(text: string): FiscalYearBackup {
     unit: kpi.unit,
     deadlineMonth: kpi.deadlineMonth,
     scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+    completed: kpi.completed,
+    completedPeriod: kpi.completedPeriod,
     departments: [],
   }));
   const cycles = checkNoCycles(asRecords);
@@ -264,6 +268,8 @@ function parseKpi(entry: unknown, index: number): BackupKpi {
     unit: stringOrNull(entry.unit),
     deadlineMonth: stringOrNull(entry.deadlineMonth),
     scoreFinalAfterDeadline: entry.scoreFinalAfterDeadline === true,
+    completed: entry.completed === true,
+    completedPeriod: stringOrNull(entry.completedPeriod),
     departments: Array.isArray(entry.departments)
       ? entry.departments.filter((d): d is string => typeof d === "string")
       : [],

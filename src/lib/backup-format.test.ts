@@ -25,6 +25,8 @@ function kpi(overrides: Record<string, unknown> = {}) {
     unit: null,
     deadlineMonth: null,
     scoreFinalAfterDeadline: false,
+    completed: false,
+    completedPeriod: null,
     departments: [],
     values: [],
     updates: [],

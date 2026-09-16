@@ -13,7 +13,7 @@
 // while the database still recorded the old one.
 
 import { formatPeriodLabel } from "./fiscal";
-import { BANDS, type Band, type Direction, type MetricType, type TargetMode } from "./scoring";
+import { BANDS, shiftPeriod, type Band, type Direction, type MetricType, type TargetMode } from "./scoring";
 import { orderingIssue } from "./validation";
 
 export type NumericMetricType = Exclude<MetricType, "MONTH_COMPLETION">;
@@ -259,21 +259,37 @@ export function crossesNumericMonthBoundary(
   return (wasNumeric && willBeMonth) || (wasMonth && willBeNumeric);
 }
 
+/** A milestone's band ladder (see `scoreMonthCompletion`): each band away
+ *  from MEET is one calendar month away from the target month, with
+ *  EXCELLENT and POOR left open-ended since they cover every month beyond
+ *  the ladder's ends, not just one. */
+const MILESTONE_BAND_OFFSET: Record<Band, number> = {
+  EXCELLENT: -3,
+  VERY_GOOD: -2,
+  GOOD: -1,
+  MEET: 0,
+  IMPROVEMENT_NEEDED: 1,
+  POOR: 2,
+};
+
 /**
  * "What am I being measured against" in one short string, for any one band —
- * a milestone's target month (MEET only; every other band has nothing to
- * show, since a milestone has one target, not six), or that band's number or
- * range. Used wherever a KPI is listed alongside its score, so its targets
- * are visible without opening it. `null` for a rollup (no metric), a KPI
- * with no target set yet, or a non-MEET band on a milestone.
+ * a milestone's target month, shifted to that band's rung on the completion
+ * ladder (EXCELLENT/POOR read as open-ended, since they cover every month
+ * beyond the ladder's ends), or that band's number or range. Used wherever a
+ * KPI is listed alongside its score, so its targets are visible without
+ * opening it. `null` for a rollup (no metric) or a KPI with no target set yet.
  */
 export function describeBandTarget(config: unknown, metricType: MetricType | null, band: Band): string | null {
   if (!config || typeof config !== "object") return null;
 
   if (metricType === "MONTH_COMPLETION") {
-    if (band !== "MEET") return null;
     const month = (config as { targetMonth?: string }).targetMonth;
-    return month ? formatPeriodLabel(month) : null;
+    if (!month) return null;
+    const target = shiftPeriod(month, MILESTONE_BAND_OFFSET[band]);
+    if (band === "EXCELLENT") return `${formatPeriodLabel(target)} or earlier`;
+    if (band === "POOR") return `${formatPeriodLabel(target)} or later`;
+    return formatPeriodLabel(target);
   }
 
   const value = (config as Record<string, unknown>)[band];

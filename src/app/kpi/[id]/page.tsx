@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuthPage } from "@/lib/session";
 import { ancestorsOf, flattenTree } from "@/lib/kpi-tree";
 import { periodsOfFiscalYear } from "@/lib/fiscal";
-import { BANDS, type Band } from "@/lib/scoring";
+import { BANDS, selectEntry, type Band, type Entry } from "@/lib/scoring";
 import { describeBandTarget, describeMeetTarget } from "@/lib/targets";
 
 export const dynamic = "force-dynamic";
@@ -69,9 +69,20 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
   // The KPI's own recorded figures, month by month, for the history table and
   // the charts. Scores come from re-running the tree per month, so what the
   // chart shows is exactly what the scorecard said at the time.
-  const valuesByPeriod = new Map(
-    scorecard.values.filter((v) => v.kpiId === id).map((v) => [v.period, v])
-  );
+  const ownEntries = scorecard.values.filter((v) => v.kpiId === id);
+  const valuesByPeriod = new Map(ownEntries.map((v) => [v.period, v]));
+
+  // A completed KPI's value is frozen and carried forward (see scoring.ts) —
+  // reflected here too, so a period with no entry of its own still shows the
+  // frozen figure rather than a blank, matching what actually got scored.
+  const completedPeriod = node.completed ? node.completedPeriod : null;
+  const entriesForFreeze: Entry[] = ownEntries.map((v) => ({
+    period: v.period,
+    value: v.value,
+    basis: v.basis,
+    completionDate: v.completionDate,
+    plannedValue: v.plannedValue,
+  }));
 
   // Score the KPI for every month of the year so the history table and charts
   // show what the scorecard actually said at the time. getScorecard only
@@ -98,8 +109,13 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
   // on its own once its target month passes — would fill the rest of the year
   // with real-looking scores for months nobody has lived through.
   const history = yearPeriods.map((p) => {
-    const entry = valuesByPeriod.get(p);
     const isFuture = p > scorecard.period;
+    const own = valuesByPeriod.get(p);
+    const frozen =
+      !own && !isFuture && completedPeriod && completedPeriod <= p
+        ? selectEntry(entriesForFreeze, p, completedPeriod)
+        : null;
+    const entry = own ?? frozen;
     const scored = isFuture ? null : scoreFor(p);
     return {
       period: p,
@@ -108,7 +124,7 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
       plannedValue: entry?.plannedValue ?? null,
       basis: entry?.basis ?? null,
       completionDate: entry?.completionDate?.toISOString().slice(0, 10) ?? null,
-      note: entry?.note ?? null,
+      note: own?.note ?? null,
       score: scored?.score ?? null,
       band: (scored?.band ?? null) as Band | null,
       coverage: scored?.coverage ?? 0,
@@ -186,6 +202,8 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
           unit: node.unit,
           deadlineMonth: node.deadlineMonth,
           scoreFinalAfterDeadline: node.scoreFinalAfterDeadline,
+          completed: node.completed,
+          completedPeriod: node.completedPeriod,
           departmentIds: node.departments.map((d) => d.id),
           score: node.score,
           band: node.band,

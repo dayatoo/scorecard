@@ -134,6 +134,8 @@ export async function loadKpiRecords(fiscalYearId: string): Promise<KpiRecord[]>
     unit: row.unit,
     deadlineMonth: row.deadlineMonth,
     scoreFinalAfterDeadline: row.scoreFinalAfterDeadline,
+    completed: row.completed,
+    completedPeriod: row.completedPeriod,
     departments: row.departments.map((d) => ({
       id: d.department.id,
       name: d.department.name,

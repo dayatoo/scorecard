@@ -82,6 +82,8 @@ export type KpiProps = {
   unit: string | null;
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
+  completed: boolean;
+  completedPeriod: string | null;
   departmentIds: string[];
   score: number | null;
   band: Band | null;
@@ -108,6 +110,8 @@ type Draft = {
   departmentIds: string[];
   deadlineMonth: string;
   scoreFinalAfterDeadline: boolean;
+  completed: boolean;
+  completedPeriod: string;
   frequency: Frequency;
   metricType: MetricType | "";
   targetMode: TargetMode | "";
@@ -183,6 +187,20 @@ export function KpiDetailClient({
   const [confirming, setConfirming] = useState(false);
   const current = history.find((h) => h.period === period);
 
+  // When this month has no entry of its own yet, pre-fill the value field
+  // with the most recently entered figure instead of leaving it blank — a
+  // starting point the user can accept as-is or overwrite, not a score.
+  const lastEnteredValue = useMemo(() => {
+    if (current?.value !== null && current?.value !== undefined) return null;
+    for (let i = history.length - 1; i >= 0; i--) {
+      const h = history[i];
+      if (h.period >= period) continue;
+      if (h.value !== null && h.value !== undefined) return h.value;
+    }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kpi.id, period]);
+
   const initial = useMemo<Draft>(() => {
     const metric = metricToDraft(kpi);
     return {
@@ -195,6 +213,8 @@ export function KpiDetailClient({
       departmentIds: [...kpi.departmentIds].sort(),
       deadlineMonth: kpi.deadlineMonth ?? "",
       scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+      completed: kpi.completed,
+      completedPeriod: kpi.completedPeriod ?? "",
       frequency: kpi.frequency,
       metricType: metric.metricType,
       targetMode: metric.targetMode,
@@ -204,7 +224,12 @@ export function KpiDetailClient({
       targets: metric.targets,
       targetMonth: metric.targetMonth,
       clearFigures: false,
-      value: current?.value !== null && current?.value !== undefined ? String(current.value) : "",
+      value:
+        current?.value !== null && current?.value !== undefined
+          ? String(current.value)
+          : lastEnteredValue !== null
+            ? String(lastEnteredValue)
+            : "",
       plannedValue:
         current?.plannedValue !== null && current?.plannedValue !== undefined ? String(current.plannedValue) : "",
       basis: current?.basis ?? "ACTUAL",
@@ -241,6 +266,9 @@ export function KpiDetailClient({
       if (field === "scoreFinalAfterDeadline") {
         return value ? "score freezes at the deadline" : "partial credit after the deadline";
       }
+      if (field === "completed") {
+        return value ? "marked complete" : "not complete";
+      }
       if (field === "completionDate") {
         return value ? formatDate(String(value)) : "not completed";
       }
@@ -254,6 +282,7 @@ export function KpiDetailClient({
       code: "Code", name: "Name", weight: "Weight % (of group)", unit: "Unit",
       departmentIds: "Departments",
       deadlineMonth: "Deadline month", scoreFinalAfterDeadline: "After the deadline",
+      completed: "Mark complete",
       frequency: "Reporting frequency",
       metricType: "Metric type", targetMode: "Target mode", direction: "Direction",
       phasing: "Phasing", phaseShares: "Phase shares",
@@ -283,7 +312,7 @@ export function KpiDetailClient({
 
   const settingsFields = new Set([
     "code", "name", "weight", "subGroup", "status", "unit", "departmentIds", "deadlineMonth",
-    "scoreFinalAfterDeadline", "frequency", "metricType", "targetMode",
+    "scoreFinalAfterDeadline", "completed", "completedPeriod", "frequency", "metricType", "targetMode",
     "direction", "phasing", "phaseShares", "targets", "targetMonth", "clearFigures",
   ]);
   const warnings = (() => {
@@ -348,6 +377,8 @@ export function KpiDetailClient({
           departmentIds: d.departmentIds,
           deadlineMonth: d.deadlineMonth || null,
           scoreFinalAfterDeadline: d.scoreFinalAfterDeadline,
+          completed: d.completed,
+          completedPeriod: d.completedPeriod || null,
           frequency: d.frequency,
           metric: parsed.metric,
           clearFiguresForMetricChange: d.clearFigures,
@@ -365,7 +396,11 @@ export function KpiDetailClient({
   };
 
   const ownsKpi = currentUser.role === "ADMIN" || kpi.departmentIds.includes(currentUser.departmentId);
-  const canEditFigures = ownsKpi && !fiscalYearClosed;
+  // Same gate as canEditFigures, but without the completed check — marking a
+  // KPI complete (or un-completing it) must stay clickable even while the
+  // rest of the Report card is locked read-only because it's complete.
+  const canToggleComplete = ownsKpi && !fiscalYearClosed;
+  const canEditFigures = ownsKpi && !fiscalYearClosed && !kpi.completed;
   const canEditSettings =
     !fiscalYearClosed &&
     (currentUser.role === "ADMIN" ||
@@ -427,6 +462,7 @@ export function KpiDetailClient({
             period={period}
             readOnly={!canEditFigures}
             fiscalYearClosed={fiscalYearClosed}
+            canToggleComplete={canToggleComplete}
             embedded
           />
           <ProgressUpdatesPanel kpiId={kpi.id} period={period} updates={updates} embedded />
@@ -859,7 +895,7 @@ function BasisToggle({
 }
 
 function EntryPanel({
-  kpi, draft, setField, period, readOnly, fiscalYearClosed, embedded,
+  kpi, draft, setField, period, readOnly, fiscalYearClosed, canToggleComplete, embedded,
 }: {
   kpi: KpiProps;
   draft: Draft;
@@ -867,8 +903,10 @@ function EntryPanel({
   period: string;
   readOnly?: boolean;
   fiscalYearClosed?: boolean;
+  canToggleComplete?: boolean;
   embedded?: boolean;
 }) {
+  const completed = kpi.completed;
   const isMilestone = draft.metricType === "MONTH_COMPLETION";
   const isVariance = draft.metricType === "VARIANCE";
   const liveVariance =
@@ -880,12 +918,15 @@ function EntryPanel({
     <>
       {readOnly && (
         <p className="mb-3 text-xs text-amber-700">
-          {fiscalYearClosed
-            ? "Read-only — this year is closed."
-            : "Read-only — this KPI isn't owned by your department."}
+          {completed
+            ? `Read-only — marked complete as of ${formatPeriodLabel(kpi.completedPeriod ?? period)}. Uncheck "Mark complete" to resume reporting.`
+            : fiscalYearClosed
+              ? "Read-only — this year is closed."
+              : "Read-only — this KPI isn't owned by your department."}
         </p>
       )}
-      <fieldset disabled={readOnly} className="flex flex-wrap items-start gap-x-8 gap-y-3">
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
+      <fieldset disabled={readOnly} className="contents">
         {isMilestone ? (
           <Field label="Completion date" hint="Enter completion date or latest estimate">
             <DateField
@@ -946,6 +987,29 @@ function EntryPanel({
           onChange={(basis) => setField("basis", basis)}
         />
       </fieldset>
+
+        <div>
+          <span className="block text-xs font-medium text-gray-700">Mark complete</span>
+          <label className="mt-1 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              disabled={!canToggleComplete}
+              checked={draft.completed}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setField("completed", checked);
+                setField("completedPeriod", checked ? period : "");
+              }}
+            />
+            {draft.completed ? "Complete" : "Not complete"}
+          </label>
+          <span className="mt-1 block max-w-[16rem] text-xs text-gray-500">
+            {draft.completed
+              ? `Value frozen as of ${formatPeriodLabel(draft.completedPeriod || period)} and carried forward through the rest of this fiscal year.`
+              : "Freezes the last actual figure and carries it forward, instead of needing a fresh entry every month."}
+          </span>
+        </div>
+      </div>
 
       <fieldset disabled={readOnly} className="mt-4 border-t pt-4">
         <Field label="Note for this month">

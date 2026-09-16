@@ -55,6 +55,9 @@ export type KpiRecord = {
   unit: string | null;
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
+  /** Leaf-only. When true, the value is frozen as of completedPeriod and carries forward — see scoring.ts. */
+  completed: boolean;
+  completedPeriod: string | null;
   departments: { id: string; name: string }[];
 };
 
@@ -113,6 +116,8 @@ export type ScoredNode = {
   unit: string | null;
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
+  completed: boolean;
+  completedPeriod: string | null;
   departments: { id: string; name: string }[];
   parentId: string | null;
   children: ScoredNode[];
@@ -168,6 +173,8 @@ function toDefinition(kpi: KpiRecord): KpiDefinition {
     targetConfig: parseTargetConfig(kpi.targetConfig),
     deadlineMonth: kpi.deadlineMonth,
     scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+    completed: kpi.completed,
+    completedPeriod: kpi.completedPeriod,
     frequency: kpi.frequency ?? "MONTHLY",
     phasing: kpi.phasing ?? "NONE",
     phaseConfig: parsePhaseConfig(kpi.phaseConfig ?? null),
@@ -249,6 +256,8 @@ export function buildScoredTree(
       unit: kpi.unit,
       deadlineMonth: kpi.deadlineMonth,
       scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+      completed: kpi.completed,
+      completedPeriod: kpi.completedPeriod,
       departments: kpi.departments,
       parentId: kpi.parentId,
       children: [],

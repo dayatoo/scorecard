@@ -24,6 +24,8 @@ function kpi(overrides: Partial<KpiRecord> & { id: string }): KpiRecord {
     unit: null,
     deadlineMonth: null,
     scoreFinalAfterDeadline: false,
+    completed: false,
+    completedPeriod: null,
     departments: [],
     ...overrides,
   };

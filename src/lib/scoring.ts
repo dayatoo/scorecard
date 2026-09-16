@@ -437,6 +437,10 @@ export type KpiDefinition = {
   targetConfig: TargetConfig | null;
   deadlineMonth: string | null;
   scoreFinalAfterDeadline: boolean;
+  /** True once this KPI has been marked complete; see `completedPeriod`. */
+  completed?: boolean;
+  /** "YYYY-MM" the KPI was marked complete in, freezing its value from then on. Null/undefined when not completed. */
+  completedPeriod?: string | null;
   /** Leaf reporting frequency; only decides whether a period is "due". */
   frequency?: Frequency;
   phasing?: Phasing;
@@ -516,8 +520,25 @@ const NO_SCORE = (pendingReason: LeafScore["pendingReason"]): LeafScore => ({
  * if there is one, otherwise the most recent estimate at or before it. A KPI
  * that isn't complete yet has no year-to-date actual, so its latest estimate
  * stands in and the resulting score is flagged provisional.
+ *
+ * `completedPeriod`, when given and `<= period`, means the KPI was marked
+ * complete as of that period: rather than resolving normally, `period`
+ * scores against whatever entry was on record as of `completedPeriod`,
+ * frozen and carried forward. Periods before `completedPeriod` are
+ * unaffected — completing a KPI doesn't retroactively change earlier months.
  */
-export function selectEntry(entries: Entry[], period: string): Entry | null {
+export function selectEntry(entries: Entry[], period: string, completedPeriod?: string | null): Entry | null {
+  if (completedPeriod && completedPeriod <= period) {
+    const actualsAsOfCompletion = entries
+      .filter((e) => e.period <= completedPeriod && e.basis === "ACTUAL" && e.value !== null)
+      .sort((a, b) => a.period.localeCompare(b.period));
+    if (actualsAsOfCompletion.length > 0) {
+      return actualsAsOfCompletion[actualsAsOfCompletion.length - 1];
+    }
+    // No actual was on record as of the completion period — fall through to
+    // normal resolution rather than scoring against nothing.
+  }
+
   const upTo = entries
     .filter((e) => e.period <= period)
     .sort((a, b) => a.period.localeCompare(b.period));
@@ -565,7 +586,8 @@ export function scoreLeaf(
     return scoreMilestoneLeaf(kpi, entries, period);
   }
 
-  const entry = selectEntry(entries, period);
+  const completedPeriod = kpi.completed ? (kpi.completedPeriod ?? null) : null;
+  const entry = selectEntry(entries, period, completedPeriod);
   if (!entry || entry.value === null) {
     const frequency = kpi.frequency ?? "MONTHLY";
     const notDue = frequency !== "MONTHLY" && !dueMonths(frequency).includes(monthOfFiscalYear(period));
@@ -594,7 +616,7 @@ export function scoreLeaf(
     deadlineMonth: kpi.deadlineMonth,
     scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
     scoreAtDeadline: kpi.deadlineMonth
-      ? scoreFrozenAtDeadline(kpi, entries, kpi.deadlineMonth)
+      ? scoreFrozenAtDeadline(kpi, entries, kpi.deadlineMonth, completedPeriod)
       : null,
   });
 
@@ -619,9 +641,10 @@ export function scoreLeaf(
 function scoreFrozenAtDeadline(
   kpi: KpiDefinition,
   entries: Entry[],
-  deadlineMonth: string
+  deadlineMonth: string,
+  completedPeriod: string | null
 ): number | null {
-  const entry = selectEntry(entries, deadlineMonth);
+  const entry = selectEntry(entries, deadlineMonth, completedPeriod);
   if (!entry || entry.value === null) return 0; // nothing achieved by the deadline
   if (!kpi.direction || !kpi.targetMode || !kpi.targetConfig) return null;
 
