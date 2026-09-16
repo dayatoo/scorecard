@@ -17,6 +17,7 @@ import {
   buildHierarchyTree,
   buildScoredTree,
   flattenTree,
+  parseTargetConfig,
   type HierarchyNode,
   type KpiRecord,
   type ScoredNode,
@@ -24,7 +25,7 @@ import {
   type ValueRecord,
 } from "./kpi-tree";
 import { validateHierarchy, type Issue } from "./validation";
-import type { Band, Rollup } from "./scoring";
+import type { Band, Direction, MetricType, Rollup, TargetConfig, TargetMode } from "./scoring";
 import type { ScoringOptions } from "./scoring-modes";
 
 export type PeriodScores = Map<
@@ -81,6 +82,30 @@ export async function listDepartments() {
 export async function listStatusOptions(): Promise<string[]> {
   const options = await prisma.kpiStatusOption.findMany({ orderBy: { name: "asc" } });
   return options.map((o) => o.name);
+}
+
+export type KpiDictionaryEntrySummary = {
+  id: string;
+  name: string;
+  metricType: MetricType | null;
+  direction: Direction | null;
+  targetMode: TargetMode | null;
+  unit: string | null;
+  targetConfig: TargetConfig | null;
+};
+
+/** Saved KPI definitions (name + metric config), for prefilling a new KPI on the Hierarchy page. */
+export async function listKpiDictionaryEntries(): Promise<KpiDictionaryEntrySummary[]> {
+  const entries = await prisma.kpiDictionaryEntry.findMany({ orderBy: { name: "asc" } });
+  return entries.map((e) => ({
+    id: e.id,
+    name: e.name,
+    metricType: e.metricType,
+    direction: e.direction,
+    targetMode: e.targetMode,
+    unit: e.unit,
+    targetConfig: parseTargetConfig(e.targetConfig),
+  }));
 }
 
 export async function loadKpiRecords(fiscalYearId: string): Promise<KpiRecord[]> {

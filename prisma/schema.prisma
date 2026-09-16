@@ -276,6 +276,28 @@ model KpiStatusOption {
   createdAt DateTime @default(now())
 }
 
+// A reusable KPI definition — name and metric config only, saved explicitly
+// from the Hierarchy page's edit panel so the same "kind of KPI" can be
+// applied again when creating a new one, in any fiscal year. Deliberately
+// carries no placement (fiscal year, parent, code, weight, department,
+// subGroup) — that's decided fresh every time an entry is picked, exactly
+// like a KPI newly created by hand.
+model KpiDictionaryEntry {
+  id   String @id @default(cuid())
+  name String @unique
+
+  metricType MetricType?
+  direction  Direction?
+  targetMode TargetMode?
+  unit       String?
+
+  // JSON-encoded, same shape as Kpi.targetConfig.
+  targetConfig String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Kpi {
   id           String     @id @default(cuid())
   fiscalYearId String

@@ -309,6 +309,37 @@ export async function getKpiAttributes(kpiId: string): Promise<ActionResult<KpiA
   });
 }
 
+export type SaveToKpiDictionaryInput = {
+  name: string;
+  unit: string | null;
+  metric: MetricInput;
+};
+
+/**
+ * Saves the current metric definition — name and metric config only, no
+ * placement — as a reusable dictionary entry. Re-saving under a name already
+ * in use replaces that entry, the same way saving a KPI's Status adds it to
+ * the company-wide suggestion list (see `KpiStatusOption`), except here the
+ * whole definition is captured, not just a string.
+ */
+export async function saveToKpiDictionary(input: SaveToKpiDictionaryInput): Promise<ActionResult> {
+  return attempt(async () => {
+    await requireAdmin();
+
+    const name = input.name.trim();
+    if (!name) throw new Error("A dictionary entry needs a name.");
+
+    const columns = metricColumns(validateMetric(input.metric));
+    await prisma.kpiDictionaryEntry.upsert({
+      where: { name },
+      create: { name, unit: input.unit, ...columns },
+      update: { unit: input.unit, ...columns },
+    });
+
+    revalidatePath("/manage/hierarchy");
+  });
+}
+
 /**
  * Validates a settings change and computes its audit-trail diff, without
  * writing anything. Shared by the admin direct-save path, the member

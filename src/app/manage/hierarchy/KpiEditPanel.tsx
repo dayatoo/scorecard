@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 
 import { SettingsPanel, TargetsPanel, type AttributeDraft } from "@/components/KpiAttributeFields";
-import { getKpiAttributes, saveKpiSettings, type KpiAttributes } from "@/app/actions/kpi";
+import { getKpiAttributes, saveKpiSettings, saveToKpiDictionary, type KpiAttributes } from "@/app/actions/kpi";
 import { parsePhaseConfig } from "@/lib/kpi-tree";
+import type { KpiDictionaryEntrySummary } from "@/lib/data";
 import type { Band } from "@/lib/scoring";
 import {
   crossesNumericMonthBoundary,
@@ -32,6 +33,7 @@ export function KpiEditPanel({
   globalWeight,
   departments,
   statusOptions,
+  initialDictionaryEntry,
   onClose,
   onSaved,
 }: {
@@ -43,6 +45,8 @@ export function KpiEditPanel({
   globalWeight: number;
   departments: { id: string; name: string }[];
   statusOptions: string[];
+  /** Prefills the metric-config fields from a saved KPI Dictionary entry, for a just-created KPI. */
+  initialDictionaryEntry?: KpiDictionaryEntrySummary;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -51,6 +55,9 @@ export function KpiEditPanel({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savingToDictionary, setSavingToDictionary] = useState(false);
+  const [dictionaryName, setDictionaryName] = useState(name);
+  const [dictionaryMessage, setDictionaryMessage] = useState<string | null>(null);
 
   // The parent mounts a fresh KpiEditPanel (keyed by kpiId) per KPI opened,
   // so this effect only ever runs once for the id it was mounted with —
@@ -66,7 +73,10 @@ export function KpiEditPanel({
         return;
       }
       const fetched = result.data;
-      const metric = metricToDraft(fetched);
+      // A dictionary entry, if one was picked when this KPI was created,
+      // overrides only the metric-config fields — everything else (weight,
+      // departments, phasing, status…) still comes from the fresh KPI record.
+      const metric = initialDictionaryEntry ? metricToDraft(initialDictionaryEntry) : metricToDraft(fetched);
       setAttrs(fetched);
       setDraft({
         code: fetched.code,
@@ -74,7 +84,7 @@ export function KpiEditPanel({
         weight: String(weight),
         subGroup: fetched.subGroup ?? "",
         status: fetched.status ?? "",
-        unit: fetched.unit ?? "",
+        unit: initialDictionaryEntry?.unit ?? fetched.unit ?? "",
         departmentIds: [...fetched.departmentIds].sort(),
         deadlineMonth: fetched.deadlineMonth ?? "",
         scoreFinalAfterDeadline: fetched.scoreFinalAfterDeadline,
@@ -106,18 +116,22 @@ export function KpiEditPanel({
       ? crossesNumericMonthBoundary(attrs.metricType, draft.metricType === "" ? null : draft.metricType)
       : false;
 
+  const parseDraftMetric = (d: AttributeDraft) => {
+    const metricDraft: MetricDraft = {
+      metricType: d.metricType,
+      targetMode: d.targetMode,
+      direction: d.direction,
+      targets: d.targets as Record<Band, string>,
+      targetMonth: d.targetMonth,
+    };
+    return draftToMetricInput(metricDraft, isLeaf);
+  };
+
   const save = async () => {
     if (!draft) return;
     setError(null);
 
-    const metricDraft: MetricDraft = {
-      metricType: draft.metricType,
-      targetMode: draft.targetMode,
-      direction: draft.direction,
-      targets: draft.targets as Record<Band, string>,
-      targetMonth: draft.targetMonth,
-    };
-    const parsed = draftToMetricInput(metricDraft, isLeaf);
+    const parsed = parseDraftMetric(draft);
     if (!parsed.ok) {
       setError(parsed.error);
       return;
@@ -153,6 +167,39 @@ export function KpiEditPanel({
       return;
     }
     onSaved();
+  };
+
+  const saveDictionary = async () => {
+    if (!draft) return;
+    setDictionaryMessage(null);
+    setError(null);
+
+    const parsed = parseDraftMetric(draft);
+    if (!parsed.ok) {
+      setError(parsed.error);
+      return;
+    }
+
+    const entryName = dictionaryName.trim();
+    if (!entryName) {
+      setError("The dictionary entry needs a name.");
+      return;
+    }
+
+    setSaving(true);
+    const result = await saveToKpiDictionary({
+      name: entryName,
+      unit: draft.unit || null,
+      metric: parsed.metric,
+    });
+    setSaving(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setSavingToDictionary(false);
+    setDictionaryMessage(`Saved "${entryName}" to the KPI Dictionary.`);
   };
 
   return (
@@ -217,6 +264,52 @@ export function KpiEditPanel({
                   setField={setField}
                   readOnly={saving}
                 />
+              )}
+
+              {isLeaf && draft.metricType && (
+                <div className="rounded border border-gray-200 bg-white p-3">
+                  {dictionaryMessage && (
+                    <p className="mb-2 text-xs font-medium text-emerald-700">{dictionaryMessage}</p>
+                  )}
+                  {savingToDictionary ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        className="min-w-40 flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                        aria-label="Dictionary entry name"
+                        placeholder="Dictionary entry name"
+                        value={dictionaryName}
+                        onChange={(e) => setDictionaryName(e.target.value)}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={saveDictionary}
+                        disabled={saving}
+                        className="rounded bg-gray-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                      >
+                        Save entry
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs text-gray-500 hover:underline"
+                        onClick={() => setSavingToDictionary(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDictionaryMessage(null);
+                        setSavingToDictionary(true);
+                      }}
+                      className="text-xs font-medium text-blue-700 hover:underline"
+                    >
+                      Save this metric definition to the KPI Dictionary…
+                    </button>
+                  )}
+                </div>
               )}
             </>
           )}

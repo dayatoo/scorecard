@@ -14,6 +14,7 @@ import {
   reorderKpi,
   type ParentInferenceResult,
 } from "@/app/actions/hierarchy";
+import type { KpiDictionaryEntrySummary } from "@/lib/data";
 import { KpiEditPanel } from "./KpiEditPanel";
 
 type Node = {
@@ -65,6 +66,7 @@ export function HierarchyEditor({
   nodes,
   departments,
   statusOptions,
+  dictionaryEntries,
 }: {
   fiscalYears: { id: string; label: string }[];
   selectedFiscalYearId: string;
@@ -72,6 +74,7 @@ export function HierarchyEditor({
   nodes: Node[];
   departments: { id: string; name: string }[];
   statusOptions: string[];
+  dictionaryEntries: KpiDictionaryEntrySummary[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -85,8 +88,17 @@ export function HierarchyEditor({
   const [confirmDelete, setConfirmDelete] = useState<Node | null>(null);
   const [newCode, setNewCode] = useState("");
   const [newName, setNewName] = useState("");
+  const [newDictionaryId, setNewDictionaryId] = useState("");
   const nameInputRef = useRef<HTMLInputElement>(null);
   const addSessionRef = useRef<AddSession | null>(null);
+
+  // The dictionary entry a just-created KPI should be prefilled from, keyed
+  // by the real (non-optimistic) id it comes back with — read once by
+  // KpiEditPanel when it auto-opens for that KPI, then cleared.
+  const [pendingDictionaryEntry, setPendingDictionaryEntry] = useState<{
+    kpiId: string;
+    entry: KpiDictionaryEntrySummary;
+  } | null>(null);
 
   const [repairPreview, setRepairPreview] = useState<ParentInferenceResult | null>(null);
   const [repairChecking, setRepairChecking] = useState(false);
@@ -196,6 +208,7 @@ export function HierarchyEditor({
     setAddingUnder(target);
     setNewCode(parentNode ? `${parentNode.code}.${nextNumber}` : String(nextNumber));
     setNewName("");
+    setNewDictionaryId("");
     setError(null);
   };
 
@@ -204,6 +217,7 @@ export function HierarchyEditor({
     setAddingUnder(null);
     setNewCode("");
     setNewName("");
+    setNewDictionaryId("");
   };
 
   /**
@@ -225,6 +239,8 @@ export function HierarchyEditor({
     const name = newName.trim();
     if (!code || !name) return; // an empty Enter just leaves the row open
 
+    const dictionaryEntry = dictionaryEntries.find((e) => e.id === newDictionaryId) ?? null;
+
     const parentNode = session.parentId
       ? (optimisticNodes.find((n) => n.id === session.parentId) ?? null)
       : null;
@@ -240,6 +256,12 @@ export function HierarchyEditor({
       globalWeight: 0,
     };
 
+    // Starting from a dictionary entry is a deliberate, one-at-a-time flow —
+    // it closes the add form and jumps straight to the edit panel, prefilled
+    // with the entry's metric config, rather than continuing the rapid
+    // name-then-Enter loop below.
+    if (dictionaryEntry) closeAdd();
+
     startAddTransition(async () => {
       addOptimisticNode(tempNode);
       try {
@@ -254,11 +276,17 @@ export function HierarchyEditor({
           return;
         }
         setError(null);
+        if (dictionaryEntry) {
+          setPendingDictionaryEntry({ kpiId: result.data.id, entry: dictionaryEntry });
+          setEditingId(result.data.id);
+        }
         router.refresh();
       } catch {
         setError(`Couldn't add "${name}": could not reach the server.`);
       }
     });
+
+    if (dictionaryEntry) return; // the form is already closed above
 
     // Advance and refocus immediately — this doesn't wait on the network, so
     // the next name can be typed the instant this one is submitted.
@@ -295,6 +323,23 @@ export function HierarchyEditor({
         onChange={(e) => setNewName(e.target.value)}
         autoFocus
       />
+      {dictionaryEntries.length > 0 && (
+        <select
+          className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-700"
+          aria-label="Start from a saved KPI Dictionary entry"
+          value={newDictionaryId}
+          onChange={(e) => {
+            setNewDictionaryId(e.target.value);
+            const entry = dictionaryEntries.find((d) => d.id === e.target.value);
+            if (entry && !newName.trim()) setNewName(entry.name);
+          }}
+        >
+          <option value="">Start from KPI Dictionary…</option>
+          {dictionaryEntries.map((entry) => (
+            <option key={entry.id} value={entry.id}>{entry.name}</option>
+          ))}
+        </select>
+      )}
       <button
         type="submit"
         className="rounded bg-blue-600 px-3 py-1 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
@@ -551,9 +596,16 @@ export function HierarchyEditor({
             globalWeight={target.globalWeight}
             departments={departments}
             statusOptions={statusOptions}
-            onClose={() => setEditingId(null)}
+            initialDictionaryEntry={
+              pendingDictionaryEntry?.kpiId === target.id ? pendingDictionaryEntry.entry : undefined
+            }
+            onClose={() => {
+              setEditingId(null);
+              setPendingDictionaryEntry(null);
+            }}
             onSaved={() => {
               setEditingId(null);
+              setPendingDictionaryEntry(null);
               router.refresh();
             }}
           />
