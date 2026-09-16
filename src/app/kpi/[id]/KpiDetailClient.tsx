@@ -408,6 +408,18 @@ export function KpiDetailClient({
   const submittingProposal =
     currentUser.role !== "ADMIN" && changes.some((c) => settingsFields.has(c.field));
 
+  // A milestone reported as Actual is, in effect, done — offer to mark it
+  // complete right there rather than making the user find the checkbox
+  // separately, but only ever as a confirmed choice, never automatically.
+  const [milestoneCompletePrompt, setMilestoneCompletePrompt] = useState(false);
+  const offerMilestoneComplete =
+    canToggleComplete &&
+    kpi.metricType === "MONTH_COMPLETION" &&
+    !draft.completed &&
+    draft.basis === "ACTUAL" &&
+    draft.completionDate !== "" &&
+    changes.some((c) => c.field === "basis" || c.field === "completionDate");
+
   // For the score explainer: the earliest recorded completion at or before
   // the viewed period, mirroring scoreMilestoneLeaf's own selection — the
   // history row for the exact viewed period is usually empty, since a
@@ -550,9 +562,48 @@ export function KpiDetailClient({
         isSaving={isSaving}
         error={error}
         count={changes.length}
-        onSave={() => setConfirming(true)}
+        onSave={() => (offerMilestoneComplete ? setMilestoneCompletePrompt(true) : setConfirming(true))}
         onDiscard={reset}
       />
+
+      {milestoneCompletePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="milestone-complete-title" className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <h2 id="milestone-complete-title" className="text-base font-semibold text-gray-900">
+              Mark this milestone complete?
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              &quot;{kpi.name}&quot; was just reported as Actual for {formatPeriodLabel(period)}. Marking it
+              complete freezes this completion date and carries it forward through the rest of the fiscal
+              year — you can still uncheck it later to resume reporting.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMilestoneCompletePrompt(false);
+                  setConfirming(true);
+                }}
+                className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Not now
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setField("completed", true);
+                  setField("completedPeriod", period);
+                  setMilestoneCompletePrompt(false);
+                  setConfirming(true);
+                }}
+                className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Mark complete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmSaveDialog
         open={confirming}
