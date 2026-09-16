@@ -228,7 +228,16 @@ function RisksTable({ risks, totalCount, period }: { risks: Risk[]; totalCount: 
                 <td className="px-4 py-2">
                   <BandPill band={r.currentBand} />
                 </td>
-                <td className="tabular px-4 py-2 text-gray-700">{r.headroom.toFixed(2)}</td>
+                <td className="tabular px-4 py-2 text-gray-700">
+                  {r.metricHeadroom ? (
+                    <>
+                      {r.metricHeadroom.distance.toLocaleString()}
+                      {r.metricHeadroom.unit && <span className="ml-0.5 text-gray-400">{r.metricHeadroom.unit}</span>}
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td className="px-4 py-2">
                   <TrendLabel trend={r.trend} monthsToDrop={r.monthsToDrop} />
                 </td>

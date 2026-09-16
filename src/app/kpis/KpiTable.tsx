@@ -7,6 +7,7 @@ import { BandTargetCells, BandTargetHeaderCells } from "@/components/BandColumns
 import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
 import { formatDateAbbrev } from "@/lib/dates";
 import { formatPeriodLabel } from "@/lib/fiscal";
+import { SCORE_TYPES, SCORE_TYPE_LABELS, scoreTypesOf, type ScoreType } from "@/lib/score-type";
 import { BANDS, bandLabel, type Band, type MetricType } from "@/lib/scoring";
 
 export type KpiTableRow = {
@@ -35,6 +36,7 @@ export type KpiTableRow = {
   leafCount: number;
   scoredLeafCount: number;
   provisional: boolean;
+  prorated: boolean;
   pendingReason: string | null;
 };
 
@@ -63,6 +65,7 @@ export function KpiTable({
   const [department, setDepartment] = useState("");
   const [band, setBand] = useState("");
   const [metric, setMetric] = useState("");
+  const [scoreTypes, setScoreTypes] = useState<Set<ScoreType>>(new Set(SCORE_TYPES));
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; direction: "asc" | "desc" }>({
     key: "code",
@@ -88,12 +91,18 @@ export function KpiTable({
       if (department && !row.departments.includes(department)) return false;
       if (band && row.band !== band) return false;
       if (metric && row.metricType !== metric) return false;
+      if (scoreTypes.size < SCORE_TYPES.length) {
+        // An unscored row rests on no figure at all, so it belongs to no score
+        // type — the same way picking a band already hides rows with no band.
+        if (row.score === null) return false;
+        if (!scoreTypesOf(row).some((t) => scoreTypes.has(t))) return false;
+      }
       if (term && !`${row.code} ${row.name} ${row.departments.join(" ")}`.toLowerCase().includes(term)) {
         return false;
       }
       return true;
     });
-  }, [rows, view, level, goal, department, band, metric, search]);
+  }, [rows, view, level, goal, department, band, metric, scoreTypes, search]);
 
   const sorted = useMemo(() => {
     const factor = sort.direction === "asc" ? 1 : -1;
@@ -117,10 +126,20 @@ export function KpiTable({
         : { key, direction: key === "score" || key === "weight" ? "desc" : "asc" }
     );
 
+  const toggleScoreType = (type: ScoreType) =>
+    setScoreTypes((current) => {
+      const next = new Set(current);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+
   const clearFilters = () => {
     setGoal(""); setDepartment(""); setBand(""); setMetric(""); setSearch("");
+    setScoreTypes(new Set(SCORE_TYPES));
   };
-  const filtersActive = Boolean(goal || department || band || metric || search);
+  const filtersActive =
+    Boolean(goal || department || band || metric || search) || scoreTypes.size < SCORE_TYPES.length;
 
   const selectClass =
     "rounded border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none";
@@ -195,6 +214,21 @@ export function KpiTable({
             ))}
           </select>
         )}
+
+        <fieldset className="flex items-center gap-2 rounded border border-gray-300 px-2 py-1">
+          <legend className="sr-only">Score type</legend>
+          {SCORE_TYPES.map((t) => (
+            <label key={t} className="flex items-center gap-1 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                checked={scoreTypes.has(t)}
+                onChange={() => toggleScoreType(t)}
+              />
+              {SCORE_TYPE_LABELS[t]}
+            </label>
+          ))}
+        </fieldset>
 
         {filtersActive && (
           <button type="button" onClick={clearFilters} className="text-sm text-blue-700 hover:underline">
@@ -312,7 +346,7 @@ export function KpiTable({
                 </td>
                 <td className="px-3 py-1.5 text-center">
                   <ScoreCell
-                    score={row.score} band={row.band} provisional={row.provisional} size="sm"
+                    score={row.score} band={row.band} provisional={row.provisional} prorated={row.prorated} size="sm"
                     placeholder={row.pendingReason === "NOT_YET_DUE" ? "n/d" : "—"}
                   />
                 </td>

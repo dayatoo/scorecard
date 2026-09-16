@@ -78,6 +78,28 @@ describe("computeOpportunities — target asymmetry by mode", () => {
     const { roots, total } = buildScoredTree(kpis, values, "2026-04");
     assert.deepEqual(computeOpportunities(roots, total), []);
   });
+
+  it("excludes a scored, incomplete, overdue milestone — no band above its current one is reachable", () => {
+    const kpis: KpiRecord[] = [
+      kpi({ id: "Root", weight: 100, metricType: "MONTH_COMPLETION", targetConfig: JSON.stringify({ targetMonth: "2026-01" }) }),
+    ];
+    // Never completed, and the target month (Jan 2026) is well behind the scored period.
+    const { roots, total } = buildScoredTree(kpis, [], "2026-04");
+    assert.deepEqual(computeOpportunities(roots, total), []);
+  });
+
+  it("excludes a completed milestone frozen at a middling band — it can no longer move at all", () => {
+    const kpis: KpiRecord[] = [
+      kpi({ id: "Root", weight: 100, metricType: "MONTH_COMPLETION", targetConfig: JSON.stringify({ targetMonth: "2026-01" }) }),
+    ];
+    // Completed one month late -> frozen at Improvement Needed forever.
+    const values: ValueRecord[] = [
+      { kpiId: "Root", period: "2026-02", value: null, basis: "ACTUAL", completionDate: new Date("2026-02-15"), note: null },
+    ];
+    const { roots, total } = buildScoredTree(kpis, values, "2026-04");
+    assert.equal(leavesOf(roots)[0]!.band, "IMPROVEMENT_NEEDED");
+    assert.deepEqual(computeOpportunities(roots, total), []);
+  });
 });
 
 describe("computeOpportunities — additivity, cross-checked against an independent override simulation", () => {
@@ -123,6 +145,18 @@ describe("computeRisks", () => {
     const leaf = leavesOf(roots)[0]!;
     const expectedDrop = ((BAND_BOUNDS.MEET.hi - leaf.exactScore!) * leaf.globalWeight) / total.scoredWeight;
     assert.ok(Math.abs(risk.dropImpact - expectedDrop) < 1e-9);
+    // The metric-unit margin: 82.25 is 2.25 above Good's own floor (80), the
+    // value at which it would cross into Meet — not a 0-5 score delta.
+    assert.deepEqual(risk.metricHeadroom, { distance: 2.25, unit: null });
+  });
+
+  it("gives a null metric headroom for a milestone — there's no numeric value to be a distance from", () => {
+    const kpis: KpiRecord[] = [
+      kpi({ id: "Root", weight: 100, metricType: "MONTH_COMPLETION", targetConfig: JSON.stringify({ targetMonth: "2026-01" }) }),
+    ];
+    const { roots, total } = buildScoredTree(kpis, [], "2026-04");
+    const [risk] = computeRisks(roots, total, new Map());
+    assert.equal(risk.metricHeadroom, null);
   });
 
   it("excludes an already-Poor leaf (nothing lower to fall into)", () => {

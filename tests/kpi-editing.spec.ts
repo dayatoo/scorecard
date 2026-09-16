@@ -98,6 +98,9 @@ test("a milestone's completion date can be marked Actual or Estimate, on both th
   await page.getByRole("link", { name: "Complete ERP rollout" }).click();
   await page.getByRole("radiogroup", { name: "This date is" }).getByRole("radio", { name: "Actual" }).click();
   await page.getByRole("button", { name: "Save" }).click();
+  // Reporting a milestone as Actual now offers to mark it complete first;
+  // decline — this test only checks that the provisional marker clears.
+  await page.getByRole("button", { name: "Not now" }).click();
   await page.getByRole("button", { name: "Confirm and save" }).click();
   await expect(page.locator('[title*="provisional"]')).toHaveCount(0);
 
@@ -123,6 +126,9 @@ test("an estimated completion date may be after the reporting month, since it's 
   // The same date is refused once the figure is marked Actual instead.
   await basis.getByRole("radio", { name: "Actual" }).click();
   await page.getByRole("button", { name: "Save" }).click();
+  // Same mark-complete offer as above — decline it; what's under test is the
+  // server refusing the date itself, which happens on the save that follows.
+  await page.getByRole("button", { name: "Not now" }).click();
   await page.getByRole("button", { name: "Confirm and save" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText(/is after Aug 2026, the month being reported on/)).toBeVisible();
@@ -134,4 +140,30 @@ test("an estimated completion date may be after the reporting month, since it's 
   await page.getByRole("button", { name: "Save" }).click();
   await page.getByRole("button", { name: "Confirm and save" }).click();
   await expect(page.getByLabel("Completion date")).toHaveValue("");
+});
+
+// Last in the file deliberately: marking a milestone complete turns the Report
+// card read-only, so unwinding it through the UI is far more trouble than
+// letting the afterAll reseed above clear it.
+test("reporting a milestone as Actual offers to mark it complete in the same save", async ({ page }) => {
+  await page.goto(`/kpis?period=${PERIOD}`);
+  await page.getByRole("link", { name: "Complete ERP rollout" }).click();
+  await expect(page.getByRole("heading", { name: "Complete ERP rollout" })).toBeVisible();
+
+  // The basis toggle already defaults to Actual, so recording a date is on its
+  // own enough to make the milestone read as done.
+  await page.getByLabel("Completion date").fill("03/08/2026");
+  await page.getByRole("button", { name: "Save" }).click();
+
+  // Named explicitly so this is the mark-complete prompt, not the save
+  // confirmation that follows it.
+  const prompt = page.getByRole("dialog", { name: "Mark this milestone complete?" });
+  await expect(prompt).toBeVisible();
+  await prompt.getByRole("button", { name: "Mark complete" }).click();
+
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+  // The checkbox's own label reads "Complete"/"Not complete" — the "Mark
+  // complete" caption above it is a separate span, not its accessible name.
+  await expect(page.getByRole("checkbox", { name: "Complete", exact: true })).toBeChecked();
+  await expect(page.getByText(/Value frozen as of Aug 2026/)).toBeVisible();
 });

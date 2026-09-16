@@ -11,7 +11,7 @@
 
 import { leavesOf } from "./kpi-tree";
 import type { ScoredNode } from "./kpi-tree";
-import { BAND_BOUNDS, BANDS, type Band, type Rollup, type TargetMode } from "./scoring";
+import { BAND_BOUNDS, BANDS, varianceMagnitude, type Band, type Rollup, type TargetMode } from "./scoring";
 import { describeBandTarget } from "./targets";
 
 export type Opportunity = {
@@ -37,8 +37,11 @@ export type Risk = {
   name: string;
   currentScore: number;
   currentBand: Band;
-  /** How far above its own band's floor this leaf currently sits. */
+  /** How far above its own band's floor this leaf currently sits, on the raw 0-5 score scale. */
   headroom: number;
+  /** The same margin in the KPI's own reported units (e.g. "4.5" of a percentage) — null for a
+   *  milestone, which has no numeric value to be a distance from. */
+  metricHeadroom: { distance: number; unit: string | null } | null;
   /** Exact points lost from the total if this leaf falls into the band below (negative). */
   dropImpact: number;
   trend: RiskTrend;
@@ -72,6 +75,38 @@ function bandFloorAfterDrop(band: Band): number {
   return BAND_BOUNDS[band].hi;
 }
 
+/**
+ * How far a leaf's actual reported figure sits above the value that would
+ * drop it into the band below, in its own units — the number a person
+ * reading a percentage or a dollar figure actually needs, not a 0-5 score
+ * delta. For a RANGE window the boundary is whichever edge of the current
+ * band isn't the "better" one (see `scoreRangeTarget`); for a FIXED target
+ * it's the band's own threshold, since falling short of it is exactly what
+ * drops a leaf to the next lower target it still meets (`scoreFixedTarget`).
+ * `null` for a milestone (no numeric value at all) or anything missing the
+ * config/value needed to place it.
+ */
+function metricHeadroom(leaf: ScoredNode): { distance: number; unit: string | null } | null {
+  if (leaf.metricType === null || leaf.metricType === "MONTH_COMPLETION") return null;
+  if (!leaf.direction || !leaf.targetConfig || !leaf.band || leaf.leaf?.value == null) return null;
+
+  const actual =
+    leaf.metricType === "VARIANCE" ? varianceMagnitude(leaf.leaf.value, leaf.leaf.plannedValue) : leaf.leaf.value;
+  if (actual === null) return null;
+
+  const raw = (leaf.targetConfig as Record<Band, number | [number, number]>)[leaf.band];
+  if (raw === undefined) return null;
+
+  const worseEdge = Array.isArray(raw)
+    ? leaf.direction === "HIGHER_BETTER"
+      ? Math.min(raw[0], raw[1])
+      : Math.max(raw[0], raw[1])
+    : raw;
+
+  const distance = leaf.direction === "HIGHER_BETTER" ? actual - worseEdge : worseEdge - actual;
+  return { distance, unit: leaf.metricType === "VARIANCE" ? "%" : leaf.unit };
+}
+
 /** Ranks every not-yet-Excellent scored leaf by its exact effect on the total. */
 export function computeOpportunities(roots: ScoredNode[], total: Rollup): Opportunity[] {
   if (total.scoredWeight <= 0) return [];
@@ -79,6 +114,13 @@ export function computeOpportunities(roots: ScoredNode[], total: Rollup): Opport
   const opportunities: Opportunity[] = [];
   for (const leaf of leavesOf(roots)) {
     if (leaf.score === null || leaf.band === null || leaf.exactScore === null) continue;
+    // A milestone only ever gets a score once it's due — completed (frozen
+    // forever at whatever band that completion earned) or overdue and
+    // decaying (scored as if completed on the last day of this period). Any
+    // better band belongs to a target month that has already passed, so it
+    // can never be reached from here; see computeRisks' SLIPPING_MILESTONE
+    // for the only thing that's actually actionable on one of these.
+    if (leaf.metricType === "MONTH_COMPLETION") continue;
     const bandIndex = BANDS.indexOf(leaf.band);
     if (bandIndex === BANDS.length - 1) continue; // already Excellent
 
@@ -181,6 +223,7 @@ export function computeRisks(
       currentScore: leaf.score,
       currentBand: leaf.band,
       headroom,
+      metricHeadroom: metricHeadroom(leaf),
       dropImpact,
       trend,
       monthsToDrop,

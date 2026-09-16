@@ -64,6 +64,7 @@ export default async function KpisPage({ searchParams }: PageProps<"/kpis">) {
       leafCount: node.leafCount,
       scoredLeafCount: node.scoredLeafCount,
       provisional: node.provisional,
+      prorated: node.prorated,
       pendingReason: node.leaf?.pendingReason ?? null,
     };
   });
