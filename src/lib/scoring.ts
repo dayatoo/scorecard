@@ -237,16 +237,35 @@ const COMPLETION_LADDER: { delta: number; band: Band }[] = [
   { delta: -1, band: "GOOD" },
   { delta: 0, band: "MEET" },
   { delta: 1, band: "IMPROVEMENT_NEEDED" },
-  { delta: 2, band: "POOR" },
 ];
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * The end of the fiscal year (31 March) that `targetMonth` falls in. Kept
+ * local to this module — rather than imported from `fiscal.ts` — because
+ * `fiscal.ts` itself imports from here, and this module takes no dates from
+ * `now` or any other module.
+ */
+function fiscalYearEndDate(targetMonth: string): Date {
+  const { year, month } = parsePeriod(targetMonth);
+  const fiscalYearStartYear = month >= 4 ? year : year - 1; // fiscal year starts in April
+  return new Date(Date.UTC(fiscalYearStartYear + 1, 2, 31)); // 31 March
+}
 
 /**
  * Month-of-completion target. Within the landing month the score scales by day
  * — day 1 scores the top of that band, the last day of the month the bottom.
  * With a target of October 2026: 1 Oct scores 3.4 and 31 Oct scores 3.0.
  *
- * Finishing more than three months early is capped at 5.0; more than two months
- * late scores 0.
+ * Two or more months late is Poor, and it no longer resets to 0 at the end of
+ * a single month: the Poor band stretches from the top of the band (2.4) at
+ * the start of the "two months late" month all the way down to 0 at the end
+ * of the fiscal year (31 March), so a milestone that keeps slipping keeps
+ * losing ground continuously all the way to year end.
+ *
+ * Finishing more than three months early is capped at 5.0; landing on or
+ * after the fiscal year end scores 0.
  */
 export function scoreMonthCompletion(
   completionDate: Date,
@@ -256,9 +275,20 @@ export function scoreMonthCompletion(
   const delta = monthsBetween(config.targetMonth, completionPeriod);
 
   if (delta < -3) return MAX_SCORE;
-  const rung = COMPLETION_LADDER.find((r) => r.delta === delta);
-  if (!rung) return 0; // more than two months late
 
+  if (delta >= 2) {
+    const { year, month } = parsePeriod(shiftPeriod(config.targetMonth, 2));
+    const monthStart = new Date(Date.UTC(year, month - 1, 1));
+    const fyEnd = fiscalYearEndDate(config.targetMonth);
+    const totalDays = (fyEnd.getTime() - monthStart.getTime()) / MS_PER_DAY;
+    if (totalDays <= 0) return 0; // the "two months late" month already starts on/after fiscal year end
+    const elapsedDays = (completionDate.getTime() - monthStart.getTime()) / MS_PER_DAY;
+    const position = clamp(elapsedDays / totalDays, 0, 1);
+    return BAND_BOUNDS.POOR.hi * (1 - position);
+  }
+
+  // Every remaining delta (-3..1) has an exact rung in the ladder.
+  const rung = COMPLETION_LADDER.find((r) => r.delta === delta)!;
   const { lo, hi } = BAND_BOUNDS[rung.band];
   const { year, month } = parsePeriod(completionPeriod);
   const total = daysInMonth(year, month);

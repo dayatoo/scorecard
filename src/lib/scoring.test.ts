@@ -273,12 +273,29 @@ describe("scoreMonthCompletion", () => {
     assert.equal(roundScore(scoreMonthCompletion(utc(2026, 7, 1), target)), 5);
   });
 
-  it("drops a band for each month late, then scores zero", () => {
+  it("drops a band for each month late", () => {
     assert.equal(roundScore(scoreMonthCompletion(utc(2026, 11, 1), target)), 2.9);
     assert.equal(roundScore(scoreMonthCompletion(utc(2026, 11, 30), target)), 2.5);
     assert.equal(roundScore(scoreMonthCompletion(utc(2026, 12, 1), target)), 2.4);
-    assert.equal(roundScore(scoreMonthCompletion(utc(2026, 12, 31), target)), 0);
-    assert.equal(roundScore(scoreMonthCompletion(utc(2027, 1, 1), target)), 0);
+  });
+
+  it("two or more months late (Poor) scales continuously to the fiscal year end", () => {
+    // Target Oct 2026 sits in FY2026/27, which ends 31 Mar 2027. Two months
+    // late starts 1 Dec 2026, and the Poor band now stretches all the way
+    // from there (2.4) to 31 Mar 2027 (0) — including into Jan/Feb/Mar,
+    // where it used to already read 0 — instead of resetting to 0 at the end
+    // of each individual month.
+    assert.equal(roundScore(scoreMonthCompletion(utc(2026, 12, 1), target)), 2.4);
+    assert.equal(roundScore(scoreMonthCompletion(utc(2026, 12, 31), target)), 1.8);
+    assert.equal(roundScore(scoreMonthCompletion(utc(2027, 1, 1), target)), 1.8);
+    assert.equal(roundScore(scoreMonthCompletion(utc(2027, 1, 15), target)), 1.5);
+    assert.equal(roundScore(scoreMonthCompletion(utc(2027, 2, 1), target)), 1.2);
+    assert.equal(roundScore(scoreMonthCompletion(utc(2027, 3, 31), target)), 0);
+  });
+
+  it("scores zero on or after the fiscal year end", () => {
+    assert.equal(roundScore(scoreMonthCompletion(utc(2027, 4, 1), target)), 0);
+    assert.equal(roundScore(scoreMonthCompletion(utc(2028, 1, 1), target)), 0);
   });
 
   it("gives no extra credit beyond three months early", () => {
@@ -498,10 +515,11 @@ describe("scoreLeaf — milestones", () => {
     assert.equal(scoreLeaf(milestone, [], "2026-10").pendingReason, "NOT_YET_DUE");
   });
 
-  it("decays on its own once overdue", () => {
+  it("decays on its own once overdue, continuing to the fiscal year end rather than flooring at zero each month", () => {
     assert.equal(scoreLeaf(milestone, [], "2026-11").score, 2.5);
-    assert.equal(scoreLeaf(milestone, [], "2026-12").score, 0);
-    assert.equal(scoreLeaf(milestone, [], "2027-01").score, 0);
+    assert.equal(scoreLeaf(milestone, [], "2026-12").score, 1.8);
+    assert.equal(scoreLeaf(milestone, [], "2027-01").score, 1.2);
+    assert.equal(scoreLeaf(milestone, [], "2027-03").score, 0);
   });
 
   it("keeps its score in every month after completion is recorded", () => {
