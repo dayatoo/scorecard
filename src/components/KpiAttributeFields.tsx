@@ -407,13 +407,16 @@ export function TargetsPanel({
                     ? `${offset} month${offset === 1 ? "" : "s"} early`
                     : offset === 0
                       ? "in the target month"
-                      : `${-offset} month${offset === -1 ? "" : "s"} late`}
+                      : band === "POOR"
+                        ? "2+ months late"
+                        : `${-offset} month${offset === -1 ? "" : "s"} late`}
                 </span>
               </li>
             );
           })}
           <li className="pl-[1.125rem] text-gray-500">
-            More than two months late scores 0.
+            From there it keeps dropping day by day, reaching 0 on the last day of the fiscal
+            year (31 March).
           </li>
         </ul>
       </Panel>

@@ -245,9 +245,11 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * The end of the fiscal year (31 March) that `targetMonth` falls in. Kept
  * local to this module — rather than imported from `fiscal.ts` — because
  * `fiscal.ts` itself imports from here, and this module takes no dates from
- * `now` or any other module.
+ * `now` or any other module. Exported so callers narrating a Poor-band score
+ * (see `ScoreExplainer`) can show the same fiscal year end without
+ * re-deriving it.
  */
-function fiscalYearEndDate(targetMonth: string): Date {
+export function fiscalYearEndDate(targetMonth: string): Date {
   const { year, month } = parsePeriod(targetMonth);
   const fiscalYearStartYear = month >= 4 ? year : year - 1; // fiscal year starts in April
   return new Date(Date.UTC(fiscalYearStartYear + 1, 2, 31)); // 31 March

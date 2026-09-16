@@ -6,13 +6,16 @@ import {
   bandForScore,
   bandLabel,
   daysInMonth,
+  fiscalYearEndDate,
   monthOfFiscalYear,
   monthsBetween,
+  parsePeriod,
   phaseFraction,
   roundScore,
   scoreFixedTarget,
   scoreMonthCompletion,
   scoreRangeTarget,
+  shiftPeriod,
   varianceMagnitude,
   type Band,
   type Direction,
@@ -293,47 +296,15 @@ function VarianceExplainer({ kpi, period }: { kpi: KpiProps; period: string }) {
   );
 }
 
-function MonthCompletionExplainer({
-  kpi,
-  period,
-  completionDate,
-  completionBasis,
-}: {
-  kpi: KpiProps;
-  period: string;
-  completionDate: string | null;
-  completionBasis: "ACTUAL" | "ESTIMATE" | null;
-}) {
-  const targetMonth = (kpi.targetConfig as { targetMonth: string }).targetMonth;
-
-  if (!completionDate) {
-    // Overdue, not yet completed: scored as though completed on the last day
-    // of this scorecard month — always the very bottom of whichever band
-    // that lands in, and it keeps dropping every month it stays open.
-    const [y, m] = period.split("-").map(Number);
-    const lastDay = new Date(Date.UTC(y, m, 0));
-    const raw = scoreMonthCompletion(lastDay, { targetMonth });
-    const rounded = roundScore(raw);
-    return (
-      <>
-        <Rule>
-          Not yet completed. Its target month, {formatMonth(targetMonth)}, has already passed, so
-          it is scored as though it will be completed on the last day of this month — it will
-          keep dropping every month it remains open.
-        </Rule>
-        <Maths
-          lines={[
-            `Assumed completion: ${formatDate(lastDay)} (the last day of ${formatPeriodLabel(period)})`,
-            `That is always the bottom of whichever band the month lands in.`,
-            `Score = ${fmt(rounded)} (${bandLabel(bandForScore(rounded))})`,
-          ]}
-        />
-      </>
-    );
-  }
-
-  const completion = new Date(completionDate);
-  const completionPeriod = completionDate.slice(0, 7);
+/**
+ * The math lines for a milestone's score, shared by an actually-recorded
+ * completion and an assumed one (still overdue, not yet completed) — both
+ * are just `scoreMonthCompletion(completionDate, { targetMonth })` narrated,
+ * so there's one explanation of the formula rather than two that could drift
+ * apart.
+ */
+function monthCompletionMathLines(targetMonth: string, completion: Date): React.ReactNode[] {
+  const completionPeriod = completion.toISOString().slice(0, 7);
   const delta = monthsBetween(targetMonth, completionPeriod);
   const raw = scoreMonthCompletion(completion, { targetMonth });
   const rounded = roundScore(raw);
@@ -349,33 +320,92 @@ function MonthCompletionExplainer({
             ? "on time — lands in Meet"
             : delta === 1
               ? "1 month late — lands in Improvement Needed"
-              : delta === 2
-                ? "2 months late — lands in Poor"
-                : "3 or more months late — scores 0";
+              : `${delta} month${delta === 1 ? "" : "s"} late — Poor`;
 
-  const lines: React.ReactNode[] = [`Target month ${formatMonth(targetMonth)}; completed ${formatDate(completion)}: ${deltaLabel}.`];
+  const lines: React.ReactNode[] = [
+    `Target month ${formatMonth(targetMonth)}; completed ${formatDate(completion)}: ${deltaLabel}.`,
+  ];
 
-  if (delta >= -2 && delta <= 2) {
+  if (delta >= -2 && delta <= 1) {
     const band = bandForScore(rounded);
     const { lo, hi } = BAND_BOUNDS[band];
-    const total = daysInMonth(completion.getUTCFullYear(), completion.getUTCMonth() + 1);
+    const { year, month } = parsePeriod(completionPeriod);
+    const total = daysInMonth(year, month);
     const day = completion.getUTCDate();
     lines.push(`Within ${formatMonth(completionPeriod)}: day 1 scores ${fmt(hi)}, day ${total} scores ${fmt(lo)}.`);
     if (total > 1) {
       lines.push(`Score = ${fmt(hi)} − ((${day} − 1) ÷ (${total} − 1)) × (${fmt(hi)} − ${fmt(lo)}) = ${fmt(raw, 3)}`);
     }
+  } else if (delta >= 2) {
+    // Poor no longer resets to 0 at the end of a single month: it decays
+    // continuously from the top of the band at the start of the "two months
+    // late" month down to 0 at the fiscal year end (31 March).
+    const { year, month } = parsePeriod(shiftPeriod(targetMonth, 2));
+    const monthStart = new Date(Date.UTC(year, month - 1, 1));
+    const fyEnd = fiscalYearEndDate(targetMonth);
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const totalDays = Math.max(0, (fyEnd.getTime() - monthStart.getTime()) / msPerDay);
+    const elapsedDays = Math.max(0, (completion.getTime() - monthStart.getTime()) / msPerDay);
+    lines.push(
+      `Two or more months late starts ${formatDate(monthStart)}; the fiscal year ends ${formatDate(fyEnd)} — a span of ${fmt(totalDays, 0)} days.`
+    );
+    if (totalDays > 0) {
+      const position = Math.min(1, elapsedDays / totalDays);
+      lines.push(`Elapsed since then: ${fmt(Math.min(elapsedDays, totalDays), 0)} days → position ${fmt(position, 3)} through that span.`);
+      lines.push(`Score = 2.4 × (1 − ${fmt(position, 3)}) = ${fmt(raw, 3)}`);
+    } else {
+      lines.push(`That span has already ended, so this scores 0.`);
+    }
   }
   lines.push(`Rounded: ${fmt(raw, 3)} → ${fmt(rounded)} (${bandLabel(bandForScore(rounded))})`);
+  return lines;
+}
+
+function MonthCompletionExplainer({
+  kpi,
+  period,
+  completionDate,
+  completionBasis,
+}: {
+  kpi: KpiProps;
+  period: string;
+  completionDate: string | null;
+  completionBasis: "ACTUAL" | "ESTIMATE" | null;
+}) {
+  const targetMonth = (kpi.targetConfig as { targetMonth: string }).targetMonth;
+
+  if (!completionDate) {
+    // Overdue, not yet completed: scored as though completed on the last day
+    // of this scorecard month — it keeps dropping every month it stays open,
+    // continuously once two or more months late, rather than resetting.
+    const [y, m] = period.split("-").map(Number);
+    const lastDay = new Date(Date.UTC(y, m, 0));
+    return (
+      <>
+        <Rule>
+          Not yet completed. Its target month, {formatMonth(targetMonth)}, has already passed, so
+          it is scored as though it will be completed on the last day of this month — it will
+          keep dropping every month it remains open, all the way to 0 at the fiscal year end (31
+          March).
+        </Rule>
+        <Maths lines={monthCompletionMathLines(targetMonth, lastDay)} />
+      </>
+    );
+  }
+
+  const completion = new Date(completionDate);
 
   return (
     <>
       <Rule>
         Completing in the target month scores a Meet; each month early climbs a band, each month
-        late drops one. Within the landing month, the score also scales by day — day 1 scores the
-        top of the band, the last day scores the bottom.
+        late drops one, down to Poor at two months late. Within an early or late month up to one
+        month, the score also scales by day — day 1 scores the top of the band, the last day
+        scores the bottom. Two or more months late, the score instead decays continuously all the
+        way to 0 at the fiscal year end (31 March).
         {completionBasis === "ESTIMATE" && " This completion date is an estimate, so the score is provisional."}
       </Rule>
-      <Maths lines={lines} />
+      <Maths lines={monthCompletionMathLines(targetMonth, completion)} />
     </>
   );
 }
