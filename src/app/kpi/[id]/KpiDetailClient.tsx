@@ -1212,7 +1212,7 @@ function ProgressUpdatesPanel({
   }[];
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"SIMPLE" | "DETAILED">("SIMPLE");
+  const [mode, setMode] = useState<"SIMPLE" | "DETAILED">("DETAILED");
   const [body, setBody] = useState("");
   const [currentProgress, setCurrentProgress] = useState("");
   const [nextProgress, setNextProgress] = useState("");

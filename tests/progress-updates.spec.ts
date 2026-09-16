@@ -39,7 +39,8 @@ test("posting a Simple update and a Detailed update on the same KPI renders each
 
   const panel = page.locator("section", { has: page.getByRole("heading", { name: "Progress updates" }) });
 
-  // Simple is the default mode.
+  // Detailed is the default mode; switch to Simple and post first.
+  await panel.getByRole("button", { name: "Simple", exact: true }).click();
   await panel.getByPlaceholder("What has moved on this KPI?").fill("Renewals tracking to plan.");
   await panel.getByRole("button", { name: "Post update" }).click();
   await expect(panel.getByText("Renewals tracking to plan.")).toBeVisible();
