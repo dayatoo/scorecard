@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { applyImport, type ImportMode, type ImportSummary } from "@/app/actions/admin";
 import { attempt, type ActionResult } from "@/app/actions/result";
 import { requireAdmin } from "@/lib/session";
-import { parseWorkbook, type ParsedKpi, type ParsedValue, type ParseIssue } from "@/lib/workbook";
+import { parseWorkbook, type ParsedKpi, type ParsedValue, type ParsedUpdate, type ParseIssue } from "@/lib/workbook";
 import { validateHierarchy, type Issue } from "@/lib/validation";
 import type { KpiRecord } from "@/lib/kpi-tree";
 
@@ -14,6 +14,7 @@ export type ImportPreview = {
   kpis: ParsedKpi[];
   departments: string[];
   values: ParsedValue[];
+  updates: ParsedUpdate[];
   parseIssues: ParseIssue[];
   /** Structural problems: weights, target order, cycles. */
   issues: Issue[];
@@ -69,6 +70,7 @@ async function readWorkbook(formData: FormData, fiscalYearId?: string): Promise<
     completed: false,
     completedPeriod: null,
     departments: [],
+    status: kpi.status,
   }));
 
   const parentCodes = new Set(asRecords.map((k) => k.parentId).filter(Boolean));
@@ -98,6 +100,7 @@ async function readWorkbook(formData: FormData, fiscalYearId?: string): Promise<
     kpis: parsed.kpis,
     departments: parsed.departments,
     values: parsed.values,
+    updates: parsed.updates,
     parseIssues: parsed.issues,
     issues: parsed.kpis.length > 0 ? validateHierarchy(asRecords) : [],
     counts: {
@@ -130,6 +133,7 @@ export async function commitImport(input: {
   kpis: ParsedKpi[];
   departments: string[];
   values?: ParsedValue[];
+  updates?: ParsedUpdate[];
   mode?: ImportMode;
 }): Promise<ActionResult<ImportSummary>> {
   return attempt(async () => {

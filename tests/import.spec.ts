@@ -34,18 +34,30 @@ test("exporting and re-importing the scorecard preserves it", async ({ page }) =
   // would mean the export and import formats have drifted apart.
   await expect(page.locator('dt:text-is("Strategic Goals total") + dd')).toHaveText("100.00%");
   await expect(page.locator('dt:text-is("KPIs in file") + dd')).toHaveText("15");
+  // Seeded with one Progress Update (SG2.2) and several months of figures —
+  // both should now round-trip via the export's Values and Updates sheets.
+  await expect(page.locator('dt:text-is("Progress updates") + dd')).toHaveText("1");
+  await expect(page.getByText("Monthly figures")).toBeVisible();
 
   await page.getByRole("button", { name: /^Import into/ }).click();
   await page.getByRole("button", { name: "Confirm and save" }).click();
 
   await expect(page.getByText("Import complete.")).toBeVisible();
-  // Matched on code, so everything is an update and nothing is removed.
+  // Matched on code, so everything is an update and nothing is removed. The
+  // one seeded Progress Update already exists (same Id), so re-importing it
+  // is a no-op — nothing new is posted.
   await expect(page.getByText(/0 KPIs added, 15 updated/)).toBeVisible();
+  await expect(page.getByText(/progress update/)).toHaveCount(0);
 
   // The hierarchy is unchanged.
   await page.goto(`/kpis?period=${PERIOD}`);
   await page.getByRole("button", { name: "By level" }).click();
   expect(await page.getByRole("rowheader").allInnerTexts()).toEqual(goalsBefore);
+
+  // Re-importing did not duplicate the seeded Progress Update.
+  await page.getByRole("button", { name: "Master list" }).click();
+  await page.getByRole("link", { name: "Complete ERP rollout" }).click();
+  await expect(page.getByText("Vendor contract signed")).toHaveCount(1);
 });
 
 test("a file that is not a workbook cannot be imported", async ({ page }) => {

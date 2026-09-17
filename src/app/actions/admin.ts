@@ -13,7 +13,7 @@ import {
   serializeFiscalYear,
   writeCheckpoint,
 } from "@/lib/backup";
-import type { ParsedKpi, ParsedValue } from "@/lib/workbook";
+import type { ParsedKpi, ParsedValue, ParsedUpdate } from "@/lib/workbook";
 import { assertFiscalYearOpen } from "@/lib/validation";
 import { attempt, type ActionResult } from "./result";
 
@@ -258,6 +258,8 @@ export type ImportSummary = {
   departmentsCreated: number;
   /** Monthly figures written from the workbook's optional Values sheet. */
   valuesWritten: number;
+  /** Progress Updates created from the workbook's optional Updates sheet — rows whose Id already existed are skipped. */
+  updatesWritten: number;
 };
 
 /**
@@ -276,6 +278,7 @@ export async function applyImport(input: {
   kpis: ParsedKpi[];
   departments: string[];
   values?: ParsedValue[];
+  updates?: ParsedUpdate[];
   mode?: ImportMode;
 }): Promise<ImportSummary> {
   const admin = await requireAdmin();
@@ -351,6 +354,7 @@ export async function applyImport(input: {
       frequency: kpi.frequency,
       phasing: kpi.phasing,
       phaseConfig: kpi.phaseConfig,
+      status: kpi.status,
       parentId: null as string | null,
     };
 
@@ -435,11 +439,48 @@ export async function applyImport(input: {
     valuesWritten++;
   }
 
+  // Progress Updates, if the workbook carried an Updates sheet. Deduped by
+  // Id against what's already in the database, so re-importing an
+  // unmodified export is a no-op here rather than duplicating every post.
+  let updatesWritten = 0;
+  const incomingUpdates = input.updates ?? [];
+  if (incomingUpdates.length > 0) {
+    const existingUpdateIds = new Set(
+      (
+        await prisma.kpiUpdate.findMany({
+          where: { kpiId: { in: allKpiIds } },
+          select: { id: true },
+        })
+      ).map((u) => u.id)
+    );
+
+    for (const u of incomingUpdates) {
+      const kpiId = idByCode.get(u.code.toLowerCase());
+      if (!kpiId) continue;
+      if (u.id && existingUpdateIds.has(u.id)) continue;
+
+      await prisma.kpiUpdate.create({
+        data: {
+          kpiId,
+          period: u.period,
+          mode: u.mode,
+          body: u.body,
+          author: u.author,
+          currentProgress: u.currentProgress,
+          nextProgress: u.nextProgress,
+          timeCost: u.timeCost,
+          issues: u.issues,
+        },
+      });
+      updatesWritten++;
+    }
+  }
+
   revalidatePath("/");
   revalidatePath("/kpis");
   revalidatePath("/entry");
   revalidatePath("/manage");
   revalidatePath("/milestones");
 
-  return { created, updated, removed: toRemove.length, departmentsCreated, valuesWritten };
+  return { created, updated, removed: toRemove.length, departmentsCreated, valuesWritten, updatesWritten };
 }

@@ -101,6 +101,8 @@ describe("example workbook round-trip", () => {
       tree: [],
       totalsByPeriod: new Map(),
       scoresByPeriod: new Map(),
+      values: [],
+      updates: [],
     });
 
     const ExcelJS = (await import("exceljs")).default;
@@ -499,6 +501,211 @@ describe("Values sheet", () => {
   it("returns no values when the workbook has no Values sheet", async () => {
     const result = await parseWorkbook(bytesToArrayBuffer(await buildExampleWorkbook()));
     assert.deepEqual(result.values, []);
+  });
+});
+
+describe("Status column", () => {
+  it("round-trips a KPI's status through export and re-import", async () => {
+    const kpi: ExportKpi = {
+      code: "K1", name: "A KPI", parentCode: null, weight: 100,
+      departments: [], metricType: "QUANTITY", unit: "units",
+      direction: "HIGHER_BETTER", targetMode: "FIXED",
+      targetConfig: { POOR: 1, IMPROVEMENT_NEEDED: 2, MEET: 3, GOOD: 4, VERY_GOOD: 5, EXCELLENT: 6 },
+      deadlineMonth: null, scoreFinalAfterDeadline: false, isLeaf: true,
+      status: "On track",
+    };
+
+    const bytes = await buildExportWorkbook({
+      fiscalYearLabel: "FY2026/27",
+      kpis: [kpi],
+      departments: [],
+      periods: [],
+      tree: [],
+      totalsByPeriod: new Map(),
+      scoresByPeriod: new Map(),
+      values: [],
+      updates: [],
+    });
+
+    const result = await parseWorkbook(bytesToArrayBuffer(bytes));
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.kpis[0].status, "On track");
+  });
+
+  it("reads a blank Status cell as null, not an empty string", async () => {
+    const kpi: ExportKpi = {
+      code: "K1", name: "A KPI", parentCode: null, weight: 100,
+      departments: [], metricType: "QUANTITY", unit: "units",
+      direction: "HIGHER_BETTER", targetMode: "FIXED",
+      targetConfig: { POOR: 1, IMPROVEMENT_NEEDED: 2, MEET: 3, GOOD: 4, VERY_GOOD: 5, EXCELLENT: 6 },
+      deadlineMonth: null, scoreFinalAfterDeadline: false, isLeaf: true,
+    };
+
+    const bytes = await buildExportWorkbook({
+      fiscalYearLabel: "FY2026/27",
+      kpis: [kpi],
+      departments: [],
+      periods: [],
+      tree: [],
+      totalsByPeriod: new Map(),
+      scoresByPeriod: new Map(),
+      values: [],
+      updates: [],
+    });
+
+    const result = await parseWorkbook(bytesToArrayBuffer(bytes));
+    assert.equal(result.kpis[0].status, null);
+  });
+});
+
+describe("Updates sheet", () => {
+  const UPDATE_COLUMNS = [
+    "Id", "Code", "Period", "Mode", "Author", "Body",
+    "Current Progress", "Next Progress", "Time Cost", "Issues",
+  ];
+
+  const buildWithUpdates = async (updateRows: (string | null)[][]) => {
+    const ExcelJS = (await import("exceljs")).default;
+    const { KPI_COLUMNS, UPDATES_SHEET } = await import("./workbook");
+    const workbook = new ExcelJS.Workbook();
+
+    const kpis = workbook.addWorksheet("KPIs");
+    kpis.addRow([...KPI_COLUMNS]);
+    kpis.addRow([
+      "K1", "A KPI", null, 100, "Finance", "QUANTITY", "units",
+      "HIGHER_BETTER", "FIXED", 1, 2, 3, 4, 5, 6, null, "No",
+    ]);
+
+    const updates = workbook.addWorksheet(UPDATES_SHEET);
+    updates.addRow(UPDATE_COLUMNS);
+    updateRows.forEach((r) => updates.addRow(r));
+
+    const written = (await workbook.xlsx.writeBuffer()) as unknown;
+    const bytes =
+      written instanceof Uint8Array
+        ? new Uint8Array(written)
+        : new Uint8Array(written as ArrayBuffer);
+    return bytesToArrayBuffer(bytes);
+  };
+
+  it("reads a Simple-mode update", async () => {
+    const result = await parseWorkbook(
+      await buildWithUpdates([["upd-1", "K1", "2026-08", "Simple", "alice", "Making progress", null, null, null, null]])
+    );
+
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.updates.length, 1);
+    assert.deepEqual(
+      { ...result.updates[0], row: undefined },
+      {
+        id: "upd-1", code: "K1", period: "2026-08", mode: "SIMPLE",
+        body: "Making progress", author: "alice",
+        currentProgress: null, nextProgress: null, timeCost: null, issues: null,
+        row: undefined,
+      }
+    );
+  });
+
+  it("reads a Detailed-mode update", async () => {
+    const result = await parseWorkbook(
+      await buildWithUpdates([
+        ["upd-2", "K1", "2026-08", "Detailed", "bob", null, "Halfway done", "Finish rollout", "2 days", "None"],
+      ])
+    );
+
+    assert.equal(result.updates[0].mode, "DETAILED");
+    assert.equal(result.updates[0].currentProgress, "Halfway done");
+    assert.equal(result.updates[0].nextProgress, "Finish rollout");
+    assert.equal(result.updates[0].timeCost, "2 days");
+    assert.equal(result.updates[0].issues, "None");
+  });
+
+  it("treats a blank Id as unset, so it can be created fresh on import", async () => {
+    const result = await parseWorkbook(
+      await buildWithUpdates([[null, "K1", "2026-08", "Simple", "alice", "Note", null, null, null, null]])
+    );
+    assert.equal(result.updates[0].id, null);
+  });
+
+  it("allows the same KPI and period to appear on more than one update row", async () => {
+    const result = await parseWorkbook(
+      await buildWithUpdates([
+        ["upd-1", "K1", "2026-08", "Simple", "alice", "First post", null, null, null, null],
+        ["upd-2", "K1", "2026-08", "Simple", "alice", "Second post", null, null, null, null],
+      ])
+    );
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.updates.length, 2);
+  });
+
+  it("reports a code that matches no KPI", async () => {
+    const result = await parseWorkbook(
+      await buildWithUpdates([["upd-1", "NOPE", "2026-08", "Simple", "alice", "Note", null, null, null, null]])
+    );
+    assert.ok(result.issues.some((i) => i.message.includes("does not match any KPI")));
+  });
+
+  it("reports a malformed period rather than guessing at it", async () => {
+    const result = await parseWorkbook(
+      await buildWithUpdates([["upd-1", "K1", "whenever", "Simple", "alice", "Note", null, null, null, null]])
+    );
+    assert.ok(result.issues.some((i) => i.message.includes("is not a month")));
+  });
+
+  it("ignores blank spacer rows", async () => {
+    const result = await parseWorkbook(
+      await buildWithUpdates([[], ["upd-1", "K1", "2026-08", "Simple", "alice", "Note", null, null, null, null]])
+    );
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.updates.length, 1);
+  });
+
+  it("returns no updates when the workbook has no Updates sheet", async () => {
+    const result = await parseWorkbook(bytesToArrayBuffer(await buildExampleWorkbook()));
+    assert.deepEqual(result.updates, []);
+  });
+
+  it("round-trips values and updates written by buildExportWorkbook", async () => {
+    const kpi: ExportKpi = {
+      code: "K1", name: "A KPI", parentCode: null, weight: 100,
+      departments: [], metricType: "QUANTITY", unit: "units",
+      direction: "HIGHER_BETTER", targetMode: "FIXED",
+      targetConfig: { POOR: 1, IMPROVEMENT_NEEDED: 2, MEET: 3, GOOD: 4, VERY_GOOD: 5, EXCELLENT: 6 },
+      deadlineMonth: null, scoreFinalAfterDeadline: false, isLeaf: true,
+    };
+
+    const bytes = await buildExportWorkbook({
+      fiscalYearLabel: "FY2026/27",
+      kpis: [kpi],
+      departments: [],
+      periods: [],
+      tree: [],
+      totalsByPeriod: new Map(),
+      scoresByPeriod: new Map(),
+      values: [
+        {
+          code: "K1", period: "2026-08", value: 4, plannedValue: null,
+          basis: "ACTUAL", completionDate: null, note: "on track",
+        },
+      ],
+      updates: [
+        {
+          id: "upd-1", code: "K1", period: "2026-08", mode: "DETAILED",
+          body: null, author: "alice", currentProgress: "Halfway done",
+          nextProgress: "Finish rollout", timeCost: "2 days", issues: null,
+          createdAt: new Date("2026-08-15T00:00:00Z"),
+        },
+      ],
+    });
+
+    const result = await parseWorkbook(bytesToArrayBuffer(bytes));
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.values.length, 1);
+    assert.equal(result.values[0].value, 4);
+    assert.equal(result.updates.length, 1);
+    assert.equal(result.updates[0].id, "upd-1");
+    assert.equal(result.updates[0].mode, "DETAILED");
+    assert.equal(result.updates[0].currentProgress, "Halfway done");
   });
 });
 

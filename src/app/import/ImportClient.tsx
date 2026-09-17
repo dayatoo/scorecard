@@ -63,6 +63,7 @@ export function ImportClient({
           kpis: preview.kpis,
           departments: preview.departments,
           values: preview.values,
+          updates: preview.updates,
           mode,
         });
         if (!result.ok) {
@@ -176,6 +177,8 @@ export function ImportClient({
               `, ${summary.departmentsCreated} new department${summary.departmentsCreated === 1 ? "" : "s"}`}
             {summary.valuesWritten > 0 &&
               `, ${summary.valuesWritten} monthly figure${summary.valuesWritten === 1 ? "" : "s"}`}
+            {summary.updatesWritten > 0 &&
+              `, ${summary.updatesWritten} progress update${summary.updatesWritten === 1 ? "" : "s"}`}
             .
           </p>
           <Link href="/" className="mt-2 inline-block font-medium underline">
@@ -197,6 +200,9 @@ export function ImportClient({
             />
             {preview.values.length > 0 && (
               <Stat label="Monthly figures" value={String(preview.values.length)} />
+            )}
+            {preview.updates.length > 0 && (
+              <Stat label="Progress updates" value={String(preview.updates.length)} />
             )}
           </dl>
 
@@ -345,6 +351,16 @@ export function ImportClient({
                         label: "Monthly figures in this file",
                         from: "whatever is recorded for those months now",
                         to: `${preview.values.length} figures written, overwriting those months`,
+                      },
+                    ]
+                  : []),
+                ...(preview.updates.length > 0
+                  ? [
+                      {
+                        field: "updates",
+                        label: "Progress updates in this file",
+                        from: "existing updates kept as-is",
+                        to: `up to ${preview.updates.length} new update${preview.updates.length === 1 ? "" : "s"} posted — rows matching an update already here are skipped`,
                       },
                     ]
                   : []),

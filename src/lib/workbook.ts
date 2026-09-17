@@ -30,6 +30,7 @@ export const DEPARTMENT_SHEET = "Departments";
 export const README_SHEET = "Readme";
 export const SCORES_SHEET = "Scores";
 export const VALUES_SHEET = "Values";
+export const UPDATES_SHEET = "Updates";
 
 const BAND_COLUMNS: Record<Band, string> = {
   POOR: "Poor",
@@ -64,6 +65,7 @@ export const KPI_COLUMNS = [
   "Frequency",
   "Phasing",
   "Phase Shares",
+  "Status",
 ] as const;
 
 /** Export-only, informational: mirrors the detail page's derived Global % field. Ignored on import. */
@@ -133,6 +135,8 @@ export type ParsedKpi = {
   frequency: Frequency;
   phasing: Phasing;
   phaseConfig: string | null;
+  /** Free-text current-state label, suggested from KpiStatusOption but never constrained to it. */
+  status: string | null;
   /** Spreadsheet row number, so errors can point at it. */
   row: number;
 };
@@ -152,10 +156,27 @@ export type ParsedValue = {
   row: number;
 };
 
+/** One posted Progress Update, read from the optional Updates sheet. */
+export type ParsedUpdate = {
+  /** Existing KpiUpdate id, for idempotent re-import — null/unrecognized means "create new". */
+  id: string | null;
+  code: string;
+  period: string;
+  mode: "SIMPLE" | "DETAILED";
+  body: string | null;
+  author: string | null;
+  currentProgress: string | null;
+  nextProgress: string | null;
+  timeCost: string | null;
+  issues: string | null;
+  row: number;
+};
+
 export type ParseResult = {
   kpis: ParsedKpi[];
   departments: string[];
   values: ParsedValue[];
+  updates: ParsedUpdate[];
   issues: ParseIssue[];
 };
 
@@ -239,6 +260,7 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
       kpis: [],
       departments: [],
       values: [],
+      updates: [],
       issues: [{ row: null, message: "That file could not be read as an Excel workbook (.xlsx)." }],
     };
   }
@@ -249,6 +271,7 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
       kpis: [],
       departments: [],
       values: [],
+      updates: [],
       issues: [{ row: null, message: `The workbook has no "${KPI_SHEET}" sheet. Start from the downloadable template.` }],
     };
   }
@@ -406,6 +429,7 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
       frequency,
       phasing,
       phaseConfig,
+      status: get(row, "Status") || null,
       row: rowNumber,
     });
   });
@@ -435,8 +459,9 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
   for (const kpi of kpis) kpi.departments.forEach((d) => departments.add(d));
 
   const values = parseValuesSheet(workbook, codes, issues);
+  const updates = parseUpdatesSheet(workbook, codes, issues);
 
-  return { kpis, departments: [...departments].sort(), values, issues };
+  return { kpis, departments: [...departments].sort(), values, updates, issues };
 }
 
 /**
@@ -549,6 +574,78 @@ function parseValuesSheet(
   });
 
   return values;
+}
+
+/**
+ * Reads the optional Updates sheet — one row per posted Progress Update.
+ * Unlike Values, several rows may legitimately share a KPI and period (a
+ * KPI can be updated more than once in a month), so there is no
+ * duplicate-key rejection here.
+ */
+function parseUpdatesSheet(
+  workbook: ExcelJS.Workbook,
+  codes: Set<string>,
+  issues: ParseIssue[]
+): ParsedUpdate[] {
+  const sheet = workbook.getWorksheet(UPDATES_SHEET);
+  if (!sheet) return [];
+
+  const columnOf = new Map<string, number>();
+  sheet.getRow(1).eachCell((cell, index) => {
+    const name = cellText(cell.value).toLowerCase();
+    if (name) columnOf.set(name, index);
+  });
+
+  const get = (row: ExcelJS.Row, column: string): string => {
+    const index = columnOf.get(column.toLowerCase());
+    return index ? cellText(row.getCell(index).value) : "";
+  };
+
+  const updates: ParsedUpdate[] = [];
+
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+
+    const code = get(row, "Code");
+    const periodText = get(row, "Period");
+    if (!code && !periodText) return; // blank spacer row
+
+    if (!codes.has(code.toLowerCase())) {
+      issues.push({
+        row: rowNumber,
+        message: `Updates sheet: "${code}" does not match any KPI on the ${KPI_SHEET} sheet.`,
+      });
+      return;
+    }
+
+    const period = parseMonth(periodText);
+    if (!period) {
+      issues.push({
+        row: rowNumber,
+        message: `Updates sheet: "${periodText}" is not a month. Use YYYY-MM, e.g. 2026-08.`,
+      });
+      return;
+    }
+
+    const modeText = get(row, "Mode").trim().toUpperCase();
+    const mode: "SIMPLE" | "DETAILED" = modeText === "DETAILED" ? "DETAILED" : "SIMPLE";
+
+    updates.push({
+      id: get(row, "Id") || null,
+      code,
+      period,
+      mode,
+      body: get(row, "Body") || null,
+      author: get(row, "Author") || null,
+      currentProgress: get(row, "Current Progress") || null,
+      nextProgress: get(row, "Next Progress") || null,
+      timeCost: get(row, "Time Cost") || null,
+      issues: get(row, "Issues") || null,
+      row: rowNumber,
+    });
+  });
+
+  return updates;
 }
 
 /** "09/03/2026", "2026-03-09" or a real date cell to ISO yyyy-mm-dd. */
@@ -689,8 +786,10 @@ function addReadmeSheet(workbook: ExcelJS.Workbook) {
     ["Phasing", 'None (the default) scores the year-to-date figure against the full-year target every month. Even divides the annual target evenly across 12 months. Custom uses the Phase Shares column. Only for cumulative measures — never for rates or stocks.'],
     ["Phase Shares", 'Custom phasing only: 12 monthly shares (April first), summing to 100, separated by semicolons — e.g. "5;5;10;10;10;10;10;10;10;10;5;5".'],
     ["Global %", "Export only, derived and read-only: this KPI's share of the whole company. Ignored on import — edit Weight (of group) instead."],
+    ["Status", "Optional free-text current-state label for the KPI (e.g. \"On track\", \"At risk\") — separate from the monthly Progress Updates feed below."],
     ["Dropdowns", `Metric Type, Direction, Target Mode, Score Final After Deadline, Frequency and Phasing are dropdowns — pick from the list rather than typing, and Excel will refuse anything else. Unit offers ${UNIT_SUGGESTIONS.join(", ")} as a shortcut but accepts any label, so a KPI counted in something else can still be typed in. Every one of them may be left blank on a KPI that has children.`],
     ["Values sheet (optional)", 'Add a sheet named "Values" to load monthly figures alongside the hierarchy, instead of typing them in. Columns: Code, Period, Value, Planned Value, Basis, Completion Date, Note. Period is YYYY-MM. Basis is Actual or Estimate. Completion Date (dd/mm/yyyy) is only for month-of-completion KPIs. Planned Value is only for VARIANCE KPIs — the period\'s target figure. A row overwrites whatever is recorded for that KPI and month.'],
+    ["Updates sheet (optional)", 'Add a sheet named "Updates" to load Progress Updates (status updates, progress, next steps) alongside the hierarchy. Columns: Id, Code, Period, Mode, Author, Body, Current Progress, Next Progress, Time Cost, Issues, Created At. Mode is Simple (uses Body) or Detailed (uses Current Progress, Next Progress, Time Cost, Issues). Id is exported for reference — leave it blank on a new row, or keep it as exported to re-import the same file without creating duplicates; a row whose Id already exists is skipped.'],
   ];
 
   lines.forEach(([label, text], index) => {
@@ -823,6 +922,33 @@ export type ExportKpi = Pick<
   phaseConfig?: number[] | string | null;
   /** Export only — this KPI's derived share of the whole company. */
   globalWeight?: number;
+  status?: string | null;
+};
+
+/** One month's recorded figure for a KPI, written to the export's Values sheet. */
+export type ExportValue = {
+  code: string;
+  period: string;
+  value: number | null;
+  plannedValue: number | null;
+  basis: "ACTUAL" | "ESTIMATE";
+  completionDate: string | null;
+  note: string | null;
+};
+
+/** One posted Progress Update, written to the export's Updates sheet. */
+export type ExportUpdate = {
+  id: string;
+  code: string;
+  period: string;
+  mode: "SIMPLE" | "DETAILED";
+  body: string | null;
+  author: string | null;
+  currentProgress: string | null;
+  nextProgress: string | null;
+  timeCost: string | null;
+  issues: string | null;
+  createdAt: Date;
 };
 
 function kpiRow(kpi: ExportKpi): (string | number | null)[] {
@@ -853,6 +979,7 @@ function kpiRow(kpi: ExportKpi): (string | number | null)[] {
     kpi.frequency && kpi.frequency !== "MONTHLY" ? kpi.frequency : null,
     kpi.phasing && kpi.phasing !== "NONE" ? kpi.phasing : null,
     kpi.phasing === "CUSTOM" ? phaseShares : null,
+    kpi.status ?? null,
   ];
   if (kpi.globalWeight !== undefined) row.push(Number(kpi.globalWeight.toFixed(2)));
   return row;
@@ -927,6 +1054,83 @@ export async function buildExampleWorkbook(): Promise<Uint8Array> {
   return toBytes(workbook);
 }
 
+/** dd/mm/yyyy, matching parseDateCell's primary format. */
+function formatDateDMY(iso: string): string {
+  const [year, month, day] = iso.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+/**
+ * Writes the Values sheet in the same shape `parseValuesSheet` reads back —
+ * this is what makes exporting and re-importing a round trip for figures
+ * rather than a one-way read.
+ */
+function addValuesSheet(workbook: ExcelJS.Workbook, values: ExportValue[]) {
+  const sheet = workbook.addWorksheet(VALUES_SHEET);
+  sheet.columns = [
+    { header: "Code", width: 14 },
+    { header: "Period", width: 12 },
+    { header: "Value", width: 14 },
+    { header: "Planned Value", width: 14 },
+    { header: "Basis", width: 10 },
+    { header: "Completion Date", width: 16 },
+    { header: "Note", width: 32 },
+  ];
+  styleHeader(sheet);
+  values.forEach((v) => {
+    sheet.addRow([
+      v.code,
+      v.period,
+      v.value,
+      v.plannedValue,
+      v.basis === "ESTIMATE" ? "Estimate" : "Actual",
+      v.completionDate ? formatDateDMY(v.completionDate) : null,
+      v.note,
+    ]);
+  });
+  return sheet;
+}
+
+/**
+ * Writes the Updates sheet — the Progress Updates feed — in the same shape
+ * `parseUpdatesSheet` reads back. Carries each update's `id` so a later
+ * re-import can skip rows already present rather than duplicating them.
+ */
+function addUpdatesSheet(workbook: ExcelJS.Workbook, updates: ExportUpdate[]) {
+  const sheet = workbook.addWorksheet(UPDATES_SHEET);
+  sheet.columns = [
+    { header: "Id", width: 26 },
+    { header: "Code", width: 14 },
+    { header: "Period", width: 12 },
+    { header: "Mode", width: 12 },
+    { header: "Author", width: 18 },
+    { header: "Body", width: 40 },
+    { header: "Current Progress", width: 32 },
+    { header: "Next Progress", width: 32 },
+    { header: "Time Cost", width: 20 },
+    { header: "Issues", width: 32 },
+    { header: "Created At", width: 18 },
+  ];
+  styleHeader(sheet);
+  updates.forEach((u) => {
+    const row = sheet.addRow([
+      u.id,
+      u.code,
+      u.period,
+      u.mode === "DETAILED" ? "Detailed" : "Simple",
+      u.author,
+      u.body,
+      u.currentProgress,
+      u.nextProgress,
+      u.timeCost,
+      u.issues,
+      u.createdAt.toISOString().slice(0, 10),
+    ]);
+    row.getCell(11).font = { italic: true, color: { argb: "FF6B7280" } };
+  });
+  return sheet;
+}
+
 /**
  * A full export: the hierarchy exactly as the importer expects it back, plus a
  * Scores sheet for the periods on screen. Re-importing this file reproduces
@@ -940,6 +1144,8 @@ export async function buildExportWorkbook(params: {
   tree: ScoredNode[];
   totalsByPeriod: Map<string, { score: number | null; coverage: number }>;
   scoresByPeriod: Map<string, Map<string, { score: number | null; band: Band | null; coverage: number; provisional: boolean }>>;
+  values: ExportValue[];
+  updates: ExportUpdate[];
 }): Promise<Uint8Array> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "KPI Scorecard";
@@ -950,6 +1156,8 @@ export async function buildExportWorkbook(params: {
   params.kpis.forEach((kpi) => kpiSheet.addRow(kpiRow(kpi)));
 
   addDepartmentSheet(workbook, params.departments);
+  addValuesSheet(workbook, params.values);
+  addUpdatesSheet(workbook, params.updates);
 
   // --- Scores -------------------------------------------------------------
   const scores = workbook.addWorksheet(SCORES_SHEET);

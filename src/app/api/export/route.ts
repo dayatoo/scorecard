@@ -1,7 +1,8 @@
 import { getScorecard } from "@/lib/data";
 import { isAuthenticated } from "@/lib/session";
 import { flattenTree } from "@/lib/kpi-tree";
-import { buildExportWorkbook, type ExportKpi } from "@/lib/workbook";
+import { prisma } from "@/lib/prisma";
+import { buildExportWorkbook, type ExportKpi, type ExportUpdate, type ExportValue } from "@/lib/workbook";
 
 const XLSX_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -46,7 +47,49 @@ export async function GET(request: Request) {
     phasing: node.phasing,
     phaseConfig: node.phaseConfig,
     isLeaf: node.isLeaf,
+    status: node.status,
   }));
+
+  const [kpiValues, kpiUpdates] = await Promise.all([
+    prisma.kpiValue.findMany({ where: { kpi: { fiscalYearId: scorecard.fiscalYear.id } } }),
+    prisma.kpiUpdate.findMany({ where: { kpi: { fiscalYearId: scorecard.fiscalYear.id } } }),
+  ]);
+
+  const values: ExportValue[] = kpiValues
+    .map((v) => {
+      const code = codeById.get(v.kpiId);
+      if (!code) return null;
+      return {
+        code,
+        period: v.period,
+        value: v.value,
+        plannedValue: v.plannedValue,
+        basis: v.basis,
+        completionDate: v.completionDate ? v.completionDate.toISOString().slice(0, 10) : null,
+        note: v.note,
+      };
+    })
+    .filter((v): v is ExportValue => v !== null);
+
+  const updates: ExportUpdate[] = kpiUpdates
+    .map((u) => {
+      const code = codeById.get(u.kpiId);
+      if (!code) return null;
+      return {
+        id: u.id,
+        code,
+        period: u.period,
+        mode: u.mode,
+        body: u.body,
+        author: u.author,
+        currentProgress: u.currentProgress,
+        nextProgress: u.nextProgress,
+        timeCost: u.timeCost,
+        issues: u.issues,
+        createdAt: u.createdAt,
+      };
+    })
+    .filter((u): u is ExportUpdate => u !== null);
 
   const bytes = await buildExportWorkbook({
     fiscalYearLabel: scorecard.fiscalYear.label,
@@ -61,6 +104,8 @@ export async function GET(request: Request) {
       ])
     ),
     scoresByPeriod: scorecard.scoresByPeriod,
+    values,
+    updates,
   });
 
   const filename = `kpi-scorecard-${scorecard.fiscalYear.label.replace(/\//g, "-")}-${scorecard.period}.xlsx`;
