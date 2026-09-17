@@ -213,8 +213,13 @@ function describeTiming(item: TimeBound): string {
   const lateness = `${late} month${late === 1 ? "" : "s"} late`;
 
   if (item.kind === "MILESTONE") {
-    if (late >= 3) return `${lateness} — now scoring 0 until it is completed.`;
-    return `${lateness} — scoring down through ${late === 1 ? "Improvement Needed" : "Poor"} while it stays open.`;
+    if (late === 1) {
+      return `${lateness} — scoring down through Improvement Needed while it stays open.`;
+    }
+    if (item.score === 0) {
+      return `${lateness} — already scoring 0.`;
+    }
+    return `${lateness} — scoring down through Poor, decaying to 0 by the end of the fiscal year while it stays open.`;
   }
 
   if (item.frozen) {
