@@ -65,13 +65,12 @@ export default async function MilestonesPage({ searchParams }: PageProps<"/miles
       : (node.deadlineMonth ?? lastPeriodOfFiscalYear(scorecard.fiscalYear.startYear));
     if (!dueMonth) continue;
 
-    // A milestone that has been completed is settled; a deadline KPI that has
-    // reached at least the Meet band has hit its target. Neither needs chasing.
-    const completed = scorecard.values.find(
-      (v) => v.kpiId === node.id && v.completionDate !== null
-    );
+    // A milestone that has been completed with an actual is settled; an
+    // estimated completion is still provisional, so it keeps chasing until
+    // confirmed. A deadline KPI that has reached at least the Meet band has
+    // hit its target and needs no chasing either.
     const settled = isMilestone
-      ? Boolean(completed)
+      ? node.leaf?.completionDate !== null && node.leaf?.basis === "ACTUAL"
       : (node.score ?? 0) >= 3 && monthsBetween(dueMonth, scorecard.period) <= 0;
 
     if (settled) continue;
