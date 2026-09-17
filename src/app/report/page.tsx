@@ -43,7 +43,8 @@ export default async function ReportPage({
   }
 
   const total = scorecard.total;
-  const issues = topIssues(scorecard.roots, scorecard.byId);
+  const highlights = highlightsOf(scorecard.roots, scorecard.byId);
+  const lowlights = lowlightsOf(scorecard.roots, scorecard.byId);
   const generatedAt = new Date().toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
@@ -118,13 +119,43 @@ export default async function ReportPage({
             ))}
           </div>
 
-          <SectionHead title="Top issues" subtitle="Lowest-scoring KPIs this period" />
-          <div className="border-t border-[#ecebe6]">
-            {issues.length === 0 ? (
-              <p className="py-4 text-sm text-[#8b93a1]">No scored KPIs to flag this period.</p>
-            ) : (
-              issues.map((issue, i) => <IssueRow key={issue.node.id} rank={i + 1} {...issue} />)
-            )}
+          <SectionHead
+            title="Highlights & lowlights"
+            subtitle={`For ${formatPeriodLabel(scorecard.period)} only`}
+          />
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div>
+              <div className="mb-2 flex items-baseline justify-between">
+                <h4 className="text-[0.78rem] font-semibold tracking-[0.06em] text-[#1e6b34] uppercase">
+                  Highlights
+                </h4>
+                <span className="font-mono text-[0.72rem] text-[#8b93a1]">{highlights.length}</span>
+              </div>
+              <div className="border-t border-[#ecebe6]">
+                {highlights.length === 0 ? (
+                  <p className="py-4 text-sm text-[#8b93a1]">No KPIs scored Meet or better this period.</p>
+                ) : (
+                  highlights.map((item, i) => <IssueRow key={item.node.id} rank={i + 1} {...item} />)
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="mb-2 flex items-baseline justify-between">
+                <h4 className="text-[0.78rem] font-semibold tracking-[0.06em] text-[#a13a1f] uppercase">
+                  Lowlights
+                </h4>
+                <span className="font-mono text-[0.72rem] text-[#8b93a1]">{lowlights.length}</span>
+              </div>
+              <div className="border-t border-[#ecebe6]">
+                {lowlights.length === 0 ? (
+                  <p className="py-4 text-sm text-[#8b93a1]">
+                    No KPIs scored Improvement Needed or Poor this period.
+                  </p>
+                ) : (
+                  lowlights.map((item, i) => <IssueRow key={item.node.id} rank={i + 1} {...item} />)
+                )}
+              </div>
+            </div>
           </div>
 
           <PageFooter label="Scorecard — generated report, 1 of 2" />
@@ -376,11 +407,26 @@ function SgCard({ goal }: { goal: ScoredNode }) {
 
 type Issue = { node: ScoredNode; path: string; note: string };
 
-function topIssues(roots: ScoredNode[], byId: Map<string, ScoredNode>): Issue[] {
+const HIGHLIGHT_BANDS: Band[] = ["MEET", "GOOD", "VERY_GOOD", "EXCELLENT"];
+const LOWLIGHT_BANDS: Band[] = ["IMPROVEMENT_NEEDED", "POOR"];
+
+function highlightsOf(roots: ScoredNode[], byId: Map<string, ScoredNode>): Issue[] {
   return leavesOf(roots)
-    .filter((n) => n.score !== null)
+    .filter((n) => n.score !== null && n.band !== null && HIGHLIGHT_BANDS.includes(n.band))
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .map((node) => ({
+      node,
+      path: ancestorsOf(node, byId)
+        .map((a) => a.name)
+        .join(" › "),
+      note: describeIssueNote(node),
+    }));
+}
+
+function lowlightsOf(roots: ScoredNode[], byId: Map<string, ScoredNode>): Issue[] {
+  return leavesOf(roots)
+    .filter((n) => n.score !== null && n.band !== null && LOWLIGHT_BANDS.includes(n.band))
     .sort((a, b) => (a.score ?? 0) - (b.score ?? 0))
-    .slice(0, 5)
     .map((node) => ({
       node,
       path: ancestorsOf(node, byId)
