@@ -395,3 +395,28 @@ export const getKpiDetail = cache(async (kpiId: string, period?: string) => {
 
   return { scorecard, node, updates };
 });
+
+/**
+ * The most recent progress note posted against each of the given KPIs
+ * (across all periods, not just the current one) — a single descriptive
+ * line: the body of a Simple update, or the "current progress" field of a
+ * Detailed one. KPIs with no update yet, or whose latest update left both
+ * fields empty, are omitted from the returned map.
+ */
+export async function getLatestProgressDescriptions(kpiIds: string[]): Promise<Map<string, string>> {
+  if (kpiIds.length === 0) return new Map();
+
+  const updates = await prisma.kpiUpdate.findMany({
+    where: { kpiId: { in: kpiIds } },
+    orderBy: { createdAt: "desc" },
+    select: { kpiId: true, mode: true, body: true, currentProgress: true },
+  });
+
+  const result = new Map<string, string>();
+  for (const update of updates) {
+    if (result.has(update.kpiId)) continue;
+    const text = update.mode === "SIMPLE" ? update.body : update.currentProgress;
+    if (text && text.trim()) result.set(update.kpiId, text.trim());
+  }
+  return result;
+}

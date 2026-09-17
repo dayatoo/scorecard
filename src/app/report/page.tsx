@@ -4,7 +4,7 @@ import { ReportPrintButton } from "@/components/report/ReportPrintButton";
 import { bandStyle } from "@/lib/band-style";
 import { formatPeriodLabel } from "@/lib/fiscal";
 import { ancestorsOf, flattenTree, leavesOf, type ScoredNode } from "@/lib/kpi-tree";
-import { getScorecard } from "@/lib/data";
+import { getLatestProgressDescriptions, getScorecard } from "@/lib/data";
 import { BAND_BOUNDS, BANDS, MAX_SCORE, type Band } from "@/lib/scoring";
 import { requireAuthPage } from "@/lib/session";
 import { describeMeetTarget } from "@/lib/targets";
@@ -43,8 +43,14 @@ export default async function ReportPage({
   }
 
   const total = scorecard.total;
-  const highlights = highlightsOf(scorecard.roots, scorecard.byId);
-  const lowlights = lowlightsOf(scorecard.roots, scorecard.byId);
+  const rawHighlights = highlightsOf(scorecard.roots, scorecard.byId);
+  const rawLowlights = lowlightsOf(scorecard.roots, scorecard.byId);
+  const progressByKpiId = await getLatestProgressDescriptions([
+    ...rawHighlights.map((i) => i.node.id),
+    ...rawLowlights.map((i) => i.node.id),
+  ]);
+  const highlights = rawHighlights.map((i) => ({ ...i, progress: progressByKpiId.get(i.node.id) ?? null }));
+  const lowlights = rawLowlights.map((i) => ({ ...i, progress: progressByKpiId.get(i.node.id) ?? null }));
   const generatedAt = new Date().toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
@@ -405,7 +411,7 @@ function SgCard({ goal }: { goal: ScoredNode }) {
   );
 }
 
-type Issue = { node: ScoredNode; path: string; note: string };
+type Issue = { node: ScoredNode; path: string; note: string; progress?: string | null };
 
 const HIGHLIGHT_BANDS: Band[] = ["MEET", "GOOD", "VERY_GOOD", "EXCELLENT"];
 const LOWLIGHT_BANDS: Band[] = ["IMPROVEMENT_NEEDED", "POOR"];
@@ -451,16 +457,19 @@ function describeIssueNote(node: ScoredNode): string {
   return `${value.toLocaleString()}${unit}${target ? ` vs. target ${target}${unit}` : ""}`;
 }
 
-function IssueRow({ rank, node, path, note }: Issue & { rank: number }) {
+function IssueRow({ rank, node, path, note, progress }: Issue & { rank: number }) {
   const style = bandStyle(node.band);
   return (
-    <div className="grid grid-cols-[26px_1fr_auto] items-center gap-3 border-b border-[#ecebe6] py-2.5">
+    <div className="grid grid-cols-[26px_1fr_auto] items-start gap-3 border-b border-[#ecebe6] py-2.5">
       <span className="font-mono text-[0.72rem] font-semibold text-[#8b93a1]">
         {String(rank).padStart(2, "0")}
       </span>
       <div>
         <div className="text-[0.86rem] font-medium">{node.name}</div>
         <div className="mt-0.5 text-[0.72rem] text-[#8b93a1]">{path}</div>
+        {progress && (
+          <p className="mt-1 max-w-[42ch] text-[0.72rem] text-[#5b6472] italic">“{progress}”</p>
+        )}
       </div>
       <div className="text-right">
         <span
