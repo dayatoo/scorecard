@@ -29,6 +29,7 @@ const NAV = [
   { href: "/entry", label: "Enter Data" },
   { href: "/simulate", label: "Simulate" },
   { href: "/insights", label: "Insights" },
+  { href: "/manual", label: "Help" },
 ];
 
 const MANAGE_KPIS_NAV = [
