@@ -25,7 +25,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   const period = typeof params.period === "string" ? params.period : undefined;
 
   const dueMode: DueMode =
-    params.dueMode === "assume-meet-decay" ? "assume-meet-decay" : DEFAULT_SCORING_OPTIONS.dueMode;
+    params.dueMode === "assume-meet-decay" || params.dueMode === "zero"
+      ? params.dueMode
+      : DEFAULT_SCORING_OPTIONS.dueMode;
   const estimateMode: EstimateMode =
     params.estimateMode === "exclude" || params.estimateMode === "zero"
       ? params.estimateMode
@@ -160,6 +162,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
         periods={scorecard.periods}
         currentPeriod={scorecard.period}
         total={totalRow}
+        dueMode={dueMode}
       />
     </div>
   );

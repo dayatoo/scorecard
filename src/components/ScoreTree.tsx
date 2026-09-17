@@ -8,6 +8,7 @@ import { CoverageBadge, ScoreCell } from "./ScoreCell";
 import { formatDateAbbrev } from "@/lib/dates";
 import { formatPeriodShort } from "@/lib/fiscal";
 import { BANDS, type Band, type MetricType } from "@/lib/scoring";
+import { DEFAULT_SCORING_OPTIONS, type DueMode } from "@/lib/scoring-modes";
 
 export type TreeRow = {
   id: string;
@@ -66,10 +67,13 @@ export function ScoreTree({
   periods,
   currentPeriod,
   total,
+  dueMode = DEFAULT_SCORING_OPTIONS.dueMode,
 }: {
   rows: TreeRow[];
   periods: string[];
   currentPeriod: string;
+  /** Which "Unreported KPI handling" toggle is active — changes the legend's wording below. */
+  dueMode?: DueMode;
   total: {
     scores: Record<
       string,
@@ -426,8 +430,12 @@ export function ScoreTree({
 
       <p className="border-t bg-gray-50 px-4 py-2 text-xs text-gray-500">
         <strong>Scored</strong> is how many of the leaf KPIs in a branch have a
-        figure recorded this month, out of the total; unreported KPIs are left
-        out of the score average rather than counted as zero.{" "}
+        figure recorded this month, out of the total;{" "}
+        {dueMode === "zero"
+          ? "unreported KPIs are scored as 0 rather than left out of the average."
+          : dueMode === "assume-meet-decay"
+            ? "unreported KPIs are assumed at a decaying Meet score rather than left out of the average."
+            : "unreported KPIs are left out of the score average rather than counted as zero."}{" "}
         <strong>est</strong> marks a score based on an estimate.
         <strong> n/d</strong> means a milestone is not yet due.
         <strong> asm</strong> marks a score assumed by the &ldquo;unreported&rdquo;

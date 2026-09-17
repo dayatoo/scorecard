@@ -123,6 +123,32 @@ describe("applyScoringMode", () => {
     assert.equal(overdueResult.assumed, false);
   });
 
+  it("dueMode zero forces an unreported MONTHLY KPI's score to 0", () => {
+    const leaf = scoreLeaf(numericKpi, [], "2026-06"); // no entries — unreported
+    assert.equal(leaf.score, null);
+    const result = applyScoringMode(leaf, numericKpi, [], "2026-06", {
+      dueMode: "zero",
+      estimateMode: "count",
+    });
+    assert.equal(result.score, 0);
+    assert.equal(result.band, "POOR");
+    assert.equal(result.assumed, true);
+    assert.equal(result.pendingReason, null);
+  });
+
+  it("dueMode zero also scores a not-yet-due milestone as 0, unlike assume-meet-decay", () => {
+    const notYetDue = scoreLeaf(milestoneKpi, [], "2026-08"); // before target month
+    assert.equal(notYetDue.score, null);
+    assert.equal(notYetDue.pendingReason, "NOT_YET_DUE");
+    const result = applyScoringMode(notYetDue, milestoneKpi, [], "2026-08", {
+      dueMode: "zero",
+      estimateMode: "count",
+    });
+    assert.equal(result.score, 0);
+    assert.equal(result.assumed, true);
+    assert.equal(result.pendingReason, null);
+  });
+
   it("estimateMode zero forces an ESTIMATE-basis score to 0", () => {
     const entries: Entry[] = [{ period: "2026-06", value: 102, basis: "ESTIMATE", completionDate: null }];
     const leaf = scoreLeaf(numericKpi, entries, "2026-06");

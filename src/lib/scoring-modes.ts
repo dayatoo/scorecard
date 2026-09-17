@@ -18,7 +18,7 @@ import {
   type LeafScore,
 } from "./scoring";
 
-export type DueMode = "exclude" | "assume-meet-decay";
+export type DueMode = "exclude" | "assume-meet-decay" | "zero";
 export type EstimateMode = "count" | "exclude" | "zero";
 export type ScoringOptions = { dueMode: DueMode; estimateMode: EstimateMode };
 export const DEFAULT_SCORING_OPTIONS: ScoringOptions = {
@@ -104,6 +104,11 @@ export function applyScoringMode(
   if (options.estimateMode === "zero" && leaf.basis === "ESTIMATE") {
     const score = roundScore(0);
     return { ...leaf, score, band: bandForScore(score), provisional: false, assumed: false };
+  }
+
+  if (options.dueMode === "zero" && leaf.score === null) {
+    const score = roundScore(0);
+    return { ...leaf, score, band: bandForScore(score), assumed: true, pendingReason: null };
   }
 
   if (options.dueMode === "assume-meet-decay" && leaf.score === null) {

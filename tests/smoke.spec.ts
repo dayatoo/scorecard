@@ -41,6 +41,25 @@ test("the dashboard shows the scored hierarchy and a total", async ({ page }) =>
   await expect(totalRow).toContainText("8/9");
 });
 
+test("the Unreported toggle can score unreported KPIs as 0 instead of excluding them", async ({ page }) => {
+  // "Complete ERP rollout" targets Oct 2026, so in September it's not yet
+  // due — unscored under the default toggle.
+  await page.goto("/?period=2026-09");
+  const row = page.getByRole("row", { name: /Complete ERP rollout/ });
+  const rowScore = row.locator("span.tabular").first();
+
+  // Default ("excluded") leaves a not-yet-due milestone with no score at all.
+  await expect(rowScore).toHaveText("n/d");
+
+  await page.getByLabel("Unreported KPI handling").selectOption("zero");
+  await expect(page.getByLabel("Unreported KPI handling")).toHaveValue("zero");
+
+  // It now scores a real 0/Poor rather than being excluded from the rollup —
+  // unlike "assume Meet, decaying", which would give it a 3.4 instead.
+  await expect(rowScore).toContainText("0.0");
+  await expect(rowScore).toHaveAttribute("title", /Poor/);
+});
+
 /**
  * The summary row once carried a hardcoded `slice(0, 3)`, sized for a scorecard
  * with exactly three Strategic Goals, so a fourth and beyond were silently

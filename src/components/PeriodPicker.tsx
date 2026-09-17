@@ -9,6 +9,7 @@ import type { DueMode, EstimateMode } from "@/lib/scoring-modes";
 const DUE_MODE_LABELS: Record<DueMode, string> = {
   exclude: "Unreported: excluded",
   "assume-meet-decay": "Unreported: assume Meet, decaying",
+  zero: "Unreported: score as 0",
 };
 
 const ESTIMATE_MODE_LABELS: Record<EstimateMode, string> = {
