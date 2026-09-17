@@ -20,7 +20,7 @@ export type SimulationRow = {
   unit: string | null;
   meetTarget: string | null;
   weight: number;
-  deadlineMonth: string | null;
+  targetDate: string | null;
   value: number | null;
   /** VARIANCE metrics only — the period's target/budget figure. */
   plannedValue: number | null;
@@ -78,11 +78,11 @@ export function SimulationGrid({
 
   const [draft, setDraft] = useState<Map<string, Cell>>(initial);
 
-  const [sort, setSort] = useState<{ key: "code" | "weight" | "deadlineMonth"; direction: "asc" | "desc" }>({
+  const [sort, setSort] = useState<{ key: "code" | "weight" | "targetDate"; direction: "asc" | "desc" }>({
     key: "code",
     direction: "asc",
   });
-  const toggleSort = (key: "code" | "weight" | "deadlineMonth") =>
+  const toggleSort = (key: "code" | "weight" | "targetDate") =>
     setSort((current) =>
       current.key === key
         ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
@@ -188,7 +188,7 @@ export function SimulationGrid({
             <tr className="border-b text-left text-xs font-medium text-gray-500 uppercase">
               <SortHeader label="KPI" sortKey="code" sort={sort} onSort={toggleSort} />
               <SortHeader label="Weight" sortKey="weight" sort={sort} onSort={toggleSort} align="right" />
-              <SortHeader label="Due" sortKey="deadlineMonth" sort={sort} onSort={toggleSort} align="right" />
+              <SortHeader label="Target date" sortKey="targetDate" sort={sort} onSort={toggleSort} align="right" />
               <th scope="col" className="px-3 py-2 text-right">Meet target</th>
               <th scope="col" className="w-40 px-3 py-2">Simulated actual</th>
               <th scope="col" className="px-3 py-2 text-center">Score</th>
@@ -226,7 +226,7 @@ export function SimulationGrid({
                   </td>
 
                   <td className="tabular px-3 py-1.5 text-right text-xs text-gray-600">
-                    {row.deadlineMonth ? formatPeriodLabel(row.deadlineMonth) : "—"}
+                    {row.targetDate ? formatPeriodLabel(row.targetDate) : "—"}
                   </td>
 
                   <td className="tabular px-3 py-1.5 text-right text-xs text-gray-600">

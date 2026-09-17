@@ -57,7 +57,7 @@ test("an unreported month starts from the latest actual on file, not blank", asy
   await expect(page.getByRole("button", { name: "Reset simulation" })).toHaveCount(0);
 });
 
-test("the grid can be sorted by weight or by due date", async ({ page }) => {
+test("the grid can be sorted by global weight or by target date", async ({ page }) => {
   await page.goto(`/simulate?period=${PERIOD}`);
 
   const weightColumn = () => page.locator("tbody tr td:nth-child(2)").allInnerTexts();
@@ -68,20 +68,27 @@ test("the grid can be sorted by weight or by due date", async ({ page }) => {
   let weights = parseWeight(await weightColumn());
   expect(weights).toEqual([...weights].sort((a, b) => b - a));
 
+  // These are global weights (share of the whole scorecard), not local
+  // (share of siblings) — every leaf's weight should sum to ~100%, which
+  // would not hold if a group's weights only summed to 100 on their own.
+  const total = weights.filter((w) => w !== -Infinity).reduce((a, b) => a + b, 0);
+  expect(total).toBeCloseTo(100, 0);
+
   // Clicking again toggles to ascending.
   await page.getByRole("button", { name: "Weight" }).click();
   weights = parseWeight(await weightColumn());
   expect(weights).toEqual([...weights].sort((a, b) => a - b));
 
-  // Due date: undated rows always sort last, whichever direction is active.
-  const dueColumn = () => page.locator("tbody tr td:nth-child(3)").allInnerTexts();
-  await page.getByRole("button", { name: "Due" }).click();
-  let due = await dueColumn();
-  const firstDash = due.indexOf("—");
-  if (firstDash !== -1) expect(due.slice(firstDash).every((d) => d === "—")).toBe(true);
+  // Target date: only milestone KPIs have one — everything else sorts last,
+  // whichever direction is active.
+  const dateColumn = () => page.locator("tbody tr td:nth-child(3)").allInnerTexts();
+  await page.getByRole("button", { name: "Target date" }).click();
+  let dates = await dateColumn();
+  const firstDash = dates.indexOf("—");
+  if (firstDash !== -1) expect(dates.slice(firstDash).every((d) => d === "—")).toBe(true);
 
-  await page.getByRole("button", { name: "Due" }).click();
-  due = await dueColumn();
-  const firstDash2 = due.indexOf("—");
-  if (firstDash2 !== -1) expect(due.slice(firstDash2).every((d) => d === "—")).toBe(true);
+  await page.getByRole("button", { name: "Target date" }).click();
+  dates = await dateColumn();
+  const firstDash2 = dates.indexOf("—");
+  if (firstDash2 !== -1) expect(dates.slice(firstDash2).every((d) => d === "—")).toBe(true);
 });
