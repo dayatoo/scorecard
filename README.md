@@ -21,7 +21,9 @@ about, never blocked, and its shares are applied proportionally.
   record of past changes.
 - **Hierarchy** — add, move, re-order or delete KPIs directly, without
   needing to import a spreadsheet.
-- **Deadlines** — what is due in the next three months, and what is overdue.
+- **Deadlines** — what is due in the next three months, and what is overdue. A
+  milestone's date is its meet target month; every other KPI uses its deadline
+  month, defaulting to the end of the fiscal year when none is set.
 - **Enter Data** — the month's figures for every KPI in one screen.
 - **Import / Export** — the whole scorecard as an Excel workbook, with an
   Update-only mode so an import can't silently remove what was built in the app.

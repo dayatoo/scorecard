@@ -6,7 +6,7 @@ import { PeriodPicker } from "@/components/PeriodPicker";
 import { getScorecard, listFiscalYears } from "@/lib/data";
 import { requireAuthPage } from "@/lib/session";
 import { leavesOf, strategicGoalOf } from "@/lib/kpi-tree";
-import { formatPeriodLabel, periodsOfFiscalYear } from "@/lib/fiscal";
+import { formatPeriodLabel, lastPeriodOfFiscalYear, periodsOfFiscalYear } from "@/lib/fiscal";
 import { latenessCap, monthsBetween, type Band } from "@/lib/scoring";
 
 export const metadata = { title: "Deadlines — KPI Scorecard" };
@@ -62,7 +62,7 @@ export default async function MilestonesPage({ searchParams }: PageProps<"/miles
     const isMilestone = node.metricType === "MONTH_COMPLETION";
     const dueMonth = isMilestone
       ? (node.targetConfig as { targetMonth?: string } | null)?.targetMonth
-      : node.deadlineMonth;
+      : (node.deadlineMonth ?? lastPeriodOfFiscalYear(scorecard.fiscalYear.startYear));
     if (!dueMonth) continue;
 
     // A milestone that has been completed is settled; a deadline KPI that has
