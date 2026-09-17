@@ -5,10 +5,12 @@ import { useMemo, useState } from "react";
 
 import { BandTargetCells, BandTargetHeaderCells } from "@/components/BandColumns";
 import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
+import { SortHeader } from "@/components/SortHeader";
 import { formatDateAbbrev } from "@/lib/dates";
 import { formatPeriodLabel } from "@/lib/fiscal";
 import { SCORE_TYPES, SCORE_TYPE_LABELS, scoreTypesOf, type ScoreType } from "@/lib/score-type";
 import { BANDS, bandLabel, type Band, type MetricType } from "@/lib/scoring";
+import { sortRows } from "@/lib/sort";
 
 export type KpiTableRow = {
   id: string;
@@ -104,20 +106,7 @@ export function KpiTable({
     });
   }, [rows, view, level, goal, department, band, metric, scoreTypes, search]);
 
-  const sorted = useMemo(() => {
-    const factor = sort.direction === "asc" ? 1 : -1;
-    return [...filtered].sort((a, b) => {
-      const av = a[sort.key];
-      const bv = b[sort.key];
-      // Unscored rows sort last whichever way the column is pointing, so
-      // "worst first" does not just surface every blank.
-      if (av === null && bv === null) return 0;
-      if (av === null) return 1;
-      if (bv === null) return -1;
-      if (typeof av === "number" && typeof bv === "number") return (av - bv) * factor;
-      return String(av).localeCompare(String(bv), undefined, { numeric: true }) * factor;
-    });
-  }, [filtered, sort]);
+  const sorted = useMemo(() => sortRows(filtered, sort.key, sort.direction), [filtered, sort]);
 
   const toggleSort = (key: SortKey) =>
     setSort((current) =>
@@ -368,35 +357,5 @@ export function KpiTable({
         </table>
       </div>
     </div>
-  );
-}
-
-function SortHeader({
-  label, sortKey, sort, onSort, align = "left",
-}: {
-  label: string;
-  sortKey: SortKey;
-  sort: { key: SortKey; direction: "asc" | "desc" };
-  onSort: (key: SortKey) => void;
-  align?: "left" | "right" | "center";
-}) {
-  const active = sort.key === sortKey;
-  return (
-    <th
-      scope="col"
-      aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}
-      className={`px-3 py-2 text-${align}`}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        className="inline-flex items-center gap-1 uppercase hover:text-gray-900"
-      >
-        {label}
-        <span aria-hidden className={active ? "text-gray-900" : "text-gray-300"}>
-          {active && sort.direction === "desc" ? "▼" : "▲"}
-        </span>
-      </button>
-    </th>
   );
 }

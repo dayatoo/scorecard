@@ -5,9 +5,11 @@ import { useMemo, useState } from "react";
 import { DateField } from "@/components/DateField";
 import { ScoreCell } from "@/components/ScoreCell";
 import { SummaryCard, TotalScoreHero } from "@/components/ScoreHero";
+import { SortHeader } from "@/components/SortHeader";
 import { formatPeriodLabel } from "@/lib/fiscal";
 import { buildScoredTree, type KpiRecord, type ScoreOverrideRecord, type ValueRecord } from "@/lib/kpi-tree";
 import { varianceMagnitude, type MetricType } from "@/lib/scoring";
+import { sortRows } from "@/lib/sort";
 
 export type SimulationRow = {
   id: string;
@@ -17,6 +19,8 @@ export type SimulationRow = {
   metricType: MetricType | null;
   unit: string | null;
   meetTarget: string | null;
+  weight: number;
+  deadlineMonth: string | null;
   value: number | null;
   /** VARIANCE metrics only — the period's target/budget figure. */
   plannedValue: number | null;
@@ -73,6 +77,18 @@ export function SimulationGrid({
   );
 
   const [draft, setDraft] = useState<Map<string, Cell>>(initial);
+
+  const [sort, setSort] = useState<{ key: "code" | "weight" | "deadlineMonth"; direction: "asc" | "desc" }>({
+    key: "code",
+    direction: "asc",
+  });
+  const toggleSort = (key: "code" | "weight" | "deadlineMonth") =>
+    setSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: key === "weight" ? "desc" : "asc" }
+    );
+  const sortedRows = useMemo(() => sortRows(rows, sort.key, sort.direction), [rows, sort]);
 
   const update = (id: string, patch: Partial<Cell>) => {
     setDraft((current) => {
@@ -170,14 +186,16 @@ export function SimulationGrid({
         <table className="w-full min-w-[50rem] text-sm">
           <thead className="sticky top-0 z-10 bg-gray-50">
             <tr className="border-b text-left text-xs font-medium text-gray-500 uppercase">
-              <th scope="col" className="px-3 py-2">KPI</th>
+              <SortHeader label="KPI" sortKey="code" sort={sort} onSort={toggleSort} />
+              <SortHeader label="Weight" sortKey="weight" sort={sort} onSort={toggleSort} align="right" />
+              <SortHeader label="Due" sortKey="deadlineMonth" sort={sort} onSort={toggleSort} align="right" />
               <th scope="col" className="px-3 py-2 text-right">Meet target</th>
               <th scope="col" className="w-40 px-3 py-2">Simulated actual</th>
               <th scope="col" className="px-3 py-2 text-center">Score</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
+            {sortedRows.map((row) => {
               const cell = draft.get(row.id) as Cell;
               const isMilestone = row.metricType === "MONTH_COMPLETION";
               const isVariance = row.metricType === "VARIANCE";
@@ -202,6 +220,14 @@ export function SimulationGrid({
                       </span>
                     )}
                   </th>
+
+                  <td className="tabular px-3 py-1.5 text-right text-xs text-gray-600">
+                    {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
+                  </td>
+
+                  <td className="tabular px-3 py-1.5 text-right text-xs text-gray-600">
+                    {row.deadlineMonth ? formatPeriodLabel(row.deadlineMonth) : "—"}
+                  </td>
 
                   <td className="tabular px-3 py-1.5 text-right text-xs text-gray-600">
                     {row.meetTarget ?? "—"}

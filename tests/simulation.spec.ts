@@ -56,3 +56,32 @@ test("an unreported month starts from the latest actual on file, not blank", asy
   await expect(row.locator("td").last()).not.toHaveText("—");
   await expect(page.getByRole("button", { name: "Reset simulation" })).toHaveCount(0);
 });
+
+test("the grid can be sorted by weight or by due date", async ({ page }) => {
+  await page.goto(`/simulate?period=${PERIOD}`);
+
+  const weightColumn = () => page.locator("tbody tr td:nth-child(2)").allInnerTexts();
+  const parseWeight = (cells: string[]) => cells.map((c) => (c === "—" ? -Infinity : parseFloat(c)));
+
+  // Default order is by code — clicking Weight switches to weight descending.
+  await page.getByRole("button", { name: "Weight" }).click();
+  let weights = parseWeight(await weightColumn());
+  expect(weights).toEqual([...weights].sort((a, b) => b - a));
+
+  // Clicking again toggles to ascending.
+  await page.getByRole("button", { name: "Weight" }).click();
+  weights = parseWeight(await weightColumn());
+  expect(weights).toEqual([...weights].sort((a, b) => a - b));
+
+  // Due date: undated rows always sort last, whichever direction is active.
+  const dueColumn = () => page.locator("tbody tr td:nth-child(3)").allInnerTexts();
+  await page.getByRole("button", { name: "Due" }).click();
+  let due = await dueColumn();
+  const firstDash = due.indexOf("—");
+  if (firstDash !== -1) expect(due.slice(firstDash).every((d) => d === "—")).toBe(true);
+
+  await page.getByRole("button", { name: "Due" }).click();
+  due = await dueColumn();
+  const firstDash2 = due.indexOf("—");
+  if (firstDash2 !== -1) expect(due.slice(firstDash2).every((d) => d === "—")).toBe(true);
+});

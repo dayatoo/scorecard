@@ -66,6 +66,8 @@ export default async function SimulatePage({ searchParams }: PageProps<"/simulat
       metricType: node.metricType,
       unit: node.unit,
       meetTarget: describeMeetTarget(node.targetConfig, node.metricType),
+      weight: node.weight,
+      deadlineMonth: node.deadlineMonth,
       value: latestValue?.value ?? null,
       plannedValue: latestPlanned?.plannedValue ?? null,
       completionDate: latestCompletion?.completionDate?.toISOString().slice(0, 10) ?? null,
