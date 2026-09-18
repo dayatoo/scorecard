@@ -1,4 +1,5 @@
 import { ImportClient } from "./ImportClient";
+import { DownloadLink } from "@/components/DownloadLink";
 import { getActiveFiscalYear, listFiscalYears } from "@/lib/data";
 import { requireAdminPage } from "@/lib/session";
 
@@ -31,18 +32,18 @@ export default async function ImportPage() {
           worked scorecard already filled in.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <a
+          <DownloadLink
             href="/api/template"
+            label="Download blank template"
+            loadingLabel="Downloading…"
             className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Download blank template
-          </a>
-          <a
+          />
+          <DownloadLink
             href="/api/template?example=1"
+            label="Download filled example"
+            loadingLabel="Downloading…"
             className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Download filled example
-          </a>
+          />
         </div>
       </div>
 

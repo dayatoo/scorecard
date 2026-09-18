@@ -293,6 +293,43 @@ test("the entry grid saves several KPIs at once", async ({ page }) => {
   await expect(days).toHaveValue(originalDays);
 });
 
+test("a batch save with one bad row still saves the others and reports which one failed", async ({ page }) => {
+  await page.goto(`/entry?period=${PERIOD}`);
+  await expect(page.getByRole("heading", { name: /Enter data/ })).toBeVisible();
+
+  const turnover = page.getByLabel("Year-to-date value for Voluntary staff turnover");
+  const originalTurnover = await turnover.inputValue();
+  const newTurnover = originalTurnover === "5" ? "4" : "5";
+  await turnover.fill(newTurnover);
+
+  // "Complete ERP rollout" rejects an Actual completion date after the
+  // period being reported on — the same server-side rule the single-row
+  // failure test below exercises, here alongside a row that should succeed.
+  const completionDate = page.getByLabel("Completion date for Complete ERP rollout");
+  const originalCompletionDate = await completionDate.inputValue();
+  await completionDate.fill("03/12/2026");
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+
+  // The good row's message names it and the batch count, and the bad row's
+  // own validation message still surfaces.
+  await expect(page.getByText(/1 of 2 saved.*Complete ERP rollout/)).toBeVisible();
+  await expect(page.getByText(/is after Aug 2026, the month being reported on/)).toBeVisible();
+
+  // The grid refreshed to reflect true DB state: the good row committed (no
+  // longer dirty) even though the batch overall reported a failure.
+  await page.goto(`/entry?period=${PERIOD}`);
+  await expect(turnover).toHaveValue(newTurnover);
+
+  // Restore, so the suite leaves the sample data as it found it.
+  await page.getByLabel("Year-to-date value for Voluntary staff turnover").fill(originalTurnover);
+  await page.getByLabel("Completion date for Complete ERP rollout").fill(originalCompletionDate);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm and save" }).click();
+  await expect(page.getByText("2 KPIs with unsaved figures")).toBeHidden();
+});
+
 /**
  * The Score column, top to bottom, skipping rows with no score. Reads the
  * column's position from its header rather than a hardcoded index, so an

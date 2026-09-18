@@ -1,5 +1,4 @@
-import Link from "next/link";
-
+import { DownloadLink } from "@/components/DownloadLink";
 import { EmptyState } from "@/components/EmptyState";
 import { IssueBanner } from "@/components/IssueBanner";
 import { PeriodPicker } from "@/components/PeriodPicker";
@@ -205,13 +204,12 @@ function Header({
           estimateMode={estimateMode}
           closed={scorecard.fiscalYear.closedAt !== null}
         />
-        <Link
+        <DownloadLink
           href={`/api/export?fy=${scorecard.fiscalYear.id}&period=${scorecard.period}`}
+          label="Export to Excel"
+          loadingLabel="Exporting…"
           className="rounded border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          prefetch={false}
-        >
-          Export to Excel
-        </Link>
+        />
       </div>
     </div>
   );

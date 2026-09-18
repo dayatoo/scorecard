@@ -156,16 +156,36 @@ async function writeEntry(user: CurrentUser, input: SaveEntryInput): Promise<voi
   revalidatePath(`/kpi/${input.kpiId}`);
 }
 
+export type SaveEntriesFailure = { kpiId: string; error: string };
+
 /**
  * Bulk version for the data-entry grid — one confirmation, one pass. The
  * ownership check runs per row (inside writeEntry), not just once up front,
  * so one owned row in a batch can never cover an unowned row slipped in
  * alongside it.
+ *
+ * Each row gets its own try/catch rather than letting the first failure
+ * abort the loop: rows are independent writes (own KPI, own transaction),
+ * so one bad row shouldn't cost the others their save. `result.ok` stays
+ * true even when some rows failed — the failures are returned as data for
+ * the caller to report, since that's a normal outcome, not an action-level
+ * error (which is reserved for e.g. `requireAuth()` itself throwing).
  */
-export async function saveEntries(inputs: SaveEntryInput[]): Promise<ActionResult> {
+export async function saveEntries(inputs: SaveEntryInput[]): Promise<ActionResult<SaveEntriesFailure[]>> {
   return attempt(async () => {
     const user = await requireAuth();
-    for (const input of inputs) await writeEntry(user, input);
+    const failures: SaveEntriesFailure[] = [];
+    for (const input of inputs) {
+      try {
+        await writeEntry(user, input);
+      } catch (cause) {
+        failures.push({
+          kpiId: input.kpiId,
+          error: cause instanceof Error && cause.message ? cause.message : "Could not save that row.",
+        });
+      }
+    }
+    return failures;
   });
 }
 

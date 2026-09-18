@@ -173,12 +173,22 @@ export function EntryGrid({
       });
 
       const result = await saveEntries(payload);
+      router.refresh();
       if (!result.ok) {
         setError(result.error);
         return;
       }
+      if (result.data.length > 0) {
+        const nameById = new Map(rows.map((row) => [row.id, row.name]));
+        const [first, ...rest] = result.data;
+        const firstLabel = nameById.get(first.kpiId) ?? first.kpiId;
+        const suffix = rest.length > 0 ? ` (+${rest.length} more)` : "";
+        setError(
+          `${payload.length - result.data.length} of ${payload.length} saved. ${firstLabel}: ${first.error}${suffix}`
+        );
+        return;
+      }
       setConfirming(false);
-      router.refresh();
     } catch (cause) {
       // Local validation above throws; anything else is a transport failure.
       setError(
