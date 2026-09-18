@@ -2,7 +2,7 @@
 // to give a fiscal year a genuine "done" state.
 import { expect, test } from "@playwright/test";
 
-import { MEMBER_USERNAME, PERIOD, signIn } from "./helpers";
+import { MEMBER_USERNAME, PERIOD, deleteFiscalYearHard, signIn } from "./helpers";
 
 test.describe("score calibration", () => {
   test.beforeEach(async ({ page }) => {
@@ -118,8 +118,6 @@ test.describe("closing and reopening a fiscal year", () => {
 
     // Clean up the scratch year so it doesn't linger for other specs.
     await page.goto("/manage");
-    await row.getByRole("button", { name: "Delete" }).click();
-    await page.getByRole("button", { name: "Confirm and save" }).click();
-    await expect(row).not.toBeVisible();
+    await deleteFiscalYearHard(page, "FY2027/28", 2027);
   });
 });

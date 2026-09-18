@@ -2,7 +2,7 @@
 // scorecard, upload that same file back, and check the hierarchy survives.
 import { expect, test } from "@playwright/test";
 
-import { PERIOD, signIn } from "./helpers";
+import { PERIOD, deleteFiscalYearHard, signIn } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await signIn(page);
@@ -99,9 +99,7 @@ test("a new fiscal year can be started from the current one", async ({ page }) =
 
   // Clean up, so the suite can be re-run.
   await page.goto("/manage");
-  await newYear.getByRole("button", { name: "Delete" }).click();
-  await page.getByRole("button", { name: "Confirm and save" }).click();
-  await expect(page.getByRole("listitem").filter({ hasText: "FY2027/28" })).toHaveCount(0);
+  await deleteFiscalYearHard(page, "FY2027/28", 2027);
 });
 
 test("a new fiscal year starts empty unless you choose to copy one", async ({ page }) => {
@@ -119,7 +117,5 @@ test("a new fiscal year starts empty unless you choose to copy one", async ({ pa
   await expect(newYear).toContainText("0 KPIs");
 
   // Clean up, so the suite can be re-run.
-  await newYear.getByRole("button", { name: "Delete" }).click();
-  await page.getByRole("button", { name: "Confirm and save" }).click();
-  await expect(page.getByRole("listitem").filter({ hasText: "FY2028/29" })).toHaveCount(0);
+  await deleteFiscalYearHard(page, "FY2028/29", 2028);
 });

@@ -65,13 +65,13 @@ export type Scorecard = {
 /** The year marked active, else the most recent one. */
 export async function getActiveFiscalYear() {
   return (
-    (await prisma.fiscalYear.findFirst({ where: { isActive: true } })) ??
-    (await prisma.fiscalYear.findFirst({ orderBy: { startYear: "desc" } }))
+    (await prisma.fiscalYear.findFirst({ where: { isActive: true, heldAt: null } })) ??
+    (await prisma.fiscalYear.findFirst({ where: { heldAt: null }, orderBy: { startYear: "desc" } }))
   );
 }
 
 export async function listFiscalYears() {
-  return prisma.fiscalYear.findMany({ orderBy: { startYear: "desc" } });
+  return prisma.fiscalYear.findMany({ where: { heldAt: null }, orderBy: { startYear: "desc" } });
 }
 
 export async function listDepartments() {
@@ -170,7 +170,7 @@ export async function getScorecard(options?: {
   const fiscalYear = options?.fiscalYearId
     ? await prisma.fiscalYear.findUnique({ where: { id: options.fiscalYearId } })
     : await getActiveFiscalYear();
-  if (!fiscalYear) return null;
+  if (!fiscalYear || fiscalYear.heldAt) return null;
 
   const yearPeriods = periodsOfFiscalYear(fiscalYear.startYear);
   const period = resolvePeriod(options?.period, fiscalYear.startYear);

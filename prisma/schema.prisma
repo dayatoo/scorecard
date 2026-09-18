@@ -95,6 +95,7 @@ model User {
   reviewed          KpiChangeProposal[]    @relation("ReviewedBy")
   scoreOverrides    ScoreOverride[]
   closedFiscalYears FiscalYear[]           @relation("ClosedFiscalYears")
+  heldFiscalYears   FiscalYear[]           @relation("HeldFiscalYears")
   checkpoints       FiscalYearCheckpoint[]
 
   createdAt DateTime @default(now())
@@ -160,6 +161,15 @@ model FiscalYear {
   closedAt   DateTime?
   closedById String?
   closedBy   User?     @relation("ClosedFiscalYears", fields: [closedById], references: [id])
+
+  // Set when an admin deletes the year through the confirmation flow — the
+  // year is kept, not removed, so it can still be restored. Cleared on
+  // restore. purgeExpiredFiscalYears() does the actual `delete` once
+  // purgeAt has passed; nothing else in the app runs on a schedule.
+  heldAt     DateTime?
+  heldById   String?
+  heldBy     User?     @relation("HeldFiscalYears", fields: [heldById], references: [id])
+  purgeAt    DateTime?
 
   kpis        Kpi[]
   snapshot    FiscalYearSnapshot?
@@ -236,14 +246,18 @@ model FiscalYearCheckpoint {
   @@index([fiscalYearId, createdAt])
 }
 
-// Fiscal-year-level events (closed / reopened) — the year-level analogue of
-// KpiAudit, which is keyed to a specific KPI and doesn't fit here.
+// Fiscal-year-level events (closed / reopened / held / restored / purged) —
+// the year-level analogue of KpiAudit, which is keyed to a specific KPI and
+// doesn't fit here. Also the backbone of the /manage/change-log page.
 model FiscalYearAudit {
-  id           String     @id @default(cuid())
-  fiscalYearId String
-  fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+  id           String      @id @default(cuid())
+  fiscalYearId String?
+  fiscalYear   FiscalYear? @relation(fields: [fiscalYearId], references: [id], onDelete: SetNull)
+  // Denormalised at write time so a purged year's own audit trail — the
+  // record of its deletion — still displays after the row itself is gone.
+  fiscalYearLabel String
 
-  action String // "closed" | "reopened"
+  action String // "closed" | "reopened" | "restored" (from a checkpoint) | "held" | "restored_from_holding" | "purged"
   reason String?
   author String // username, server-derived
 

@@ -1,9 +1,11 @@
 // End-to-end smoke test against a running app with the sample data seeded.
 //   npm run build && npm run start   (in one terminal)
 //   npx playwright test              (in another)
+import { execFileSync } from "node:child_process";
+
 import { expect, test } from "@playwright/test";
 
-import { PERIOD, signIn } from "./helpers";
+import { ADMIN_USERNAME, PERIOD, SEED_PASSWORD, signIn } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await signIn(page);
@@ -107,11 +109,24 @@ test("every Strategic Goal gets a summary card, not just the first few", async (
     await expect(page.getByText(`Wide Goal ${n}`, { exact: true })).toBeVisible();
   }
 
-  // Clean up, so the suite can be re-run.
+  // Deleting now moves the year to Holding rather than deleting it outright,
+  // gated by a username/password/typed-phrase confirmation.
   await page.goto("/manage");
   await year.getByRole("button", { name: "Delete" }).click();
-  await page.getByRole("button", { name: "Confirm and save" }).click();
+  await page.getByLabel("Your username").fill(ADMIN_USERNAME);
+  await page.getByLabel("Your password").fill(SEED_PASSWORD);
+  await page.getByLabel(/Type.*to confirm/).fill("confirm delete FY2029/30 scorecard");
+  await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   await expect(page.getByRole("listitem").filter({ hasText: "FY2029/30" })).toHaveCount(0);
+  await page.goto("/manage/holding");
+  await expect(page.getByText("FY2029/30")).toBeVisible();
+
+  // It's recoverable in Holding, not gone — the app has no way to clear
+  // holding manually (only restore or a 30-day wait), so purge this scratch
+  // year directly, the same way the seed script resets its own sample year,
+  // so the suite can be re-run without a stale FY2029/30 blocking the next
+  // "Create year".
+  execFileSync("npx", ["tsx", "scripts/purge-fiscal-year.ts", "2029"], { stdio: "inherit" });
 });
 
 /** The new year's id, read off its "Open" link on the Manage page. */
@@ -381,7 +396,8 @@ test("dates are written and read as dd/mm/yyyy", async ({ page }) => {
   // A date that would be read differently month-first: 3 August, not 8 March.
   await page.getByLabel(label).fill("03/08/2026");
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("dialog")).toContainText("completed 03/08/2026");
+  await expect(page.getByRole("dialog")).toContainText("Completion date");
+  await expect(page.getByRole("dialog")).toContainText("03/08/2026");
   await page.getByRole("button", { name: "Confirm and save" }).click();
 
   // It comes back in the same form.

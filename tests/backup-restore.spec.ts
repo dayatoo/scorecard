@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { MEMBER_USERNAME, signIn } from "./helpers";
+import { MEMBER_USERNAME, deleteFiscalYearHard, signIn } from "./helpers";
 
 /** Creates a scratch year copied from the seeded one, and returns its id. */
 async function createScratchYear(page: Page, startYear: number): Promise<string> {
@@ -26,13 +26,11 @@ async function createScratchYear(page: Page, startYear: number): Promise<string>
   return id as string;
 }
 
-async function deleteYear(page: Page, label: string): Promise<void> {
+async function deleteYear(page: Page, label: string, startYear: number): Promise<void> {
   await page.goto("/manage");
   const row = page.getByRole("listitem").filter({ hasText: label });
   if (!(await row.isVisible())) return;
-  await row.getByRole("button", { name: "Delete" }).click();
-  await page.getByRole("button", { name: "Confirm and save" }).click();
-  await expect(row).not.toBeVisible();
+  await deleteFiscalYearHard(page, label, startYear);
 }
 
 test("a checkpoint restores a year to how it was", async ({ page }) => {
@@ -76,7 +74,7 @@ test("a checkpoint restores a year to how it was", async ({ page }) => {
     await page.goto(`/manage/backups?fy=${fyId}`);
     await expect(page.getByText("auto").first()).toBeVisible();
   } finally {
-    await deleteYear(page, label);
+    await deleteYear(page, label, startYear);
   }
 });
 
@@ -120,8 +118,8 @@ test("a downloaded backup file can be uploaded to build a new year", async ({ pa
     await expect(page.getByRole("listitem").filter({ hasText: sourceLabel })).toBeVisible();
     await expect(page.getByRole("listitem").filter({ hasText: restoredLabel })).toBeVisible();
   } finally {
-    await deleteYear(page, restoredLabel);
-    await deleteYear(page, sourceLabel);
+    await deleteYear(page, restoredLabel, 2033);
+    await deleteYear(page, sourceLabel, startYear);
   }
 });
 

@@ -124,15 +124,18 @@ export function EntryGrid({
     [rows, initial, draft]
   );
 
-  const changes = changed.map((row) => {
+  const changes = changed.flatMap((row) => {
     const before = initial.get(row.id) as Cell;
     const after = draft.get(row.id) as Cell;
-    return {
-      field: row.id,
-      label: `${row.code} ${row.name}`,
-      from: describeCell(before, row),
-      to: describeCell(after, row),
-    };
+    const fields = (Object.keys(FIELD_LABELS) as (keyof Cell)[]).filter(
+      (field) => before[field] !== after[field]
+    );
+    return fields.map((field) => ({
+      field: `${row.id}:${field}`,
+      label: `${row.code} ${row.name} — ${FIELD_LABELS[field]}`,
+      from: describeField(field, before[field], row) || "—",
+      to: describeField(field, after[field], row) || "—",
+    }));
   });
 
   const goals = useMemo(() => [...new Set(rows.map((r) => r.strategicGoal))].sort(), [rows]);
@@ -415,28 +418,29 @@ export function EntryGrid({
   );
 }
 
-function describeCell(cell: Cell, row: EntryRow): string {
-  const parts: string[] = [];
+const FIELD_LABELS: Record<keyof Cell, string> = {
+  value: "Reported value",
+  plannedValue: "Target value",
+  basis: "Basis",
+  completionDate: "Completion date",
+  note: "Note",
+};
 
-  if (row.metricType === "MONTH_COMPLETION") {
-    parts.push(cell.completionDate ? `completed ${formatDate(cell.completionDate)}` : "not completed");
-    if (cell.completionDate && cell.basis === "ESTIMATE") parts.push("estimate");
-  } else if (row.metricType === "VARIANCE") {
-    if (cell.value.trim() === "" && cell.plannedValue.trim() === "") {
-      parts.push("not reported");
-    } else {
-      parts.push(`actual ${cell.value || "—"}, target ${cell.plannedValue || "—"}`);
-      if (cell.basis === "ESTIMATE") parts.push("estimate");
-    }
-  } else if (cell.value.trim() === "") {
-    parts.push("not reported");
-  } else {
-    parts.push(`${cell.value}${row.unit ? ` ${row.unit}` : ""}`);
-    if (cell.basis === "ESTIMATE") parts.push("estimate");
+function describeField(field: keyof Cell, value: string, row: EntryRow): string {
+  switch (field) {
+    case "value":
+      return value.trim() === "" ? "" : `${value}${row.unit && row.metricType !== "VARIANCE" ? ` ${row.unit}` : ""}`;
+    case "plannedValue":
+      return value.trim() === "" ? "" : value;
+    case "basis":
+      return value === "ESTIMATE" ? "Estimate" : "Actual";
+    case "completionDate":
+      return value ? formatDate(value) : "";
+    case "note":
+      return value ? truncate(value, 60) : "";
+    default:
+      return value;
   }
-
-  if (cell.note) parts.push(`note: "${truncate(cell.note, 40)}"`);
-  return parts.join(", ");
 }
 
 function truncate(text: string, max: number): string {

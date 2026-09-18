@@ -1,5 +1,6 @@
 "use server";
 
+import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 
 import { Prisma } from "@prisma/client";
@@ -115,22 +116,140 @@ export async function setActiveFiscalYear(id: string): Promise<ActionResult> {
   });
 }
 
-export async function deleteFiscalYear(id: string): Promise<ActionResult> {
+const HOLDING_PERIOD_DAYS = 30;
+
+/**
+ * Moves a fiscal year into 30-day holding rather than deleting it outright —
+ * the confirmation is deliberately heavy (the admin's own username and
+ * password, plus a typed phrase naming the year) since this is the entry
+ * point to what eventually becomes an unrecoverable delete via
+ * purgeExpiredFiscalYears(). The year, its KPIs and every figure recorded
+ * against them are left exactly as they were; only `heldAt`/`purgeAt` change,
+ * so restoreFiscalYearFromHolding() is a plain, cheap undo.
+ */
+export async function deleteFiscalYear(input: {
+  id: string;
+  username: string;
+  password: string;
+  confirmationText: string;
+}): Promise<ActionResult> {
   return attempt(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
+
     const fiscalYear = await prisma.fiscalYear.findUnique({
-      where: { id },
-      select: { closedAt: true, label: true },
+      where: { id: input.id },
+      select: { closedAt: true, label: true, heldAt: true },
     });
     if (!fiscalYear) throw new Error("That fiscal year no longer exists.");
+    if (fiscalYear.heldAt) throw new Error(`${fiscalYear.label} is already in holding.`);
     if (fiscalYear.closedAt) {
       throw new Error(`${fiscalYear.label} is closed. Reopen it first if you want to delete it.`);
     }
-    // Cascades to KPIs, their values and their updates.
-    await prisma.fiscalYear.delete({ where: { id } });
+
+    if (input.username.trim().toLowerCase() !== admin.username.toLowerCase()) {
+      throw new Error("That isn't your username.");
+    }
+
+    const self = await prisma.user.findUnique({
+      where: { id: admin.id },
+      select: { passwordHash: true },
+    });
+    const passwordOk = self ? await bcrypt.compare(input.password, self.passwordHash) : false;
+    if (!passwordOk) throw new Error("That password is not correct.");
+
+    const expectedPhrase = `confirm delete ${fiscalYear.label} scorecard`;
+    if (input.confirmationText !== expectedPhrase) {
+      throw new Error(`Type "${expectedPhrase}" exactly to confirm.`);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.fiscalYear.update({
+        where: { id: input.id },
+        data: {
+          heldAt: new Date(),
+          heldById: admin.id,
+          purgeAt: new Date(Date.now() + HOLDING_PERIOD_DAYS * 24 * 60 * 60 * 1000),
+          isActive: false,
+        },
+      });
+      await tx.fiscalYearAudit.create({
+        data: {
+          fiscalYearId: input.id,
+          fiscalYearLabel: fiscalYear.label,
+          action: "held",
+          author: admin.username,
+        },
+      });
+    });
+
     revalidatePath("/");
     revalidatePath("/manage");
+    revalidatePath("/manage/holding");
+    revalidatePath("/manage/change-log");
   });
+}
+
+/** Undoes deleteFiscalYear — no password gate, since it's purely additive. */
+export async function restoreFiscalYearFromHolding(id: string): Promise<ActionResult> {
+  return attempt(async () => {
+    const admin = await requireAdmin();
+
+    const fiscalYear = await prisma.fiscalYear.findUnique({
+      where: { id },
+      select: { heldAt: true, label: true },
+    });
+    if (!fiscalYear) throw new Error("That fiscal year no longer exists.");
+    if (!fiscalYear.heldAt) throw new Error(`${fiscalYear.label} is not in holding.`);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.fiscalYear.update({
+        where: { id },
+        data: { heldAt: null, heldById: null, purgeAt: null },
+      });
+      await tx.fiscalYearAudit.create({
+        data: {
+          fiscalYearId: id,
+          fiscalYearLabel: fiscalYear.label,
+          action: "restored_from_holding",
+          author: admin.username,
+        },
+      });
+    });
+
+    revalidatePath("/");
+    revalidatePath("/manage");
+    revalidatePath("/manage/holding");
+    revalidatePath("/manage/change-log");
+  });
+}
+
+/**
+ * Hard-deletes every fiscal year whose holding period has expired. There's no
+ * cron/job runner anywhere in this app, so this is called lazily at the top
+ * of the admin pages that care (/manage, /manage/holding, /manage/change-log)
+ * rather than on a real schedule — a held year is purged on the next admin
+ * page load after its purgeAt passes, not to the minute.
+ */
+export async function purgeExpiredFiscalYears(): Promise<void> {
+  const expired = await prisma.fiscalYear.findMany({
+    where: { heldAt: { not: null }, purgeAt: { lte: new Date() } },
+    select: { id: true, label: true },
+  });
+
+  for (const fiscalYear of expired) {
+    await prisma.$transaction(async (tx) => {
+      await tx.fiscalYearAudit.create({
+        data: {
+          fiscalYearId: fiscalYear.id,
+          fiscalYearLabel: fiscalYear.label,
+          action: "purged",
+          author: "system",
+        },
+      });
+      // Cascades to KPIs, their values, updates and every audit trail.
+      await tx.fiscalYear.delete({ where: { id: fiscalYear.id } });
+    });
+  }
 }
 
 /**
@@ -169,7 +288,7 @@ export async function closeFiscalYear(fiscalYearId: string): Promise<ActionResul
         data: { closedAt: new Date(), closedById: admin.id },
       });
       await tx.fiscalYearAudit.create({
-        data: { fiscalYearId, action: "closed", author: admin.username },
+        data: { fiscalYearId, fiscalYearLabel: fiscalYear.label, action: "closed", author: admin.username },
       });
     });
 
@@ -200,7 +319,13 @@ export async function reopenFiscalYear(fiscalYearId: string, reason: string): Pr
         data: { closedAt: null, closedById: null },
       });
       await tx.fiscalYearAudit.create({
-        data: { fiscalYearId, action: "reopened", reason: trimmedReason, author: admin.username },
+        data: {
+          fiscalYearId,
+          fiscalYearLabel: fiscalYear.label,
+          action: "reopened",
+          reason: trimmedReason,
+          author: admin.username,
+        },
       });
     });
 

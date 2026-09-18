@@ -42,6 +42,8 @@ const MANAGE_KPIS_NAV = [
 const ADMIN_NAV = [
   { href: "/manage/users", label: "Users" },
   { href: "/manage/approvals", label: "Approvals" },
+  { href: "/manage/holding", label: "Holding" },
+  { href: "/manage/change-log", label: "Change log" },
 ];
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

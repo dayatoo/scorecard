@@ -268,6 +268,7 @@ async function runRestore(
       await tx.fiscalYearAudit.create({
         data: {
           fiscalYearId: result.fiscalYearId,
+          fiscalYearLabel: result.fiscalYearLabel,
           action: "restored",
           reason: describeSource,
           author: admin.username,

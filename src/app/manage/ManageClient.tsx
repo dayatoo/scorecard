@@ -60,6 +60,9 @@ function FiscalYearPanel({
   // match by code and remove whatever isn't in that file.
   const [copyFromId, setCopyFromId] = useState<string>("");
   const [confirmDelete, setConfirmDelete] = useState<FiscalYear | null>(null);
+  const [deleteUsername, setDeleteUsername] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [confirmClose, setConfirmClose] = useState<FiscalYear | null>(null);
   const [reopening, setReopening] = useState<FiscalYear | null>(null);
   const [reopenReason, setReopenReason] = useState("");
@@ -154,7 +157,12 @@ function FiscalYearPanel({
               <button
                 type="button"
                 disabled={pending || !!fy.closedAt}
-                onClick={() => setConfirmDelete(fy)}
+                onClick={() => {
+                  setConfirmDelete(fy);
+                  setDeleteUsername("");
+                  setDeletePassword("");
+                  setDeleteConfirmText("");
+                }}
                 title={fy.closedAt ? "Reopen this year first to delete it." : undefined}
                 className="rounded border border-rose-200 px-2.5 py-1 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
               >
@@ -214,29 +222,95 @@ function FiscalYearPanel({
         {error && <p className="mt-2 text-sm font-medium text-rose-700">{error}</p>}
       </div>
 
-      <ConfirmSaveDialog
-        open={confirmDelete !== null}
-        isSaving={pending}
-        title={`Delete ${confirmDelete?.label}?`}
-        changes={
-          confirmDelete
-            ? [
-                {
-                  field: "year",
-                  label: confirmDelete.label,
-                  from: `${confirmDelete.kpiCount} KPIs and every figure recorded against them`,
-                  to: "permanently deleted",
-                },
-              ]
-            : []
-        }
-        onCancel={() => setConfirmDelete(null)}
-        onConfirm={() => {
-          const target = confirmDelete;
-          setConfirmDelete(null);
-          if (target) run(() => deleteFiscalYear(target.id));
-        }}
-      />
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !pending) setConfirmDelete(null);
+          }}
+        >
+          <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-lg bg-white shadow-xl">
+            <div className="border-b px-5 py-4">
+              <h2 className="text-base font-semibold text-gray-900">
+                Delete {confirmDelete.label}?
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                {confirmDelete.kpiCount} KPI{confirmDelete.kpiCount === 1 ? "" : "s"} and every
+                figure recorded against them move to Holding for 30 days. The year disappears
+                from every list immediately, and can be restored from Holding until it expires —
+                after that it is permanently deleted and cannot be recovered.
+              </p>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <label className="block text-xs font-medium text-gray-700">
+                Your username
+                <input
+                  type="text"
+                  autoComplete="off"
+                  className={`mt-1 w-full ${inputClass}`}
+                  value={deleteUsername}
+                  onChange={(e) => setDeleteUsername(e.target.value)}
+                />
+              </label>
+              <label className="block text-xs font-medium text-gray-700">
+                Your password
+                <input
+                  type="password"
+                  autoComplete="off"
+                  className={`mt-1 w-full ${inputClass}`}
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                />
+              </label>
+              <label className="block text-xs font-medium text-gray-700">
+                Type <span className="font-mono">confirm delete {confirmDelete.label} scorecard</span> to confirm
+                <input
+                  type="text"
+                  autoComplete="off"
+                  className={`mt-1 w-full ${inputClass}`}
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                />
+              </label>
+              {error && <p className="text-sm font-medium text-rose-700">{error}</p>}
+            </div>
+            <div className="flex justify-end gap-2 border-t bg-gray-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                disabled={pending}
+                className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={pending || !deleteUsername.trim() || !deletePassword || !deleteConfirmText}
+                onClick={() => {
+                  const target = confirmDelete;
+                  const username = deleteUsername.trim();
+                  const password = deletePassword;
+                  const confirmationText = deleteConfirmText;
+                  run(async () => {
+                    const result = await deleteFiscalYear({
+                      id: target!.id,
+                      username,
+                      password,
+                      confirmationText,
+                    });
+                    if (result.ok) setConfirmDelete(null);
+                    return result;
+                  });
+                }}
+                className="rounded bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {pending ? "Moving to holding…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmSaveDialog
         open={confirmClose !== null}

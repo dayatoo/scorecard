@@ -12,6 +12,7 @@ import { DEFAULT_CURRENCY } from "./config";
 import type { KpiRecord, ScoredNode } from "./kpi-tree";
 import { flattenTree } from "./kpi-tree";
 import { formatPeriodLabel } from "./fiscal";
+import { formatBruneiTime } from "./dates";
 import { parseNumberInput, parseRangeInput } from "./targets";
 import {
   BANDS,
@@ -28,6 +29,9 @@ import {
 export const KPI_SHEET = "KPIs";
 export const DEPARTMENT_SHEET = "Departments";
 export const README_SHEET = "Readme";
+export const FISCAL_YEAR_EVENTS_SHEET = "Fiscal year events";
+export const KPI_DEFINITION_CHANGES_SHEET = "KPI definition changes";
+export const KPI_VALUE_CHANGES_SHEET = "KPI value changes";
 export const SCORES_SHEET = "Scores";
 export const VALUES_SHEET = "Values";
 export const UPDATES_SHEET = "Updates";
@@ -1235,6 +1239,146 @@ export async function buildExportWorkbook(params: {
   });
 
   scores.views = [{ state: "frozen", xSplit: 2, ySplit: 1 }];
+
+  return toBytes(workbook);
+}
+
+const AUDIT_VALUE_FIELD_LABELS: Record<string, string> = {
+  value: "Reported value",
+  plannedValue: "Planned/target value",
+  basis: "Basis",
+  completionDate: "Completion date",
+  note: "Note",
+};
+
+const FISCAL_YEAR_AUDIT_ACTION_LABELS: Record<string, string> = {
+  closed: "Closed",
+  reopened: "Reopened",
+  restored: "Restored from backup",
+  held: "Moved to holding",
+  restored_from_holding: "Restored from holding",
+  purged: "Permanently deleted",
+};
+
+export type AuditFiscalYearEvent = {
+  createdAt: Date;
+  fiscalYearLabel: string;
+  action: string;
+  reason: string | null;
+  author: string;
+};
+
+export type AuditKpiDefinitionChange = {
+  createdAt: Date;
+  fiscalYearLabel: string;
+  kpiCode: string;
+  kpiName: string;
+  label: string;
+  from: string;
+  to: string;
+  author: string | null;
+};
+
+export type AuditKpiValueChange = {
+  createdAt: Date;
+  fiscalYearLabel: string;
+  kpiCode: string;
+  kpiName: string;
+  period: string;
+  field: string;
+  from: string | null;
+  to: string | null;
+  author: string;
+  companyId: string;
+};
+
+/**
+ * The full, cross-KPI audit trail as a 3-sheet workbook — fiscal-year
+ * lifecycle events, KPI definition changes and KPI value changes. This is the
+ * one-stop record the Change log page itself only shows a slice of (fiscal
+ * year events); everything else stays scoped to each KPI's own detail page in
+ * the UI, so this export is the only place all of it comes together.
+ */
+export async function buildAuditTrailWorkbook(params: {
+  fiscalYearEvents: AuditFiscalYearEvent[];
+  kpiDefinitionChanges: AuditKpiDefinitionChange[];
+  kpiValueChanges: AuditKpiValueChange[];
+}): Promise<Uint8Array> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "KPI Scorecard";
+
+  const events = workbook.addWorksheet(FISCAL_YEAR_EVENTS_SHEET);
+  events.columns = [
+    { header: "Date/time", width: 20 },
+    { header: "Fiscal year", width: 16 },
+    { header: "Action", width: 22 },
+    { header: "Reason", width: 40 },
+    { header: "Author", width: 18 },
+  ];
+  styleHeader(events);
+  params.fiscalYearEvents.forEach((e) => {
+    events.addRow([
+      formatBruneiTime(e.createdAt),
+      e.fiscalYearLabel,
+      FISCAL_YEAR_AUDIT_ACTION_LABELS[e.action] ?? e.action,
+      e.reason,
+      e.author,
+    ]);
+  });
+
+  const definitions = workbook.addWorksheet(KPI_DEFINITION_CHANGES_SHEET);
+  definitions.columns = [
+    { header: "Date/time", width: 20 },
+    { header: "Fiscal year", width: 16 },
+    { header: "KPI code", width: 14 },
+    { header: "KPI name", width: 40 },
+    { header: "Field", width: 24 },
+    { header: "From", width: 30 },
+    { header: "To", width: 30 },
+    { header: "Author", width: 18 },
+  ];
+  styleHeader(definitions);
+  params.kpiDefinitionChanges.forEach((c) => {
+    definitions.addRow([
+      formatBruneiTime(c.createdAt),
+      c.fiscalYearLabel,
+      c.kpiCode,
+      c.kpiName,
+      c.label,
+      c.from,
+      c.to,
+      c.author,
+    ]);
+  });
+
+  const values = workbook.addWorksheet(KPI_VALUE_CHANGES_SHEET);
+  values.columns = [
+    { header: "Date/time", width: 20 },
+    { header: "Fiscal year", width: 16 },
+    { header: "KPI code", width: 14 },
+    { header: "KPI name", width: 40 },
+    { header: "Period", width: 12 },
+    { header: "Field", width: 24 },
+    { header: "From", width: 24 },
+    { header: "To", width: 24 },
+    { header: "Author", width: 18 },
+    { header: "Company ID", width: 16 },
+  ];
+  styleHeader(values);
+  params.kpiValueChanges.forEach((c) => {
+    values.addRow([
+      formatBruneiTime(c.createdAt),
+      c.fiscalYearLabel,
+      c.kpiCode,
+      c.kpiName,
+      formatPeriodLabel(c.period),
+      AUDIT_VALUE_FIELD_LABELS[c.field] ?? c.field,
+      c.from,
+      c.to,
+      c.author,
+      c.companyId,
+    ]);
+  });
 
   return toBytes(workbook);
 }

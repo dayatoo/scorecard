@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin, requireAuth, type CurrentUser } from "@/lib/session";
 import { formatPeriodLabel, isPeriodInFiscalYear } from "@/lib/fiscal";
 import { formatDate } from "@/lib/dates";
+import { listDepartments } from "@/lib/data";
 import { parseTargetConfig } from "@/lib/kpi-tree";
 import {
   BANDS,
@@ -520,8 +521,10 @@ export async function prepareKpiSettings(input: SaveKpiSettingsInput): Promise<P
       describeMetric(nextColumns.metricType, nextColumns.targetMode, nextColumns.direction, nextColumns.targetConfig)
     );
   }
-  const beforeDepts = [...existing.departments.map((d) => d.departmentId)].sort().join(",");
-  const afterDepts = [...input.departmentIds].sort().join(",");
+  const departmentNameById = new Map((await listDepartments()).map((d) => [d.id, d.name]));
+  const nameOf = (id: string) => departmentNameById.get(id) ?? id;
+  const beforeDepts = existing.departments.map((d) => nameOf(d.departmentId)).sort().join(", ");
+  const afterDepts = input.departmentIds.map(nameOf).sort().join(", ");
   push("departments", "Owning departments", beforeDepts || "none", afterDepts || "none");
 
   return { existing, isLeaf, name, code, nextColumns, phasing, phaseConfig, clearedValueCount, audits };
