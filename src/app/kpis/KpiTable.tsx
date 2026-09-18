@@ -285,7 +285,7 @@ export function KpiTable({
                   {row.departments.join(", ") || <span className="text-gray-300">—</span>}
                 </td>
                 <td className="tabular px-3 py-1.5 text-right text-gray-600">
-                  {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
+                  {row.weight > 0 ? `${row.weight.toFixed(2)}%` : "—"}
                 </td>
                 {showBands ? (
                   <BandTargetCells

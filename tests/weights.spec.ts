@@ -65,7 +65,7 @@ test("a group's weights can be edited in percentage and ratio mode, with equal-s
 test("a group with a single child shows a fixed 100% and no input", async ({ page }) => {
   await page.goto("/manage/hierarchy");
   await page.getByRole("link", { name: /Modernise field operations totals to/ }).click();
-  await expect(page.getByText("100% (only child)")).toBeVisible();
+  await expect(page.getByText("100.00% (only child)")).toBeVisible();
   await expect(page.getByRole("spinbutton")).toHaveCount(0);
   // No mode toggle or equal-split controls either — nothing to divide.
   await expect(page.getByRole("button", { name: "Equal split — all" })).toHaveCount(0);

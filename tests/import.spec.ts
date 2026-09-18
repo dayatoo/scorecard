@@ -1,5 +1,7 @@
 // Exercises the export -> import round-trip through the real UI: download the
 // scorecard, upload that same file back, and check the hierarchy survives.
+import { execFileSync } from "node:child_process";
+
 import { expect, test } from "@playwright/test";
 
 import { PERIOD, deleteFiscalYearHard, signIn } from "./helpers";
@@ -118,4 +120,61 @@ test("a new fiscal year starts empty unless you choose to copy one", async ({ pa
 
   // Clean up, so the suite can be re-run.
   await deleteFiscalYearHard(page, "FY2028/29", 2028);
+});
+
+// A bulk import writes KpiValue rows directly, bypassing the Entry Grid and
+// KPI detail Report form — it must still append to the audit trail exactly
+// as those two paths do, so a change made this way isn't invisible on the
+// KPI's "Achievement change log".
+test("importing a workbook that changes a figure appends a change-log entry", async ({ page }) => {
+  const ExcelJS = (await import("exceljs")).default;
+  const { VALUES_SHEET } = await import("../src/lib/workbook");
+
+  // Export, then edit one KPI's already-recorded figure in the Values sheet.
+  await page.goto(`/?period=${PERIOD}`);
+  const download = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Export to Excel" }).click();
+  const file = await (await download).path();
+  expect(file).toBeTruthy();
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(file as string);
+  const sheet = workbook.getWorksheet(VALUES_SHEET);
+  expect(sheet).toBeTruthy();
+
+  let edited = false;
+  sheet!.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    if (row.getCell(1).value === "SG1.1.1" && row.getCell(2).value === PERIOD) {
+      row.getCell(3).value = 999999;
+      edited = true;
+    }
+  });
+  expect(edited).toBe(true);
+
+  const editedPath = (file as string).replace(/\.xlsx$/, "-edited.xlsx");
+  await workbook.xlsx.writeFile(editedPath);
+
+  try {
+    await page.goto("/import");
+    await page.setInputFiles('input[type="file"]', editedPath);
+    await page.getByRole("button", { name: "Check file" }).click();
+    await expect(page.getByText("KPIs in file")).toBeVisible();
+
+    await page.getByRole("button", { name: /^Import into/ }).click();
+    await page.getByRole("button", { name: "Confirm and save" }).click();
+    await expect(page.getByText("Import complete.")).toBeVisible();
+
+    await page.goto(`/kpis?period=${PERIOD}`);
+    await page.getByRole("link", { name: "New customer revenue" }).click();
+    await expect(page.getByRole("heading", { name: "New customer revenue" })).toBeVisible();
+
+    const panel = page.locator("section", { has: page.getByRole("heading", { name: "Achievement change log" }) });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText("999999")).toBeVisible();
+  } finally {
+    // The import mutated a real KPI figure — reseed so other specs see the
+    // original data.
+    execFileSync("npx", ["tsx", "prisma/seed.ts"], { stdio: "inherit" });
+  }
 });

@@ -240,7 +240,7 @@ export function WeightsEditor({
                 <span className="mr-2 font-mono text-xs text-gray-400">{childKpis[0].code}</span>
                 {childKpis[0].name}
               </div>
-              <span className="text-xs text-gray-500">100% (only child)</span>
+              <span className="text-xs text-gray-500">100.00% (only child)</span>
             </div>
           ) : (
             clusterForDisplay(childKpis).map((cluster) => (
@@ -249,7 +249,7 @@ export function WeightsEditor({
                   <div className="flex items-center justify-between bg-gray-50 px-4 py-1 text-xs font-medium text-gray-500">
                     <span>{cluster.subGroup}</span>
                     <span>
-                      {cluster.items.reduce((sum, { index }) => sum + percentages[index], 0).toFixed(1)}%
+                      {cluster.items.reduce((sum, { index }) => sum + percentages[index], 0).toFixed(2)}%
                     </span>
                   </div>
                 )}
@@ -271,7 +271,7 @@ export function WeightsEditor({
                         data-testid={`derived-percent-${kpi.id}`}
                         className="w-16 shrink-0 text-right text-xs text-gray-400"
                       >
-                        {percentages[i].toFixed(1)}%
+                        {percentages[i].toFixed(2)}%
                       </span>
                     )}
                   </div>

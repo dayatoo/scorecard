@@ -16,6 +16,7 @@ import {
 } from "@/lib/backup";
 import type { ParsedKpi, ParsedValue, ParsedUpdate } from "@/lib/workbook";
 import { assertFiscalYearOpen } from "@/lib/validation";
+import { diffKpiValueFields } from "@/lib/kpi-value-audit";
 import { attempt, type ActionResult } from "./result";
 
 export async function createFiscalYear(input: {
@@ -556,10 +557,31 @@ export async function applyImport(input: {
       completionDate: v.completionDate ? new Date(v.completionDate) : null,
       note: v.note,
     };
-    await prisma.kpiValue.upsert({
-      where: { kpiId_period: { kpiId, period: v.period } },
-      create: { kpiId, period: v.period, ...data },
-      update: data,
+    await prisma.$transaction(async (tx) => {
+      const existingValue = await tx.kpiValue.findUnique({
+        where: { kpiId_period: { kpiId, period: v.period } },
+      });
+
+      const changes = diffKpiValueFields(existingValue, data);
+      if (changes.length > 0) {
+        await tx.kpiValueAudit.createMany({
+          data: changes.map((c) => ({
+            kpiId,
+            period: v.period,
+            field: c.field,
+            from: c.from,
+            to: c.to,
+            authorUsername: admin.username,
+            authorCompanyId: admin.companyIdNumber,
+          })),
+        });
+      }
+
+      await tx.kpiValue.upsert({
+        where: { kpiId_period: { kpiId, period: v.period } },
+        create: { kpiId, period: v.period, ...data },
+        update: data,
+      });
     });
     valuesWritten++;
   }

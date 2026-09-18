@@ -291,7 +291,7 @@ export function ScoreTree({
 
                   <td className={`tabular px-2 py-1.5 text-right text-xs text-gray-500 ${groupRowBg} ${cell.cellClassName}`} style={cell.cellStyle}>
                     <span className={`block ${cell.innerClassName}`} style={cell.innerStyle}>
-                      {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
+                      {row.weight > 0 ? `${row.weight.toFixed(2)}%` : "—"}
                     </span>
                   </td>
 
@@ -398,7 +398,7 @@ export function ScoreTree({
               <th scope="row" className="px-4 py-2.5 text-left">
                 Total combined score
               </th>
-              <td className="tabular px-2 py-2.5 text-right text-xs text-gray-600">100%</td>
+              <td className="tabular px-2 py-2.5 text-right text-xs text-gray-600">100.00%</td>
               {showBands
                 ? BANDS.map((band) => <td key={band} className="px-2 py-2.5" />)
                 : <td className="px-2 py-2.5" />}

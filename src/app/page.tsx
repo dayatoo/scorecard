@@ -151,7 +151,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
             provisional={goal.provisional}
             prorated={goal.prorated}
             assumed={goal.assumed}
-            footer={`${goal.scoredLeafCount}/${goal.leafCount} of ${goal.weight.toFixed(0)}% weight`}
+            footer={`${goal.scoredLeafCount}/${goal.leafCount} of ${goal.weight.toFixed(2)}% weight`}
           />
         ))}
       </section>

@@ -36,7 +36,7 @@ test("the dashboard shows the scored hierarchy and a total", async ({ page }) =>
 
   const totalRow = page.getByRole("row", { name: /Total combined score/ });
   await expect(totalRow).toBeVisible();
-  await expect(totalRow).toContainText("100%");
+  await expect(totalRow).toContainText("100.00%");
 
   // Scored is reported as a count of leaf KPIs, not a percentage — the
   // not-yet-due milestone still isn't held against the reported share.

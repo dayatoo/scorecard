@@ -690,7 +690,7 @@ function Header({
           <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-gray-600">
             <div className="flex gap-1.5">
               <dt className="text-gray-500">Weight</dt>
-              <dd className="tabular font-medium">{kpi.weight.toFixed(1)}%</dd>
+              <dd className="tabular font-medium">{kpi.weight.toFixed(2)}%</dd>
             </div>
             {kpi.metricType && (
               <div className="flex gap-1.5">
@@ -1102,7 +1102,7 @@ function ChildrenPanel({ subKpis, period }: {
               {child.name}
             </Link>
             <span className="flex shrink-0 items-center gap-2">
-              <span className="tabular text-xs text-gray-500">{child.weight.toFixed(1)}%</span>
+              <span className="tabular text-xs text-gray-500">{child.weight.toFixed(2)}%</span>
               <ScoreCell score={child.score} band={child.band} size="sm" />
             </span>
           </li>
@@ -1165,7 +1165,7 @@ function ChildrenTable({ subKpis, period }: {
                   </Link>
                 </th>
                 <td className="tabular py-1.5 text-right text-gray-600">
-                  {child.weight.toFixed(1)}%
+                  {child.weight.toFixed(2)}%
                 </td>
                 {showBands ? (
                   <BandTargetCells
@@ -1194,7 +1194,7 @@ function ChildrenTable({ subKpis, period }: {
                   </td>
                 )}
                 <td className="tabular py-1.5 text-right text-gray-500">
-                  {totalWeight > 0 ? `${((child.weight / totalWeight) * 100).toFixed(0)}%` : "—"}
+                  {totalWeight > 0 ? `${((child.weight / totalWeight) * 100).toFixed(2)}%` : "—"}
                 </td>
                 <td className="py-1.5 text-center">
                   <ScoreCell

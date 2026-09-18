@@ -378,7 +378,7 @@ export function HierarchyEditor({
             </Link>
           )}
           <span className="tabular ml-auto text-xs text-gray-500">
-            {node.weight.toFixed(1)}% of group · {node.globalWeight.toFixed(1)}% global
+            {node.weight.toFixed(2)}% of group · {node.globalWeight.toFixed(2)}% global
           </span>
           {!fiscalYearClosed && !isTemp && (
             <div className="flex items-center gap-1">

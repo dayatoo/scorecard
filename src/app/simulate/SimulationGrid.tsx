@@ -162,7 +162,7 @@ export function SimulationGrid({
             provisional={goal.provisional}
             prorated={goal.prorated}
             assumed={goal.assumed}
-            footer={`${goal.scoredLeafCount}/${goal.leafCount} of ${goal.weight.toFixed(0)}% weight`}
+            footer={`${goal.scoredLeafCount}/${goal.leafCount} of ${goal.weight.toFixed(2)}% weight`}
           />
         ))}
       </section>
@@ -222,7 +222,7 @@ export function SimulationGrid({
                   </th>
 
                   <td className="tabular px-3 py-1.5 text-right text-xs text-gray-600">
-                    {row.weight > 0 ? `${row.weight.toFixed(1)}%` : "—"}
+                    {row.weight > 0 ? `${row.weight.toFixed(2)}%` : "—"}
                   </td>
 
                   <td className="tabular px-3 py-1.5 text-right text-xs text-gray-600">
