@@ -383,6 +383,7 @@ model Kpi {
   values      KpiValue[]
   updates     KpiUpdate[]
   audits      KpiAudit[]
+  valueAudits KpiValueAudit[]
   proposals   KpiChangeProposal[]
 
   createdAt      DateTime        @default(now())
@@ -458,6 +459,29 @@ model KpiValue {
 
   @@unique([kpiId, period])
   @@index([kpiId])
+}
+
+// One row per changed field on a KpiValue write — even a same-month
+// correction appends here rather than silently overwriting, since KpiValue
+// itself only ever holds the current figure. Author identity is snapshotted
+// (not a User relation) so a later username/company-ID change never rewrites
+// what an old entry says happened, mirroring KpiAudit's free-text `author`.
+model KpiValueAudit {
+  id    String @id @default(cuid())
+  kpiId String
+  kpi   Kpi    @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+
+  period String // "YYYY-MM"
+  field  String // "value" | "basis" | "plannedValue" | "completionDate" | "note"
+  from   String?
+  to     String?
+
+  authorUsername  String
+  authorCompanyId String
+
+  createdAt DateTime @default(now())
+
+  @@index([kpiId, period, createdAt])
 }
 
 enum KpiUpdateMode {

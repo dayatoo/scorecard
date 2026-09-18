@@ -147,6 +147,19 @@ export function parseMonth(text: string): string | null {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+const BRUNEI_TIME_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Brunei",
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+/** A Date (or ISO string) as "9 Mar 2026, 14:05" in Brunei time (UTC+8). */
+export function formatBruneiTime(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return BRUNEI_TIME_FORMAT.format(date);
+}
+
 /** True when the text is either empty or a month this app can read. */
 export function isValidMonthInput(text: string): boolean {
   return text.trim() === "" || parseMonth(text) !== null;

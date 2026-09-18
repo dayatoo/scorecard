@@ -19,7 +19,7 @@ import {
 import { CoverageBadge, ScoreCell } from "@/components/ScoreCell";
 import { ScoreChart, ValueChart } from "@/components/ScoreChart";
 import { useDirtyForm } from "@/components/useDirtyForm";
-import { formatDate, formatMonth } from "@/lib/dates";
+import { formatBruneiTime, formatDate, formatMonth } from "@/lib/dates";
 import { formatPeriodLabel } from "@/lib/fiscal";
 import {
   BANDS,
@@ -142,6 +142,7 @@ export function KpiDetailClient({
   history,
   updates,
   audits,
+  valueAudits,
   departments,
   statusOptions,
   period,
@@ -171,6 +172,10 @@ export function KpiDetailClient({
     author: string | null; createdAt: string;
   }[];
   audits: { id: string; field: string; label: string; from: string; to: string; author: string | null; createdAt: string }[];
+  valueAudits: {
+    id: string; period: string; field: string; from: string | null; to: string | null;
+    authorUsername: string; authorCompanyId: string; createdAt: string;
+  }[];
   departments: { id: string; name: string }[];
   statusOptions: string[];
   period: string;
@@ -556,6 +561,8 @@ export function KpiDetailClient({
       <HistoryTable history={history} kpi={kpi} currentPeriod={period} />
 
       <AuditPanel audits={audits} />
+
+      <ValueAuditPanel valueAudits={valueAudits} />
 
       <SaveBar
         isDirty={isDirty}
@@ -1575,6 +1582,58 @@ function AuditPanel({
               <span className="rounded bg-gray-100 px-1.5 py-0.5 line-through decoration-gray-400">{a.from}</span>
               <span aria-hidden>→</span>
               <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-900">{a.to}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
+const VALUE_AUDIT_FIELD_LABELS: Record<string, string> = {
+  value: "Reported value",
+  plannedValue: "Planned/target value",
+  basis: "Basis",
+  completionDate: "Completion date",
+  note: "Note",
+};
+
+function ValueAuditPanel({
+  valueAudits,
+}: {
+  valueAudits: {
+    id: string; period: string; field: string; from: string | null; to: string | null;
+    authorUsername: string; authorCompanyId: string; createdAt: string;
+  }[];
+}) {
+  if (valueAudits.length === 0) return null;
+
+  return (
+    <Panel
+      title="Achievement change log"
+      description="Every change to this KPI's reported figures — who changed what, and when, even repeat edits in the same month."
+    >
+      <ul className="space-y-3">
+        {valueAudits.map((a) => (
+          <li key={a.id} className="text-sm">
+            <div className="flex flex-wrap items-baseline gap-2 text-xs text-gray-500">
+              <span className="font-medium text-gray-700">
+                {a.authorUsername} ({a.authorCompanyId})
+              </span>
+              <span>{formatBruneiTime(a.createdAt)} (Brunei time)</span>
+              <span className="rounded bg-gray-100 px-1.5 py-0.5">{formatPeriodLabel(a.period)}</span>
+            </div>
+            <div className="mt-0.5 font-medium text-gray-900">
+              {VALUE_AUDIT_FIELD_LABELS[a.field] ?? a.field}
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-gray-600">
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 line-through decoration-gray-400">
+                {a.from ?? "—"}
+              </span>
+              <span aria-hidden>→</span>
+              <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-900">
+                {a.to ?? "—"}
+              </span>
             </div>
           </li>
         ))}

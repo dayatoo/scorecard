@@ -25,6 +25,7 @@ import {
   type MetricInput,
 } from "@/lib/targets";
 import { assertFiscalYearOpen } from "@/lib/validation";
+import { diffKpiValueFields } from "@/lib/kpi-value-audit";
 import { attempt, type ActionResult } from "./result";
 
 // Every action re-checks authentication: a server action is a POST endpoint
@@ -113,19 +114,40 @@ async function writeEntry(user: CurrentUser, input: SaveEntryInput): Promise<voi
     note: input.note?.trim() || null,
   };
 
-  // Clearing every field removes the entry outright, so the KPI goes back to
-  // "not reported" rather than sitting on a hollow row that scores zero.
-  if (data.value === null && data.plannedValue === null && data.completionDate === null && data.note === null) {
-    await prisma.kpiValue.deleteMany({
-      where: { kpiId: input.kpiId, period: input.period },
-    });
-  } else {
-    await prisma.kpiValue.upsert({
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.kpiValue.findUnique({
       where: { kpiId_period: { kpiId: input.kpiId, period: input.period } },
-      create: { kpiId: input.kpiId, period: input.period, ...data },
-      update: data,
     });
-  }
+
+    const changes = diffKpiValueFields(existing, data);
+    if (changes.length > 0) {
+      await tx.kpiValueAudit.createMany({
+        data: changes.map((c) => ({
+          kpiId: input.kpiId,
+          period: input.period,
+          field: c.field,
+          from: c.from,
+          to: c.to,
+          authorUsername: user.username,
+          authorCompanyId: user.companyIdNumber,
+        })),
+      });
+    }
+
+    // Clearing every field removes the entry outright, so the KPI goes back
+    // to "not reported" rather than sitting on a hollow row that scores zero.
+    if (data.value === null && data.plannedValue === null && data.completionDate === null && data.note === null) {
+      await tx.kpiValue.deleteMany({
+        where: { kpiId: input.kpiId, period: input.period },
+      });
+    } else {
+      await tx.kpiValue.upsert({
+        where: { kpiId_period: { kpiId: input.kpiId, period: input.period } },
+        create: { kpiId: input.kpiId, period: input.period, ...data },
+        update: data,
+      });
+    }
+  });
 
   revalidatePath("/");
   revalidatePath("/kpis");

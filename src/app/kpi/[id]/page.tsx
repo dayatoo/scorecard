@@ -28,12 +28,13 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
   const query = await searchParams;
   const period = typeof query.period === "string" ? query.period : undefined;
 
-  const [currentUser, detail, departments, statusOptions, audits, pendingProposalRow] = await Promise.all([
+  const [currentUser, detail, departments, statusOptions, audits, valueAudits, pendingProposalRow] = await Promise.all([
     requireAuthPage(),
     getKpiDetail(id, period),
     listDepartments(),
     listStatusOptions(),
     prisma.kpiAudit.findMany({ where: { kpiId: id }, orderBy: { createdAt: "desc" }, take: 30 }),
+    prisma.kpiValueAudit.findMany({ where: { kpiId: id }, orderBy: { createdAt: "desc" }, take: 30 }),
     prisma.kpiChangeProposal.findFirst({
       where: { kpiId: id, status: "PENDING" },
       include: { proposedBy: true },
@@ -234,6 +235,16 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
           from: a.from,
           to: a.to,
           author: a.author,
+          createdAt: a.createdAt.toISOString(),
+        }))}
+        valueAudits={valueAudits.map((a) => ({
+          id: a.id,
+          period: a.period,
+          field: a.field,
+          from: a.from,
+          to: a.to,
+          authorUsername: a.authorUsername,
+          authorCompanyId: a.authorCompanyId,
           createdAt: a.createdAt.toISOString(),
         }))}
         departments={departments.map((d) => ({ id: d.id, name: d.name }))}

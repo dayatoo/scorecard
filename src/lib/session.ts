@@ -14,6 +14,7 @@ export type CurrentUser = {
   username: string;
   role: "MEMBER" | "ADMIN";
   departmentId: string;
+  companyIdNumber: string;
 };
 
 /**
@@ -38,6 +39,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     username: user.username,
     role: user.role,
     departmentId: user.departmentId,
+    companyIdNumber: user.companyIdNumber,
   };
 });
 
