@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 
 import { ConfirmSaveDialog } from "@/components/ConfirmSaveDialog";
+import { MAX_BACKUP_BYTES } from "@/lib/backup-format";
 import { formatDate } from "@/lib/dates";
 import { fiscalYearLabel } from "@/lib/fiscal";
 import {
@@ -129,6 +130,14 @@ export function BackupsClient({
         setError("Choose a backup file to upload.");
         return;
       }
+      // Checked here too, since a file far over the server's body limit is
+      // rejected by the framework before the action's own message can run.
+      if (pickedFile.size > MAX_BACKUP_BYTES) {
+        setError(
+          `That file is ${(pickedFile.size / 1024 / 1024).toFixed(1)} MB — backups this app reads are under ${MAX_BACKUP_BYTES / 1024 / 1024} MB.`
+        );
+        return;
+      }
       try {
         const result = await previewRestoreFromUpload(uploadFormData(), target());
         if (!result.ok) {
@@ -213,6 +222,8 @@ export function BackupsClient({
           {summary.kpis === 1 ? "" : "s"}, {summary.values} figure
           {summary.values === 1 ? "" : "s"}
           {summary.overrides > 0 && `, ${summary.overrides} calibration${summary.overrides === 1 ? "" : "s"}`}.
+          {summary.overridesSkipped > 0 &&
+            ` ${summary.overridesSkipped} calibration${summary.overridesSkipped === 1 ? " was" : "s were"} left out because the admin who made ${summary.overridesSkipped === 1 ? "it" : "them"} has no account here.`}
         </p>
       )}
 

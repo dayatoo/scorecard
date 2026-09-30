@@ -50,6 +50,7 @@ export async function serializeFiscalYear(fiscalYearId: string): Promise<FiscalY
       values: { orderBy: { period: "asc" } },
       updates: { orderBy: { createdAt: "asc" } },
       audits: { orderBy: { createdAt: "asc" } },
+      valueAudits: { orderBy: { createdAt: "asc" } },
       scoreOverrides: { orderBy: { period: "asc" }, include: { by: { select: { username: true } } } },
     },
   });
@@ -60,6 +61,8 @@ export async function serializeFiscalYear(fiscalYearId: string): Promise<FiscalY
     code: row.code,
     parentCode: row.parentId ? (codeById.get(row.parentId) ?? null) : null,
     name: row.name,
+    subGroup: row.subGroup,
+    status: row.status,
     sortOrder: row.sortOrder,
     weight: row.weight,
     frequency: row.frequency,
@@ -100,6 +103,15 @@ export async function serializeFiscalYear(fiscalYearId: string): Promise<FiscalY
       from: a.from,
       to: a.to,
       author: a.author,
+      createdAt: a.createdAt.toISOString(),
+    })),
+    valueAudits: row.valueAudits.map((a) => ({
+      period: a.period,
+      field: a.field,
+      from: a.from,
+      to: a.to,
+      authorUsername: a.authorUsername,
+      authorCompanyId: a.authorCompanyId,
       createdAt: a.createdAt.toISOString(),
     })),
     overrides: row.scoreOverrides.map((o) => ({
@@ -221,6 +233,7 @@ export async function restoreInto(
   const idByCode = new Map<string, string>();
   let values = 0;
   let overrides = 0;
+  let overridesSkipped = 0;
 
   for (const kpi of backup.kpis) {
     const created = await tx.kpi.create({
@@ -228,6 +241,8 @@ export async function restoreInto(
         fiscalYearId: fiscalYear.id,
         code: kpi.code,
         name: kpi.name,
+        subGroup: kpi.subGroup,
+        status: kpi.status,
         sortOrder: kpi.sortOrder,
         weight: kpi.weight,
         frequency: kpi.frequency,
@@ -300,7 +315,23 @@ export async function restoreInto(
       });
     }
 
+    if (kpi.valueAudits.length > 0) {
+      await tx.kpiValueAudit.createMany({
+        data: kpi.valueAudits.map((a) => ({
+          kpiId: created.id,
+          period: a.period,
+          field: a.field,
+          from: a.from,
+          to: a.to,
+          authorUsername: a.authorUsername,
+          authorCompanyId: a.authorCompanyId,
+          createdAt: new Date(a.createdAt),
+        })),
+      });
+    }
+
     const restorableOverrides = kpi.overrides.filter((o) => userIdByUsername.has(o.byUsername));
+    overridesSkipped += kpi.overrides.length - restorableOverrides.length;
     if (restorableOverrides.length > 0) {
       await tx.scoreOverride.createMany({
         data: restorableOverrides.map((o) => ({
@@ -332,6 +363,7 @@ export async function restoreInto(
     kpis: backup.kpis.length,
     values,
     overrides,
+    overridesSkipped,
     departmentsCreated,
   };
 }

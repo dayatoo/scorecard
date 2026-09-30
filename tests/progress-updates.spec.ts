@@ -46,6 +46,8 @@ test("posting a Simple update and a Detailed update on the same KPI renders each
   await panel.getByRole("button", { name: "Post update" }).click();
   await expect(panel.getByText("Renewals tracking to plan.")).toBeVisible();
   await expect(panel.getByText("Simple", { exact: true }).first()).toBeVisible();
+  // The post has fully finished once its box is cleared.
+  await expect(panel.getByPlaceholder("What has moved on this KPI?")).toHaveValue("");
 
   // Switch to Detailed and post a second update.
   await panel.getByRole("button", { name: "Detailed", exact: true }).click();

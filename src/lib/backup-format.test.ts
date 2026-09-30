@@ -13,6 +13,8 @@ function kpi(overrides: Record<string, unknown> = {}) {
     code: "SG1",
     parentCode: null,
     name: "Grow the business",
+    subGroup: null,
+    status: null,
     sortOrder: 0,
     weight: 100,
     frequency: "MONTHLY",
@@ -31,6 +33,7 @@ function kpi(overrides: Record<string, unknown> = {}) {
     values: [],
     updates: [],
     audits: [],
+    valueAudits: [],
     overrides: [],
     ...overrides,
   };
@@ -59,6 +62,8 @@ describe("parseBackup", () => {
           code: "SG1.1",
           parentCode: "SG1",
           name: "New customer revenue",
+          subGroup: "Revenue streams",
+          status: "On track",
           weight: 60,
           metricType: "DOLLAR",
           direction: "HIGHER_BETTER",
@@ -79,6 +84,12 @@ describe("parseBackup", () => {
           ],
           audits: [
             { field: "weight", label: "Weight", from: "50", to: "60", author: "admin", createdAt: "2026-05-01T00:00:00.000Z" },
+          ],
+          valueAudits: [
+            {
+              period: "2026-05", field: "value", from: "600000", to: "610000",
+              authorUsername: "finance.member", authorCompanyId: "EMP-0002", createdAt: "2026-06-02T00:00:00.000Z",
+            },
           ],
           overrides: [
             { period: "2026-05", score: 4.5, reason: "Board adjustment", byUsername: "admin", createdAt: "2026-06-01T00:00:00.000Z" },
@@ -153,6 +164,10 @@ describe("parseBackup", () => {
     assert.equal(parsed.kpis[0].phasing, "NONE");
     assert.equal(parsed.kpis[0].metricType, null);
     assert.deepEqual(parsed.kpis[0].values, []);
+    // Fields added after the first backups were taken restore as empty.
+    assert.equal(parsed.kpis[0].subGroup, null);
+    assert.equal(parsed.kpis[0].status, null);
+    assert.deepEqual(parsed.kpis[0].valueAudits, []);
     assert.equal(parsed.fiscalYear.label, "FY2026/27");
   });
 

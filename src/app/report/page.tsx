@@ -1,3 +1,4 @@
+import { IBM_Plex_Sans, Source_Serif_4 } from "next/font/google";
 import Link from "next/link";
 
 import { ReportPrintButton } from "@/components/report/ReportPrintButton";
@@ -10,6 +11,11 @@ import { requireAuthPage } from "@/lib/session";
 import { describeMeetTarget } from "@/lib/targets";
 
 export const metadata = { title: "Board Report — KPI Scorecard" };
+
+// Self-hosted via next/font (downloaded once at build time), so the printed
+// report looks the same on a server with no internet access.
+const reportSerif = Source_Serif_4({ subsets: ["latin"], weight: ["400", "600", "700"], variable: "--report-serif" });
+const reportSans = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--report-sans" });
 export const dynamic = "force-dynamic";
 
 const PENDING_LABELS: Record<string, string> = {
@@ -58,15 +64,11 @@ export default async function ReportPage({
   });
 
   return (
-    <div className="bg-[#faf8f4] pb-20 text-[#1c2129] print:bg-white print:pb-0">
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap"
-      />
+    <div className={`${reportSerif.variable} ${reportSans.variable} bg-[#faf8f4] pb-20 text-[#1c2129] print:bg-white print:pb-0`}>
 
       <div className="print:hidden mx-auto flex max-w-[920px] flex-wrap items-end justify-between gap-4 border-b border-[#e3dfd6] px-5 pt-10 pb-7">
         <div>
-          <h1 className="text-[1.15rem] font-semibold" style={{ fontFamily: "'Source Serif 4', Georgia, serif" }}>
+          <h1 className="text-[1.15rem] font-semibold" style={{ fontFamily: "var(--report-serif), Georgia, serif" }}>
             Board report — {scorecard.fiscalYear.label}
           </h1>
           <p className="mt-1 max-w-[46ch] text-[0.85rem] text-[#5b6472]">
@@ -89,7 +91,7 @@ export default async function ReportPage({
         {/* ============ ONE-PAGER ============ */}
         <article
           className="report-page mb-9 rounded-[2px] border border-[#e3dfd6] bg-white px-14 pt-13 pb-11 shadow-[0_1px_2px_rgba(20,20,20,0.04),0_12px_32px_-16px_rgba(20,20,20,0.18)] print:mb-0 print:break-after-page print:border-0 print:px-0 print:py-0 print:shadow-none"
-          style={{ fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}
+          style={{ fontFamily: "var(--report-sans), ui-sans-serif, system-ui, sans-serif" }}
         >
           <Masthead
             fiscalYearLabel={scorecard.fiscalYear.label}
@@ -102,7 +104,7 @@ export default async function ReportPage({
           </p>
           <h2
             className="mb-6 text-[1.6rem] font-semibold text-balance"
-            style={{ fontFamily: "'Source Serif 4', Georgia, serif" }}
+            style={{ fontFamily: "var(--report-serif), Georgia, serif" }}
           >
             Corporate scorecard — {formatPeriodLabel(scorecard.period)}
           </h2>
@@ -170,7 +172,7 @@ export default async function ReportPage({
         {/* ============ APPENDIX ============ */}
         <article
           className="report-page mb-9 rounded-[2px] border border-[#e3dfd6] bg-white px-14 pt-13 pb-11 shadow-[0_1px_2px_rgba(20,20,20,0.04),0_12px_32px_-16px_rgba(20,20,20,0.18)] print:mb-0 print:border-0 print:px-0 print:py-0 print:shadow-none"
-          style={{ fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}
+          style={{ fontFamily: "var(--report-sans), ui-sans-serif, system-ui, sans-serif" }}
         >
           <Masthead
             fiscalYearLabel={scorecard.fiscalYear.label}
@@ -184,7 +186,7 @@ export default async function ReportPage({
           </p>
           <h2
             className="mb-2 text-[1.6rem] font-semibold text-balance"
-            style={{ fontFamily: "'Source Serif 4', Georgia, serif" }}
+            style={{ fontFamily: "var(--report-serif), Georgia, serif" }}
           >
             Full KPI tree — current period
           </h2>
@@ -252,7 +254,7 @@ function Masthead({
 }) {
   return (
     <div className="mb-6.5 flex items-start justify-between gap-4 border-b-2 border-[#1c2129] pb-4.5">
-      <div className="text-2xl font-bold" style={{ fontFamily: "'Source Serif 4', Georgia, serif" }}>
+      <div className="text-2xl font-bold" style={{ fontFamily: "var(--report-serif), Georgia, serif" }}>
         BELTS
         <span className="mt-0.5 block text-[0.7rem] font-medium tracking-[0.14em] text-[#8b93a1] uppercase">
           Board Performance Report
@@ -276,7 +278,7 @@ function Masthead({
 function SectionHead({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="mt-7.5 mb-3 flex items-baseline justify-between">
-      <h3 className="text-base font-semibold" style={{ fontFamily: "'Source Serif 4', Georgia, serif" }}>
+      <h3 className="text-base font-semibold" style={{ fontFamily: "var(--report-serif), Georgia, serif" }}>
         {title}
       </h3>
       <span className="text-[0.72rem] text-[#8b93a1]">{subtitle}</span>
@@ -331,7 +333,7 @@ function TotalScoreGauge({ score, band }: { score: number | null; band: Band | n
           <span className="text-[1.6rem] font-semibold" style={{ color: style?.hex ?? "#1c2129" }}>
             {score !== null ? score.toFixed(1) : "—"}
           </span>
-          <span className="text-[0.72rem] text-[#8b93a1]" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          <span className="text-[0.72rem] text-[#8b93a1]" style={{ fontFamily: "var(--report-sans), sans-serif" }}>
             on the 6-band scale
           </span>
         </span>
@@ -390,7 +392,7 @@ function SgCard({ goal }: { goal: ScoredNode }) {
           {goal.score !== null ? goal.score.toFixed(1) : "—"}
         </span>
       </div>
-      <div className="mb-2 text-[0.72rem] text-[#8b93a1]">{goal.globalWeight.toFixed(0)}% of total score</div>
+      <div className="mb-2 text-[0.72rem] text-[#8b93a1]">{goal.globalWeight.toFixed(2)}% of total score</div>
       <div className="mb-2 h-[5px] overflow-hidden rounded-[3px] bg-[#ecebe6]">
         <span className="block h-full" style={{ width: `${fillPct}%`, backgroundColor: color }} />
       </div>
@@ -478,7 +480,7 @@ function IssueRow({ rank, node, path, note, progress }: Issue & { rank: number }
         >
           {node.score !== null ? node.score.toFixed(1) : "—"}
         </span>
-        <span className="mt-0.5 block text-[0.68rem] text-[#8b93a1]" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
+        <span className="mt-0.5 block text-[0.68rem] text-[#8b93a1]" style={{ fontFamily: "var(--report-sans), sans-serif" }}>
           {note}
         </span>
       </div>
@@ -515,7 +517,7 @@ function AppendixRow({ node }: { node: ScoredNode }) {
       </td>
       {!isRoot && (
         <td className="border-b border-[#ecebe6] px-2 py-2 text-right text-[#8b93a1]">
-          {node.weight.toFixed(node.weight % 1 === 0 ? 0 : 1)}%
+          {node.weight.toFixed(2)}%
         </td>
       )}
       <td className="border-b border-[#ecebe6] px-2 py-2 font-mono">{figure}</td>

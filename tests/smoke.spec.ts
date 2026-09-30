@@ -386,6 +386,7 @@ test("dates are written and read as dd/mm/yyyy", async ({ page }) => {
     await page.getByLabel(label).fill("");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByRole("button", { name: "Confirm and save" }).click();
+    await expect(page.getByText("1 KPI with unsaved figures")).toBeHidden();
     await page.goto(`/entry?period=${PERIOD}`);
     await expect(page.getByLabel(label)).toHaveValue("");
   };
@@ -399,6 +400,9 @@ test("dates are written and read as dd/mm/yyyy", async ({ page }) => {
   await expect(page.getByRole("dialog")).toContainText("Completion date");
   await expect(page.getByRole("dialog")).toContainText("03/08/2026");
   await page.getByRole("button", { name: "Confirm and save" }).click();
+  // Wait for the save to land before navigating, or the navigation can
+  // abort it.
+  await expect(page.getByText("1 KPI with unsaved figures")).toBeHidden();
 
   // It comes back in the same form.
   await page.goto(`/entry?period=${PERIOD}`);

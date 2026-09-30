@@ -28,6 +28,9 @@ async function createScratchYear(page: Page, startYear: number): Promise<string>
 
 async function deleteYear(page: Page, label: string, startYear: number): Promise<void> {
   await page.goto("/manage");
+  // isVisible() doesn't wait, so let the year list render first or a year
+  // that is there can look absent and be left behind.
+  await expect(page.getByRole("button", { name: "Create year" })).toBeVisible();
   const row = page.getByRole("listitem").filter({ hasText: label });
   if (!(await row.isVisible())) return;
   await deleteFiscalYearHard(page, label, startYear);

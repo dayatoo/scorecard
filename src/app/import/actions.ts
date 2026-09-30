@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { applyImport, type ImportMode, type ImportSummary } from "@/app/actions/admin";
 import { attempt, type ActionResult } from "@/app/actions/result";
+import { MAX_IMPORT_BYTES } from "@/lib/config";
 import { requireAdmin } from "@/lib/session";
 import { parseWorkbook, type ParsedKpi, type ParsedValue, type ParsedUpdate, type ParseIssue } from "@/lib/workbook";
 import { validateHierarchy, type Issue } from "@/lib/validation";
@@ -46,6 +47,11 @@ async function readWorkbook(formData: FormData, fiscalYearId?: string): Promise<
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
     throw new Error("Choose a .xlsx file to upload.");
+  }
+  if (file.size > MAX_IMPORT_BYTES) {
+    throw new Error(
+      `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB. Workbooks can be up to ${MAX_IMPORT_BYTES / 1024 / 1024} MB.`
+    );
   }
 
   const parsed = await parseWorkbook(await file.arrayBuffer());

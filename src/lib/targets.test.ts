@@ -10,6 +10,7 @@ import {
   crossesNumericMonthBoundary,
   parseNumberInput,
   parseRangeInput,
+  shiftKpiMonthsByYears,
   validateMetric,
   type MetricDraft,
 } from "./targets";
@@ -241,5 +242,25 @@ describe("crossesNumericMonthBoundary", () => {
     assert.equal(crossesNumericMonthBoundary("PERCENTAGE", "DOLLAR"), false);
     assert.equal(crossesNumericMonthBoundary("MONTH_COMPLETION", "MONTH_COMPLETION"), false);
     assert.equal(crossesNumericMonthBoundary(null, "PERCENTAGE"), false);
+  });
+});
+
+describe("shiftKpiMonthsByYears", () => {
+  it("moves a deadline and a milestone's target month into the new year", () => {
+    const shifted = shiftKpiMonthsByYears(
+      { deadlineMonth: "2027-02", targetConfig: JSON.stringify({ targetMonth: "2026-12" }) },
+      1
+    );
+    assert.equal(shifted.deadlineMonth, "2028-02");
+    assert.deepEqual(JSON.parse(shifted.targetConfig!), { targetMonth: "2027-12" });
+  });
+
+  it("leaves band targets, empty fields and unreadable configs alone", () => {
+    const bands = JSON.stringify({ MEET: 100, GOOD: 120 });
+    assert.deepEqual(shiftKpiMonthsByYears({ deadlineMonth: null, targetConfig: bands }, 2), {
+      deadlineMonth: null,
+      targetConfig: bands,
+    });
+    assert.equal(shiftKpiMonthsByYears({ deadlineMonth: null, targetConfig: "{oops" }, 1).targetConfig, "{oops");
   });
 });

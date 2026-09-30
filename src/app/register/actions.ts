@@ -10,6 +10,7 @@ import {
   SESSION_COOKIE_OPTIONS,
   createSessionToken,
 } from "@/lib/auth";
+import { companyIdProblem, passwordProblem, usernameProblem } from "@/lib/accounts";
 
 export type RegisterState = {
   error: string | null;
@@ -31,11 +32,11 @@ export async function register(
   if (!username || !departmentId || !companyIdNumber || !password) {
     return { error: "Fill in every field.", pending: false };
   }
+  const formatProblem =
+    usernameProblem(username) ?? companyIdProblem(companyIdNumber) ?? passwordProblem(password);
+  if (formatProblem) return { error: formatProblem, pending: false };
   if (password !== confirmPassword) {
     return { error: "Passwords do not match.", pending: false };
-  }
-  if (password.length < 8) {
-    return { error: "Passwords must be at least 8 characters.", pending: false };
   }
 
   const department = await prisma.department.findUnique({ where: { id: departmentId } });
@@ -44,9 +45,11 @@ export async function register(
   const [existingUsername, existingCompanyId] = await Promise.all([
     prisma.user.findFirst({
       where: { username: { equals: username, mode: "insensitive" } },
+      select: { id: true },
     }),
     prisma.user.findFirst({
       where: { companyIdNumber: { equals: companyIdNumber, mode: "insensitive" } },
+      select: { id: true },
     }),
   ]);
   if (existingUsername) {
@@ -78,7 +81,7 @@ export async function register(
   if (created.status === "APPROVED") {
     (await cookies()).set(
       SESSION_COOKIE,
-      await createSessionToken(created.id),
+      await createSessionToken(created.id, created.sessionVersion),
       SESSION_COOKIE_OPTIONS
     );
     redirect("/");

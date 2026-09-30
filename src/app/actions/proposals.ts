@@ -9,7 +9,7 @@ import {
   commitKpiSettings,
   prepareKpiSettings,
   type SaveKpiSettingsInput,
-} from "./kpi";
+} from "@/lib/kpi-settings";
 
 /**
  * Approves a pending proposal, applying it through the exact same write path
@@ -24,7 +24,7 @@ export async function approveProposal(id: string): Promise<ActionResult> {
 
     const proposal = await prisma.kpiChangeProposal.findUnique({
       where: { id },
-      include: { proposedBy: true },
+      include: { proposedBy: { select: { username: true } } },
     });
     if (!proposal) throw new Error("That proposal no longer exists.");
     if (proposal.status !== "PENDING") {

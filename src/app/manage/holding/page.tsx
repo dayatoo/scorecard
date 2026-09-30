@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { HoldingClient } from "./HoldingClient";
-import { purgeExpiredFiscalYears } from "@/app/actions/admin";
+import { purgeExpiredFiscalYears } from "@/lib/fiscal-year-holding";
 import { prisma } from "@/lib/prisma";
 import { requireAdminPage } from "@/lib/session";
 
@@ -15,7 +15,7 @@ export default async function HoldingPage() {
   const heldYears = await prisma.fiscalYear.findMany({
     where: { heldAt: { not: null } },
     orderBy: { heldAt: "desc" },
-    include: { heldBy: { select: { username: true } }, kpis: { select: { id: true } } },
+    include: { heldBy: { select: { username: true } }, _count: { select: { kpis: true } } },
   });
 
   return (
@@ -38,7 +38,7 @@ export default async function HoldingPage() {
         heldYears={heldYears.map((fy) => ({
           id: fy.id,
           label: fy.label,
-          kpiCount: fy.kpis.length,
+          kpiCount: fy._count.kpis,
           heldAt: fy.heldAt!.toISOString(),
           heldBy: fy.heldBy?.username ?? null,
           purgeAt: fy.purgeAt!.toISOString(),

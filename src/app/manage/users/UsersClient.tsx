@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { formatDate } from "@/lib/dates";
-import { approveUser, removeUser, setUserRole } from "@/app/actions/users";
+import { approveUser, removeUser, resetUserPassword, setUserRole } from "@/app/actions/users";
 
 type UserRow = {
   id: string;
@@ -25,11 +25,13 @@ export function UsersClient({
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reset, setReset] = useState<{ username: string; temporaryPassword: string } | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const run = (id: string, action: () => Promise<{ ok: boolean; error?: string }>) => {
     setBusyId(id);
     setError(null);
+    setReset(null);
     startTransition(async () => {
       const result = await action();
       if (!result.ok) {
@@ -46,12 +48,47 @@ export function UsersClient({
 
   const busy = (id: string) => isPending && busyId === id;
 
+  const resetPassword = (u: UserRow) => {
+    if (
+      !window.confirm(
+        `Reset ${u.username}'s password? They'll be signed out everywhere and need the temporary password shown next to sign in.`
+      )
+    ) {
+      return;
+    }
+    setBusyId(u.id);
+    setError(null);
+    setReset(null);
+    startTransition(async () => {
+      const result = await resetUserPassword(u.id);
+      setBusyId(null);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setReset(result.data);
+    });
+  };
+
   return (
     <div className="space-y-6">
       {error && (
         <p role="alert" className="text-sm font-medium text-rose-700">
           {error}
         </p>
+      )}
+      {reset && (
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <p>
+            Temporary password for <span className="font-semibold">{reset.username}</span>:{" "}
+            <code data-testid="temporary-password" className="rounded bg-white px-1.5 py-0.5 font-mono text-base select-all">
+              {reset.temporaryPassword}
+            </code>
+          </p>
+          <p className="mt-1 text-xs text-emerald-800">
+            Shown only once. Pass it on privately, and ask them to change it from their account page after signing in.
+          </p>
+        </div>
       )}
 
       <section className="rounded-lg border bg-white">
@@ -120,6 +157,16 @@ export function UsersClient({
                 >
                   {u.role === "ADMIN" ? "Make member" : "Make admin"}
                 </button>
+                {u.id !== currentUserId && (
+                  <button
+                    type="button"
+                    disabled={busy(u.id)}
+                    onClick={() => resetPassword(u)}
+                    className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Reset password
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={busy(u.id)}

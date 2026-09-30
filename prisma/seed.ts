@@ -1,6 +1,12 @@
 // Sample scorecard, useful for trying the app before importing the real one.
 // Run with `npm run seed`. Safe to re-run: it replaces the sample fiscal year
-// rather than adding a second copy, and touches nothing else.
+// rather than adding a second copy, resets the two sample accounts' password,
+// and clears failed-login counts.
+//
+// For local and test databases only. The sample accounts use a well-known
+// password (it's printed below and written in the tests), so the script
+// refuses to run against anything but a database on this machine unless
+// SEED_ALLOW_REMOTE=1 is set on purpose.
 //
 // Weights here are *local* — each KPI's share of its own siblings, not of the
 // whole company — matching the convention every group in the app now uses.
@@ -139,7 +145,29 @@ const KPIS: SeedKpi[] = [
   },
 ];
 
+/**
+ * True for a database on this machine (or a bare container hostname like
+ * "db" in Docker Compose). Anything with a dot in it, such as a Supabase
+ * host, counts as remote.
+ */
+function isLocalDatabase(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
+    return host === "localhost" || host === "::1" || host.startsWith("127.") || !host.includes(".");
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
+  if (!isLocalDatabase(process.env.DATABASE_URL) && process.env.SEED_ALLOW_REMOTE !== "1") {
+    throw new Error(
+      "Refusing to seed: DATABASE_URL doesn't point at a local database. The seed creates " +
+        'sample accounts with the public password "password123", which must never exist on a ' +
+        "live deployment. Set SEED_ALLOW_REMOTE=1 only if this really is a throwaway database."
+    );
+  }
   console.log(`Seeding ${fiscalYearLabel(START_YEAR)}…`);
 
   for (const name of DEPARTMENTS) {
@@ -160,7 +188,9 @@ async function main() {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   await prisma.user.upsert({
     where: { username: "admin" },
-    update: {},
+    // Reset on re-seed, so a test that changed the password can't leave the
+    // next run unable to sign in.
+    update: { passwordHash, status: "APPROVED", role: "ADMIN" },
     create: {
       username: "admin",
       passwordHash,
@@ -172,7 +202,7 @@ async function main() {
   });
   await prisma.user.upsert({
     where: { username: "finance.member" },
-    update: {},
+    update: { passwordHash, status: "APPROVED", role: "MEMBER" },
     create: {
       username: "finance.member",
       passwordHash,
@@ -182,6 +212,9 @@ async function main() {
       status: "APPROVED",
     },
   });
+
+  // A test that trips the sign-in limit mustn't lock the next run out.
+  await prisma.loginFailure.deleteMany();
 
   // Replace rather than duplicate, so re-seeding is idempotent.
   await prisma.fiscalYear.deleteMany({ where: { startYear: START_YEAR } });

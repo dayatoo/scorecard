@@ -405,6 +405,12 @@ export function KpiDetailClient({
   // KPI complete (or un-completing it) must stay clickable even while the
   // rest of the Report card is locked read-only because it's complete.
   const canToggleComplete = ownsKpi && !fiscalYearClosed;
+  // Same rule the server enforces in addKpiUpdate.
+  const postBlockedReason = fiscalYearClosed
+    ? "This year is closed, so no new progress updates can be posted."
+    : !ownsKpi
+      ? "Only this KPI's owning departments can post progress updates."
+      : null;
   const canEditFigures = ownsKpi && !fiscalYearClosed && !kpi.completed;
   const canEditSettings =
     !fiscalYearClosed &&
@@ -482,7 +488,7 @@ export function KpiDetailClient({
             canToggleComplete={canToggleComplete}
             embedded
           />
-          <ProgressUpdatesPanel kpiId={kpi.id} period={period} updates={updates} embedded />
+          <ProgressUpdatesPanel kpiId={kpi.id} period={period} updates={updates} postBlockedReason={postBlockedReason} embedded />
         </Panel>
       )}
 
@@ -511,7 +517,7 @@ export function KpiDetailClient({
       </div>
 
       {!kpi.isLeaf && (
-        <ProgressUpdatesPanel kpiId={kpi.id} period={period} updates={updates} />
+        <ProgressUpdatesPanel kpiId={kpi.id} period={period} updates={updates} postBlockedReason={postBlockedReason} />
       )}
 
       {pendingProposal && (
@@ -1333,7 +1339,7 @@ function HistoryTable({
 }
 
 function ProgressUpdatesPanel({
-  kpiId, period, updates, embedded,
+  kpiId, period, updates, postBlockedReason, embedded,
 }: {
   kpiId: string;
   period: string;
@@ -1343,6 +1349,8 @@ function ProgressUpdatesPanel({
     timeCost: string | null; issues: string | null;
     author: string | null; createdAt: string;
   }[];
+  /** Why this user can't post here, or null when they can. */
+  postBlockedReason: string | null;
   embedded?: boolean;
 }) {
   const router = useRouter();
@@ -1361,10 +1369,11 @@ function ProgressUpdatesPanel({
       : [currentProgress, nextProgress, timeCost, issues].some((v) => v.trim().length > 0);
 
   const post = () => {
+    const postedMode = mode;
     startTransition(async () => {
       try {
         const result = await addKpiUpdate(
-          mode === "SIMPLE"
+          postedMode === "SIMPLE"
             ? { kpiId, period, mode: "SIMPLE", body }
             : { kpiId, period, mode: "DETAILED", currentProgress, nextProgress, timeCost, issues }
         );
@@ -1372,11 +1381,16 @@ function ProgressUpdatesPanel({
           setError(result.error);
           return;
         }
-        setBody("");
-        setCurrentProgress("");
-        setNextProgress("");
-        setTimeCost("");
-        setIssues("");
+        // Clear only what was just posted, so anything typed into the other
+        // format while the post was in flight survives.
+        if (postedMode === "SIMPLE") {
+          setBody("");
+        } else {
+          setCurrentProgress("");
+          setNextProgress("");
+          setTimeCost("");
+          setIssues("");
+        }
         setError(null);
         router.refresh();
       } catch {
@@ -1387,6 +1401,9 @@ function ProgressUpdatesPanel({
 
   const content = (
     <>
+      {postBlockedReason ? (
+        <p className="text-sm text-gray-500">{postBlockedReason}</p>
+      ) : (
       <div className="space-y-2">
         <div className="inline-flex overflow-hidden rounded border border-gray-300">
           <button
@@ -1445,6 +1462,7 @@ function ProgressUpdatesPanel({
         </div>
         {error && <p className="text-sm font-medium text-rose-700">{error}</p>}
       </div>
+      )}
 
       {updates.length > 0 && (
         <ul className="mt-5 space-y-4 border-t pt-4">

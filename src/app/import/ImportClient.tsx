@@ -6,6 +6,7 @@ import { useRef, useState, useTransition } from "react";
 
 import { ConfirmSaveDialog } from "@/components/ConfirmSaveDialog";
 import { hasErrors } from "@/lib/validation";
+import { MAX_IMPORT_BYTES } from "@/lib/config";
 import { commitImport, previewImport, type ImportPreview } from "./actions";
 import type { ImportMode, ImportSummary } from "@/app/actions/admin";
 
@@ -36,6 +37,16 @@ export function ImportClient({
   const [pending, startTransition] = useTransition();
 
   const upload = (formData: FormData) => {
+    // Checked here too, since a file far over the server's body limit is
+    // rejected by the framework before the action's own message can run.
+    const file = formData.get("file");
+    if (file instanceof File && file.size > MAX_IMPORT_BYTES) {
+      setPreview(null);
+      setError(
+        `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB. Workbooks can be up to ${MAX_IMPORT_BYTES / 1024 / 1024} MB.`
+      );
+      return;
+    }
     startTransition(async () => {
       try {
         setSummary(null);
@@ -275,7 +286,7 @@ export function ImportClient({
                           {kpi.parentCode ?? "—"}
                         </td>
                         <td className="tabular px-4 py-1 text-right text-gray-600">
-                          {kpi.weight > 0 ? `${kpi.weight}%` : "—"}
+                          {kpi.weight > 0 ? `${kpi.weight.toFixed(2)}%` : "—"}
                         </td>
                         <td className="px-4 py-1 text-xs text-gray-600">
                           {kpi.metricType?.replace(/_/g, " ").toLowerCase() ?? "rollup"}

@@ -11,7 +11,7 @@ export default async function ApprovalsPage() {
     prisma.kpiChangeProposal.findMany({
       where: { status: "PENDING" },
       orderBy: { createdAt: "asc" },
-      include: { proposedBy: true, kpi: true },
+      include: { proposedBy: { select: { username: true } }, kpi: true },
     }),
   ]);
 

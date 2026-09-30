@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import { getScorecard } from "@/lib/data";
+import { formatPeriodLabel, isPeriodInFiscalYear } from "@/lib/fiscal";
 import { bandLabel, bandForScore, roundScore } from "@/lib/scoring";
 import { assertFiscalYearOpen } from "@/lib/validation";
 import { attempt, type ActionResult } from "./result";
@@ -20,7 +21,7 @@ async function loadLeafForCalibration(kpiId: string) {
     where: { id: kpiId },
     include: {
       _count: { select: { children: true } },
-      fiscalYear: { select: { id: true, closedAt: true, label: true } },
+      fiscalYear: { select: { id: true, startYear: true, closedAt: true, label: true } },
     },
   });
   if (!kpi) throw new Error("That KPI no longer exists.");
@@ -50,6 +51,9 @@ export async function overrideScore(input: {
     if (!reason) throw new Error("Explain why this score is being calibrated.");
 
     const kpi = await loadLeafForCalibration(input.kpiId);
+    if (!isPeriodInFiscalYear(input.period, kpi.fiscalYear.startYear)) {
+      throw new Error(`${formatPeriodLabel(input.period)} is outside ${kpi.fiscalYear.label}, the year this KPI belongs to.`);
+    }
     const score = roundScore(input.score);
 
     const scorecard = await getScorecard({ fiscalYearId: kpi.fiscalYear.id, period: input.period });

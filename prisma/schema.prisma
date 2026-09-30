@@ -90,8 +90,11 @@ model User {
   department      Department @relation(fields: [departmentId], references: [id])
   role            UserRole   @default(MEMBER)
   status          UserStatus @default(PENDING)
+  // Signed into every session cookie. Bumping it (a password change or an
+  // admin reset) invalidates every cookie issued before, on every device.
+  sessionVersion  Int        @default(0)
 
-  proposals         KpiChangeProposal[]    @relation("ProposedBy")
+  proposals        KpiChangeProposal[]    @relation("ProposedBy")
   reviewed          KpiChangeProposal[]    @relation("ReviewedBy")
   scoreOverrides    ScoreOverride[]
   closedFiscalYears FiscalYear[]           @relation("ClosedFiscalYears")
@@ -144,6 +147,18 @@ model UsernameCheckAttempt {
   createdAt DateTime @default(now())
 
   @@index([ipHash, createdAt])
+}
+
+// Backs the brute-force limit on password sign-in. One row per failed
+// attempt, keyed by an HMAC of either the lowercased username ("u:") or the
+// caller's IP ("ip:"), never the raw value. Cleared for a username on its
+// next successful sign-in, and pruned opportunistically once stale.
+model LoginFailure {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
 }
 
 // One financial year, April of `startYear` through March of `startYear + 1`.
@@ -425,7 +440,7 @@ model KpiAudit {
   from  String
   to    String
 
-  author String? // free text, as KpiUpdate already does — there are no user accounts
+  author String? // the signed-in username, kept as text so the row outlives the account
 
   createdAt DateTime @default(now())
 

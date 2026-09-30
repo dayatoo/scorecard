@@ -19,8 +19,9 @@ export type CurrentUser = {
 
 /**
  * Re-reads the User row on every call — never trusts anything beyond the
- * userId out of the token — so a since-removed or since-unapproved account
- * stops working the moment its cookie is next used, not just at next login.
+ * userId and session version out of the token — so a since-removed,
+ * since-unapproved or since-reset account stops working the moment its
+ * cookie is next used, not just at next login.
  *
  * `cache()` only dedupes repeat calls within one request's render (e.g. the
  * root layout and a page both calling this for the same navigation) — it
@@ -31,8 +32,22 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const verified = await verifySessionToken(token);
   if (!verified) return null;
 
-  const user = await prisma.user.findUnique({ where: { id: verified.userId } });
+  const user = await prisma.user.findUnique({
+    where: { id: verified.userId },
+    select: {
+      id: true,
+      username: true,
+      role: true,
+      status: true,
+      departmentId: true,
+      companyIdNumber: true,
+      sessionVersion: true,
+    },
+  });
   if (!user || user.status !== "APPROVED") return null;
+  // A password change or admin reset bumps the version, so every cookie
+  // issued before it stops working here even though its signature is valid.
+  if (user.sessionVersion !== verified.sessionVersion) return null;
 
   return {
     id: user.id,

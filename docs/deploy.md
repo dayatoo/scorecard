@@ -99,11 +99,11 @@ npx prisma migrate deploy
 That creates the tables. You only ever do this again when the app's data model
 changes.
 
-Optionally, load a small sample scorecard so there is something to look at:
-
-```bash
-npm run seed
-```
+Don't run `npm run seed` against this database. The sample data comes with
+two accounts whose password is published in this repository, so anyone who
+has read it could sign in as an admin. The seed refuses to run against a
+remote database for exactly that reason. To try the app with sample data,
+run it locally instead (see the README).
 
 ## 6. Open it
 
@@ -180,6 +180,13 @@ Open the Supabase dashboard and resume it.
   after telling someone the URL.
 - Remove someone's account from **Manage → Users** when they leave; there
   must always be at least one admin, so promote a second person before
-  removing the first.
+  removing the first. An account that made score calibrations or change
+  proposals can't be removed, since those records keep its name. Use
+  **Reset password** instead, which signs it out everywhere.
+- If someone forgets their password, an admin can **Reset password** on
+  **Manage → Users** and pass on the temporary one shown. Anyone can change
+  their own password by clicking their username in the top bar.
+- Five wrong passwords for one username within 15 minutes pause sign-in for
+  that username for 15 minutes. An admin password reset lifts the pause.
 - Supabase takes daily backups on the free tier. You can also press **Export to
   Excel** any time for a copy you can keep yourself.

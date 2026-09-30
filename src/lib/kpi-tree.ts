@@ -73,8 +73,13 @@ export type ScoreOverrideRecord = {
 export function parsePhaseConfig(raw: string | null): number[] | null {
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as number[]) : null;
+    const parsed: unknown = JSON.parse(raw);
+    // Anything but an array of finite numbers is treated as no phasing data,
+    // rather than letting a stray string or null reach the scoring sums.
+    if (!Array.isArray(parsed) || !parsed.every((s) => typeof s === "number" && Number.isFinite(s))) {
+      return null;
+    }
+    return parsed as number[];
   } catch {
     return null;
   }

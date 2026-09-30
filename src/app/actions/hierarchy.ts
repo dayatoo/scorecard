@@ -14,37 +14,54 @@ import { attempt, type ActionResult } from "./result";
 // a settings edit are different kinds of action: immediate, with
 // confirmation on the destructive ones, rather than staged behind one Save.
 
+// Each walk below is one recursive query rather than a query per level. The
+// depth guard (well past MAX_KPI_DEPTH) stops a corrupted parent loop from
+// recursing forever.
+
+/** How many levels deep `kpiId` sits: 1 for a Strategic Goal, 0 for none. */
 async function depthOf(kpiId: string | null): Promise<number> {
-  let depth = 0;
-  let current = kpiId;
-  while (current) {
-    const kpi = await prisma.kpi.findUnique({ where: { id: current }, select: { parentId: true } });
-    if (!kpi) break;
-    depth++;
-    current = kpi.parentId;
-  }
-  return depth;
+  if (!kpiId) return 0;
+  const [row] = await prisma.$queryRaw<{ depth: number }[]>`
+    WITH RECURSIVE chain AS (
+      SELECT id, "parentId", 1 AS depth FROM "Kpi" WHERE id = ${kpiId}
+      UNION ALL
+      SELECT k.id, k."parentId", chain.depth + 1
+      FROM "Kpi" k JOIN chain ON k.id = chain."parentId"
+      WHERE chain.depth < 100
+    )
+    SELECT COALESCE(MAX(depth), 0)::int AS depth FROM chain
+  `;
+  return row?.depth ?? 0;
 }
 
 /** How many levels the deepest descendant of `kpiId` sits below it (0 for a leaf). */
 async function subtreeHeight(kpiId: string): Promise<number> {
-  const children = await prisma.kpi.findMany({ where: { parentId: kpiId }, select: { id: true } });
-  if (children.length === 0) return 0;
-  const heights = await Promise.all(children.map((c) => subtreeHeight(c.id)));
-  return 1 + Math.max(...heights);
+  const [row] = await prisma.$queryRaw<{ height: number }[]>`
+    WITH RECURSIVE descendants AS (
+      SELECT id, 1 AS level FROM "Kpi" WHERE "parentId" = ${kpiId}
+      UNION ALL
+      SELECT k.id, descendants.level + 1
+      FROM "Kpi" k JOIN descendants ON k."parentId" = descendants.id
+      WHERE descendants.level < 100
+    )
+    SELECT COALESCE(MAX(level), 0)::int AS height FROM descendants
+  `;
+  return row?.height ?? 0;
 }
 
+/** Whether `candidateId` is `ancestorId` itself or sits anywhere beneath it. */
 async function isDescendant(candidateId: string, ancestorId: string): Promise<boolean> {
-  let current: string | null = candidateId;
-  while (current) {
-    if (current === ancestorId) return true;
-    const kpi: { parentId: string | null } | null = await prisma.kpi.findUnique({
-      where: { id: current },
-      select: { parentId: true },
-    });
-    current = kpi?.parentId ?? null;
-  }
-  return false;
+  const [row] = await prisma.$queryRaw<{ found: boolean }[]>`
+    WITH RECURSIVE chain AS (
+      SELECT id, "parentId", 1 AS depth FROM "Kpi" WHERE id = ${candidateId}
+      UNION ALL
+      SELECT k.id, k."parentId", chain.depth + 1
+      FROM "Kpi" k JOIN chain ON k.id = chain."parentId"
+      WHERE chain.depth < 100
+    )
+    SELECT EXISTS (SELECT 1 FROM chain WHERE id = ${ancestorId}) AS found
+  `;
+  return row?.found ?? false;
 }
 
 async function writeAudit(

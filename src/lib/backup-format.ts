@@ -62,6 +62,17 @@ export type BackupAudit = {
   createdAt: string;
 };
 
+/** One figure change from the achievement change log (KpiValueAudit). */
+export type BackupValueAudit = {
+  period: string;
+  field: string;
+  from: string | null;
+  to: string | null;
+  authorUsername: string;
+  authorCompanyId: string;
+  createdAt: string;
+};
+
 export type BackupOverride = {
   period: string;
   score: number;
@@ -75,6 +86,9 @@ export type BackupKpi = {
   code: string;
   parentCode: string | null;
   name: string;
+  /** Optional in the file: backups taken before these fields existed restore them as null. */
+  subGroup: string | null;
+  status: string | null;
   sortOrder: number;
   weight: number;
   frequency: Frequency;
@@ -94,6 +108,8 @@ export type BackupKpi = {
   values: BackupValue[];
   updates: BackupUpdate[];
   audits: BackupAudit[];
+  /** Optional in the file, like subGroup and status. */
+  valueAudits: BackupValueAudit[];
   overrides: BackupOverride[];
 };
 
@@ -228,6 +244,8 @@ export type RestoreSummary = {
   kpis: number;
   values: number;
   overrides: number;
+  /** Calibrations left out because the admin who made them has no account here. */
+  overridesSkipped: number;
   /** Departments that had to be created because the target didn't have them. */
   departmentsCreated: number;
 };
@@ -254,6 +272,8 @@ function parseKpi(entry: unknown, index: number): BackupKpi {
       ? entry.parentCode.trim()
       : null,
     name,
+    subGroup: stringOrNull(entry.subGroup),
+    status: stringOrNull(entry.status),
     sortOrder: numberOr(entry.sortOrder, index),
     weight: numberOr(entry.weight, 0),
     frequency: oneOf(entry.frequency, ["MONTHLY", "QUARTERLY", "ANNUAL"] as const, "MONTHLY"),
@@ -298,6 +318,15 @@ function parseKpi(entry: unknown, index: number): BackupKpi {
       from: typeof a.from === "string" ? a.from : "",
       to: typeof a.to === "string" ? a.to : "",
       author: stringOrNull(a.author),
+      createdAt: isoOrNow(a.createdAt),
+    })),
+    valueAudits: list(entry.valueAudits).map((a) => ({
+      period: requirePeriod(a.period, `a figure change on "${name}"`),
+      field: typeof a.field === "string" ? a.field : "",
+      from: stringOrNull(a.from),
+      to: stringOrNull(a.to),
+      authorUsername: typeof a.authorUsername === "string" ? a.authorUsername : "",
+      authorCompanyId: typeof a.authorCompanyId === "string" ? a.authorCompanyId : "",
       createdAt: isoOrNow(a.createdAt),
     })),
     overrides: list(entry.overrides).map((o) => ({

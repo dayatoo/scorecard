@@ -304,3 +304,31 @@ export function describeBandTarget(config: unknown, metricType: MetricType | nul
 export function describeMeetTarget(config: unknown, metricType: MetricType | null): string | null {
   return describeBandTarget(config, metricType, "MEET");
 }
+
+/**
+ * Moves a KPI's year-specific months forward (or back) by whole years — used
+ * when copying a hierarchy into a new fiscal year, so a deadline or a
+ * milestone's target month lands in the new year instead of staying in the
+ * old one, where every KPI would read as long overdue.
+ */
+export function shiftKpiMonthsByYears(
+  kpi: { deadlineMonth: string | null; targetConfig: string | null },
+  years: number
+): { deadlineMonth: string | null; targetConfig: string | null } {
+  const shift = (period: string) =>
+    /^\d{4}-(0[1-9]|1[0-2])$/.test(period) ? shiftPeriod(period, years * 12) : period;
+
+  let targetConfig = kpi.targetConfig;
+  if (targetConfig) {
+    try {
+      const parsed: unknown = JSON.parse(targetConfig);
+      if (parsed && typeof parsed === "object" && typeof (parsed as { targetMonth?: unknown }).targetMonth === "string") {
+        const config = parsed as { targetMonth: string };
+        targetConfig = JSON.stringify({ ...config, targetMonth: shift(config.targetMonth) });
+      }
+    } catch {
+      // Leave an unparseable config exactly as it was.
+    }
+  }
+  return { deadlineMonth: kpi.deadlineMonth ? shift(kpi.deadlineMonth) : null, targetConfig };
+}

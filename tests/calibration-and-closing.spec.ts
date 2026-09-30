@@ -60,6 +60,9 @@ test.describe("closing and reopening a fiscal year", () => {
     // A fresh year, copied from the active one so it has a real hierarchy to
     // lock, but no recorded figures — closing/reopening this one can't
     // disturb any other spec's assertions about the seeded year.
+    // The start year defaults to one past the latest year, so pin it rather
+    // than depend on what other specs have left behind.
+    await page.getByLabel("Starting year").fill("2027");
     await page.getByLabel("Copy KPIs from").selectOption({ label: "FY2026/27" });
     await page.getByRole("button", { name: "Create year" }).click();
 

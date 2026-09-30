@@ -374,6 +374,25 @@ export function applyDeadline(params: {
 // --------------------------------------------------------------------------
 
 /**
+ * Why a set of CUSTOM monthly phase shares is unusable, or null when it is
+ * fine: exactly twelve finite, non-negative shares totalling 100 (to two
+ * decimal places), so the full annual target applies by the year's end.
+ */
+export function phaseConfigProblem(shares: unknown): string | null {
+  if (!Array.isArray(shares) || shares.length !== 12) {
+    return "Custom phasing needs exactly 12 monthly shares, one per month of the fiscal year.";
+  }
+  if (shares.some((s) => typeof s !== "number" || !Number.isFinite(s) || s < 0)) {
+    return "Each monthly phase share must be a number of zero or more.";
+  }
+  const total = (shares as number[]).reduce((sum, s) => sum + s, 0);
+  if (Math.abs(total - 100) > 0.01) {
+    return `Monthly phase shares must add up to 100 (these add up to ${Number(total.toFixed(2))}).`;
+  }
+  return null;
+}
+
+/**
  * The fraction of the annual target expected by the reporting month, where
  * month 1 is the first month of the fiscal year. `EVEN` divides evenly across
  * the year; `CUSTOM` cumulates the KPI's own monthly shares (0-100 each);

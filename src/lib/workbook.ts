@@ -18,6 +18,7 @@ import {
   BANDS,
   BAND_BOUNDS,
   bandLabel,
+  phaseConfigProblem,
   type Band,
   type Direction,
   type Frequency,
@@ -360,11 +361,14 @@ export async function parseWorkbook(data: ArrayBuffer): Promise<ParseResult> {
     if (phasing === "CUSTOM") {
       const sharesText = get(row, "Phase Shares");
       const shares = sharesText.split(";").map((s) => parseNumber(s.trim()));
+      const sharesProblem = phaseConfigProblem(shares);
       if (shares.length !== 12 || shares.some((s) => s === null)) {
         issues.push({
           row: rowNumber,
           message: `${code}: Phase Shares needs 12 numbers separated by semicolons when Phasing is Custom.`,
         });
+      } else if (sharesProblem) {
+        issues.push({ row: rowNumber, message: `${code}: ${sharesProblem}` });
       } else {
         phaseConfig = JSON.stringify(shares);
       }

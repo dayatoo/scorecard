@@ -78,8 +78,10 @@ test("deleting a fiscal year requires the right username, password and typed phr
   await page.goto("/manage");
   await expect(page.getByRole("listitem").filter({ hasText: LABEL })).toBeVisible();
 
-  // The lifecycle is recorded on the Change log.
+  // The lifecycle is recorded on the Change log. Its rows outlive the year
+  // (afterAll purges it), so earlier runs leave entries with the same label;
+  // the log is newest first, so this run's are the first match.
   await page.goto("/manage/change-log");
-  await expect(page.getByText(`Moved to holding — ${LABEL}`)).toBeVisible();
-  await expect(page.getByText(`Restored from holding — ${LABEL}`)).toBeVisible();
+  await expect(page.getByText(`Moved to holding — ${LABEL}`).first()).toBeVisible();
+  await expect(page.getByText(`Restored from holding — ${LABEL}`).first()).toBeVisible();
 });

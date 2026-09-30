@@ -137,7 +137,7 @@ Requires Node.js 20.9+ and a Postgres database.
 npm install
 cp .env.example .env      # fill in your database strings and a session secret
 npx prisma migrate deploy # create the tables
-npm run seed              # optional: a small sample scorecard, plus two sample accounts
+npm run seed              # optional: sample scorecard and two sample accounts (local databases only)
 npm run dev
 ```
 
@@ -184,6 +184,13 @@ from **Manage → Users**; the first account ever created is auto-approved and
 made an admin so there's always a gatekeeper. Passwords are hashed
 (`bcryptjs`); the session cookie holds a signed token naming the signed-in
 user, never the password itself.
+
+Anyone can change their own password by clicking their username in the top
+bar, which signs them out on every other device. An admin can **Reset
+password** from **Manage → Users**, which signs that person out everywhere and
+shows a one-time temporary password to pass on. Five wrong passwords for one
+username within 15 minutes pause sign-in for that username until the window
+passes or an admin resets it.
 
 Departments now double as a write-permission boundary, not just a label: a
 member can report monthly figures directly for any KPI their department

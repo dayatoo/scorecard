@@ -37,7 +37,7 @@ export default async function KpiDetailPage({ params, searchParams }: PageProps<
     prisma.kpiValueAudit.findMany({ where: { kpiId: id }, orderBy: { createdAt: "desc" }, take: 30 }),
     prisma.kpiChangeProposal.findFirst({
       where: { kpiId: id, status: "PENDING" },
-      include: { proposedBy: true },
+      include: { proposedBy: { select: { username: true } } },
     }),
   ]);
   if (!detail) notFound();

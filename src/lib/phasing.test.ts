@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { parsePhaseConfig } from "./kpi-tree";
 import {
+  phaseConfigProblem,
   phaseFraction,
   scalePhasedTarget,
   scoreFixedTarget,
@@ -120,5 +122,34 @@ describe("scoreLeaf with phasing", () => {
     const withoutPhasingField = scoreLeaf(base, entries, "2026-08");
     assert.deepEqual(withPhasingField, withoutPhasingField);
     assert.equal(withPhasingField.score, scoreFixedTarget(65_000, base.targetConfig, "HIGHER_BETTER"));
+  });
+});
+
+describe("phaseConfigProblem", () => {
+  it("accepts twelve non-negative shares totalling 100", () => {
+    assert.equal(phaseConfigProblem([5, 5, 10, 10, 10, 10, 10, 10, 10, 10, 5, 5]), null);
+    assert.equal(phaseConfigProblem([33.33, 33.33, 33.34, 0, 0, 0, 0, 0, 0, 0, 0, 0]), null);
+  });
+
+  it("rejects the wrong count, bad entries, or a total other than 100", () => {
+    assert.match(phaseConfigProblem([50, 50]) ?? "", /exactly 12/);
+    assert.match(phaseConfigProblem(null) ?? "", /exactly 12/);
+    assert.match(phaseConfigProblem([...Array(11).fill(10), -10]) ?? "", /zero or more/);
+    assert.match(phaseConfigProblem([...Array(11).fill(10), "x"]) ?? "", /zero or more/);
+    assert.match(phaseConfigProblem(Array(12).fill(10)) ?? "", /add up to 100 \(these add up to 120\)/);
+  });
+});
+
+describe("parsePhaseConfig", () => {
+  it("reads a stored array of numbers", () => {
+    assert.deepEqual(parsePhaseConfig("[10,90]"), [10, 90]);
+  });
+
+  it("treats anything but an array of finite numbers as no phasing data", () => {
+    assert.equal(parsePhaseConfig('["10", 90]'), null);
+    assert.equal(parsePhaseConfig("[null]"), null);
+    assert.equal(parsePhaseConfig('{"a":1}'), null);
+    assert.equal(parsePhaseConfig("not json"), null);
+    assert.equal(parsePhaseConfig(null), null);
   });
 });

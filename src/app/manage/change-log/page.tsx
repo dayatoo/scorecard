@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { purgeExpiredFiscalYears } from "@/app/actions/admin";
+import { purgeExpiredFiscalYears } from "@/lib/fiscal-year-holding";
 import { DownloadLink } from "@/components/DownloadLink";
 import { formatBruneiTime } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";

@@ -117,7 +117,13 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             )}
             {currentUser && (
               <div className="ml-auto flex items-center gap-3 text-sm">
-                <span className="text-white/60">{currentUser.username}</span>
+                <Link
+                  href="/account"
+                  title="Your account and password"
+                  className="text-white/60 transition-colors hover:text-blue-300"
+                >
+                  {currentUser.username}
+                </Link>
                 <form action="/api/logout" method="post">
                   <button
                     type="submit"

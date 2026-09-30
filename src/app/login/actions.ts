@@ -1,7 +1,7 @@
 "use server";
 
 import bcrypt from "bcryptjs";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { prisma } from "@/lib/prisma";
@@ -11,6 +11,12 @@ import {
   createSessionToken,
   signText,
 } from "@/lib/auth";
+import {
+  clearLoginFailures,
+  clientIp,
+  isLoginThrottled,
+  recordLoginFailure,
+} from "@/lib/login-throttle";
 
 export type SignInState = { error: string | null };
 
@@ -22,21 +28,37 @@ export async function signIn(
   const password = String(formData.get("password") ?? "");
   if (!username || !password) return { error: "Enter your username and password." };
 
+  const ip = await clientIp();
+  if (await isLoginThrottled(username, ip)) {
+    return {
+      error:
+        "Too many failed sign-in attempts. Wait 15 minutes and try again, or ask an admin to reset your password.",
+    };
+  }
+
   const user = await prisma.user.findFirst({
     where: { username: { equals: username, mode: "insensitive" } },
+    select: { id: true, username: true, status: true, passwordHash: true, sessionVersion: true },
   });
 
-  if (!user) return { error: "That username does not exist." };
+  if (!user) {
+    await recordLoginFailure(username, ip);
+    return { error: "That username does not exist." };
+  }
   if (user.status !== "APPROVED") {
     return { error: "Your account is pending admin approval." };
   }
 
   const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return { error: "That password is not correct." };
+  if (!ok) {
+    await recordLoginFailure(username, ip);
+    return { error: "That password is not correct." };
+  }
 
+  await clearLoginFailures(username);
   (await cookies()).set(
     SESSION_COOKIE,
-    await createSessionToken(user.id),
+    await createSessionToken(user.id, user.sessionVersion),
     SESSION_COOKIE_OPTIONS
   );
 
@@ -61,9 +83,7 @@ export async function checkUsernameStatus(username: string): Promise<UsernameSta
   const trimmed = username.trim();
   if (trimmed.length < 1) return "not_found";
 
-  const forwardedFor = (await headers()).get("x-forwarded-for") ?? "unknown";
-  const ip = forwardedFor.split(",")[0]!.trim();
-  const ipHash = await signText(ip);
+  const ipHash = await signText(await clientIp());
 
   const cutoff = new Date(Date.now() - RATE_LIMIT_CLEANUP_MS);
   // Opportunistic cleanup — cheap, keeps the table small without a separate job.

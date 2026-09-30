@@ -10,7 +10,14 @@ export default async function UsersPage() {
     requireAdminPage(),
     prisma.user.findMany({
       orderBy: { createdAt: "asc" },
-      include: { department: true },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        department: { select: { name: true } },
+      },
     }),
   ]);
 

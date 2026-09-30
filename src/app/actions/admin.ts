@@ -15,6 +15,7 @@ import {
   writeCheckpoint,
 } from "@/lib/backup";
 import type { ParsedKpi, ParsedValue, ParsedUpdate } from "@/lib/workbook";
+import { shiftKpiMonthsByYears } from "@/lib/targets";
 import { assertFiscalYearOpen } from "@/lib/validation";
 import { diffKpiValueFields } from "@/lib/kpi-value-audit";
 import { attempt, type ActionResult } from "./result";
@@ -40,14 +41,28 @@ export async function createFiscalYear(input: {
     if (existing)
       throw new Error(`${fiscalYearLabel(input.startYear)} already exists.`);
 
-    const created = await prisma.fiscalYear.create({
-      data: {
-        startYear: input.startYear,
-        label: fiscalYearLabel(input.startYear),
-      },
-    });
+    const source = input.copyFromId
+      ? await prisma.fiscalYear.findUnique({
+          where: { id: input.copyFromId },
+          select: { id: true, startYear: true },
+        })
+      : null;
+    if (input.copyFromId && !source) throw new Error("The year to copy from no longer exists.");
 
-    if (input.copyFromId) await copyHierarchy(input.copyFromId, created.id);
+    // One transaction, so a failure partway through a copy never leaves a
+    // half-built year behind.
+    await prisma.$transaction(
+      async (tx) => {
+        const created = await tx.fiscalYear.create({
+          data: {
+            startYear: input.startYear,
+            label: fiscalYearLabel(input.startYear),
+          },
+        });
+        if (source) await copyHierarchy(tx, source, { id: created.id, startYear: input.startYear });
+      },
+      { timeout: 60_000, maxWait: 10_000 }
+    );
 
     revalidatePath("/manage");
     revalidatePath("/");
@@ -57,57 +72,83 @@ export async function createFiscalYear(input: {
 /**
  * Duplicates a year's hierarchy, weights and targets into a new year — the
  * usual starting point, since most of a scorecard carries over and only the
- * numbers move. Recorded values are deliberately not copied.
+ * numbers move. Every definition field carries over; deadlines and milestone
+ * target months move forward by the gap between the two years. Recorded
+ * values, progress updates, overrides and "mark complete" are deliberately
+ * not copied — they describe the old year's results, not its plan.
  */
-async function copyHierarchy(fromId: string, toId: string): Promise<void> {
-  const source = await prisma.kpi.findMany({
-    where: { fiscalYearId: fromId },
+async function copyHierarchy(
+  tx: Prisma.TransactionClient,
+  from: { id: string; startYear: number },
+  to: { id: string; startYear: number }
+): Promise<void> {
+  const source = await tx.kpi.findMany({
+    where: { fiscalYearId: from.id },
     orderBy: { sortOrder: "asc" },
-    include: { departments: true },
+    include: { departments: { select: { departmentId: true } } },
   });
+  if (source.length === 0) return;
+  const yearGap = to.startYear - from.startYear;
 
-  // Two passes: create every KPI parentless, then wire up the hierarchy once
-  // all the new ids exist.
-  const idMap = new Map<string, string>();
-  for (const kpi of source) {
-    const created = await prisma.kpi.create({
-      data: {
-        fiscalYearId: toId,
-        code: kpi.code,
-        name: kpi.name,
-        sortOrder: kpi.sortOrder,
-        weight: kpi.weight,
-        metricType: kpi.metricType,
-        direction: kpi.direction,
-        targetMode: kpi.targetMode,
-        targetConfig: kpi.targetConfig,
-        unit: kpi.unit,
-        deadlineMonth: kpi.deadlineMonth,
-        scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
-        departments: {
-          createMany: {
-            data: kpi.departments.map((d) => ({
-              departmentId: d.departmentId,
-            })),
-          },
-        },
-      },
-    });
-    idMap.set(kpi.id, created.id);
+  // Codes are unique within a year, so they key the old KPI to its copy.
+  const created = await tx.kpi.createManyAndReturn({
+    data: source.map((kpi) => ({
+      fiscalYearId: to.id,
+      code: kpi.code,
+      name: kpi.name,
+      subGroup: kpi.subGroup,
+      status: kpi.status,
+      sortOrder: kpi.sortOrder,
+      weight: kpi.weight,
+      frequency: kpi.frequency,
+      phasing: kpi.phasing,
+      phaseConfig: kpi.phaseConfig,
+      metricType: kpi.metricType,
+      direction: kpi.direction,
+      targetMode: kpi.targetMode,
+      unit: kpi.unit,
+      scoreFinalAfterDeadline: kpi.scoreFinalAfterDeadline,
+      ...shiftKpiMonthsByYears(kpi, yearGap),
+    })),
+    select: { id: true, code: true },
+  });
+  const newIdByCode = new Map(created.map((k) => [k.code, k.id]));
+  const codeByOldId = new Map(source.map((k) => [k.id, k.code]));
+  const newIdOf = (oldId: string) => {
+    const code = codeByOldId.get(oldId);
+    return code ? newIdByCode.get(code) : undefined;
+  };
+
+  const departmentLinks = source.flatMap((kpi) =>
+    kpi.departments.map((d) => ({ kpiId: newIdByCode.get(kpi.code)!, departmentId: d.departmentId }))
+  );
+  if (departmentLinks.length > 0) {
+    await tx.kpiDepartment.createMany({ data: departmentLinks, skipDuplicates: true });
   }
 
+  // Wire up the hierarchy with one update per parent rather than per child.
+  const childrenByNewParent = new Map<string, string[]>();
   for (const kpi of source) {
     if (!kpi.parentId) continue;
-    await prisma.kpi.update({
-      where: { id: idMap.get(kpi.id) as string },
-      data: { parentId: idMap.get(kpi.parentId) },
-    });
+    const parent = newIdOf(kpi.parentId);
+    if (!parent) continue;
+    const list = childrenByNewParent.get(parent) ?? [];
+    list.push(newIdByCode.get(kpi.code)!);
+    childrenByNewParent.set(parent, list);
+  }
+  for (const [parentId, childIds] of childrenByNewParent) {
+    await tx.kpi.updateMany({ where: { id: { in: childIds } }, data: { parentId } });
   }
 }
 
 export async function setActiveFiscalYear(id: string): Promise<ActionResult> {
   return attempt(async () => {
     await requireAdmin();
+    const year = await prisma.fiscalYear.findUnique({ where: { id }, select: { heldAt: true } });
+    if (!year) throw new Error("That fiscal year no longer exists.");
+    // A held year is hidden everywhere else; making it active would surface
+    // it again on the dashboard without anyone restoring it.
+    if (year.heldAt) throw new Error("That year is in holding. Restore it before making it active.");
     await prisma.$transaction([
       prisma.fiscalYear.updateMany({ data: { isActive: false } }),
       prisma.fiscalYear.update({ where: { id }, data: { isActive: true } }),
@@ -225,35 +266,6 @@ export async function restoreFiscalYearFromHolding(id: string): Promise<ActionRe
 }
 
 /**
- * Hard-deletes every fiscal year whose holding period has expired. There's no
- * cron/job runner anywhere in this app, so this is called lazily at the top
- * of the admin pages that care (/manage, /manage/holding, /manage/change-log)
- * rather than on a real schedule — a held year is purged on the next admin
- * page load after its purgeAt passes, not to the minute.
- */
-export async function purgeExpiredFiscalYears(): Promise<void> {
-  const expired = await prisma.fiscalYear.findMany({
-    where: { heldAt: { not: null }, purgeAt: { lte: new Date() } },
-    select: { id: true, label: true },
-  });
-
-  for (const fiscalYear of expired) {
-    await prisma.$transaction(async (tx) => {
-      await tx.fiscalYearAudit.create({
-        data: {
-          fiscalYearId: fiscalYear.id,
-          fiscalYearLabel: fiscalYear.label,
-          action: "purged",
-          author: "system",
-        },
-      });
-      // Cascades to KPIs, their values, updates and every audit trail.
-      await tx.fiscalYear.delete({ where: { id: fiscalYear.id } });
-    });
-  }
-}
-
-/**
  * Freezes a fiscal year: takes an immutable snapshot of every month's
  * computed scorecard, then blocks every further write to its KPIs. A future
  * change to the scoring engine itself can never move a year once closed —
@@ -350,6 +362,22 @@ export async function saveDepartments(
     if (duplicate) throw new Error(`"${duplicate}" is listed twice.`);
 
     const keptIds = departments.map((d) => d.id).filter(Boolean) as string[];
+
+    // A department with user accounts in it can't go: every user belongs to
+    // exactly one. Checked here so the admin gets a name and a count rather
+    // than a raw foreign-key error.
+    const blocked = await prisma.department.findMany({
+      where: { id: { notIn: keptIds }, users: { some: {} } },
+      select: { name: true, _count: { select: { users: true } } },
+    });
+    if (blocked.length > 0) {
+      const list = blocked
+        .map((d) => `${d.name} (${d._count.users} user${d._count.users === 1 ? "" : "s"})`)
+        .join(", ");
+      throw new Error(
+        `${list} still ${blocked.length === 1 ? "has user accounts, so it" : "have user accounts, so they"} can't be removed yet. Remove those users on the Users page first, or keep the department.`
+      );
+    }
 
     // A batch of operations sent together, rather than an interactive
     // transaction — the latter holds one DB session open across several

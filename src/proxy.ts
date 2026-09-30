@@ -1,9 +1,18 @@
 // Runs before every page request (Next.js 16 renamed `middleware` to `proxy`).
 //
+// It lives in src/ because the app does: Next.js only picks up a proxy file
+// sitting beside the app directory.
+//
 // This is an optimistic gate only: it checks the signed session cookie and
 // redirects to /login when it is absent or invalid. Server actions and pages
 // re-check for themselves via src/lib/session.ts, because a POST can reach an
 // action without passing through here.
+//
+// It deliberately leaves /login and /register open to signed-in visitors,
+// so someone can sign in as a different account. It also could not safely
+// send them away: it only checks the cookie's signature, not whether a
+// password change or reset has since revoked it, so a revoked cookie would
+// bounce between /login and / forever.
 
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -25,10 +34,6 @@ export async function proxy(request: NextRequest) {
     // Remember where they were headed so login can send them back.
     if (pathname !== "/") url.searchParams.set("next", pathname + request.nextUrl.search);
     return NextResponse.redirect(url);
-  }
-
-  if (signedIn && isPublic) {
-    return NextResponse.redirect(new URL("/", request.nextUrl));
   }
 
   return NextResponse.next();
