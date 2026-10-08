@@ -304,13 +304,28 @@ so read them once now.
 
 ### 3.2 Procedure A: create a choice
 
+A **choice** is a fixed list of options, such as Monthly, Quarterly and Annual.
+Each option has a **label** (the words people see) and a **value** (a number
+the flows use behind the scenes). This guide uses the numbers Power Apps
+suggests: **126,400,000** for the first option, **126,400,001** for the
+second, and so on.
+
 > **Do this:**
 >
 > 1. Open **Solutions → KPI Scorecard**.
-> 2. Click **+ New → More → Choice**.
-> 3. Enter the **Display name** (for example `Metric type`). The name gets the prefix automatically (`sc_metrictype`).
-> 4. Under **Items**, type the first label. Click **+ New choice** for each further label.
-> 5. Click **Save**.
+> 2. Click **+ New → More → Choice**. The **New choice** panel opens on the right.
+> 3. **Display name:** type the name from the table in 3.7, for example `Metric type`.
+> 4. **Choices**, first row:
+>    - **Label:** the first option, for example `Percentage`.
+>    - **Value:** leave the number Power Apps suggests. It should be `126,400,000`.
+> 5. Click **+ New choice** to add a row for each further option, in the order 3.7 lists them. Type only the **Label**; leave each suggested **Value** (`126,400,001`, `126,400,002` and so on).
+> 6. Leave everything else as it is: the small colour square, and under **Advanced options** the **Name** (it fills itself in, such as `sc_metrictype`), **External type name** and **Description**.
+> 7. Before you save, check the values run `126,400,000`, `126,400,001`, … with no gaps or repeats, in the same order as the labels. If you deleted a row and added it again, its number may have moved on: type the right number into its **Value** box.
+> 8. Click **Save**.
+>
+> **Check it worked:** the choice appears in the solution. Open it again: its first option's value is `126,400,000`.
+>
+> **If something goes wrong:** if the first suggested value isn't `126,400,000`, your publisher has a different **choice value prefix** (the first four or five digits). Check it in **Solutions → Publishers →** your publisher. Either change the prefix to `12640` before creating any choices, or keep your numbers and use them wherever this guide gives a `1264000…` number (the guide lists each place in 3.7).
 
 ### 3.3 Procedure B: create a table with Copilot
 
@@ -400,13 +415,14 @@ compare against these exact words.
 
 > **Check it worked:** the solution lists 13 choices, each with the right number of items.
 
-**Write down each item's number.** Behind every choice item is a number, for
-example `100000000` for the first item and `100000001` for the second. Flows
-must use these numbers when they save a choice. Open each choice, click an
-item, open **Advanced options** and note its **Value**. Usually the first item
-is `100000000` and each next item adds 1, but check: it depends on your
-publisher. The rest of this guide assumes that pattern. If yours differs, use
-your numbers wherever the guide gives one.
+**The numbers behind the options.** As described in 3.2, the first option of
+every choice is `126400000` and each next option adds 1. For example, in
+**Value basis**, Actual is `126400000` and Estimate `126400001`; in **Metric
+type**, Variance is `126400005`. The flows, scripts and formulas in this guide
+use these numbers in these places: the A01 **Basis** column (6.4), the
+proposal and progress update prompts (6.7), the fiscal-year events (6.10) and
+the `CHOICES` list in both Excel scripts (9.3). Power Fx in the app uses the
+labels, so the app doesn't depend on the numbers.
 
 ### 3.8 Create the tables
 
@@ -3007,12 +3023,12 @@ KPIs only. Use `null` for anything not given.
 >         | **Fiscal year (Fiscal years)** | `concat('sc_fiscalyears(',outputs('Get_kpi')?['body/_sc_fiscalyear_value'],')')` |
 >         | **Period** | `coalesce(items('Each_entry')?['period'],'')` |
 >         | **Value** | `if(equals(if(equals(items('Each_entry')?['value'],null),'',string(float(coalesce(items('Each_entry')?['value'],0)))),''),null,float(coalesce(items('Each_entry')?['value'],0)))` |
->         | **Basis** | `if(equals(items('Each_entry')?['basis'],'Estimate'),100000001,100000000)` |
+>         | **Basis** | `if(equals(items('Each_entry')?['basis'],'Estimate'),126400001,126400000)` |
 >         | **Planned value** | `if(equals(if(equals(items('Each_entry')?['plannedValue'],null),'',string(float(coalesce(items('Each_entry')?['plannedValue'],0)))),''),null,float(coalesce(items('Each_entry')?['plannedValue'],0)))` |
 >         | **Completion date** | `if(empty(outputs('CompletionDay')),null,outputs('CompletionDay'))` |
 >         | **Note** | `if(empty(trim(coalesce(items('Each_entry')?['note'],''))),null,trim(coalesce(items('Each_entry')?['note'],'')))` |
 >
->         `100000000` and `100000001` are the numbers behind **Actual** and **Estimate** in the Value basis choice (3.7). Use yours if they differ. As in Part 5, **Update a row** creates the row when the Row ID doesn't exist yet.
+>         `126400000` and `126400001` are the numbers behind **Actual** and **Estimate** in the Value basis choice (3.7). Use yours if they differ. As in Part 5, **Update a row** creates the row when the Row ID doesn't exist yet.
 >    9. After the Switch, add **Apply to each** `Each_change` over `body('Changed')`. Inside it, add **Add a new row**. **Table name:** KPI value changes. Fill in:
 >
 >       | Column | Value |
@@ -3215,7 +3231,7 @@ saves settings.
 Refuse if the KPI's fiscal year is closed (same message as A02). Run the same checks as A02 without saving.
 Add a "Change proposal" row: KPI, Proposed by = the App user from Check (userid), Payload = SettingsJson,
 Summary = SummaryJson (a list of {label, from, to}), Base modified on = the KPI's Settings changed on (or its
-Modified on if that is empty), Status Pending (choice value 100000000).
+Modified on if that is empty), Status Pending (choice value 126400000).
 Post a message in Microsoft Teams (Post message in a chat or channel, as the Flow bot) to every Approved Admin
 App user: "<username> proposed a change to <code> <name>. Open the Scorecard app → Approvals to review it."
 Respond Ok = true, Message "Your change has been sent to an admin for approval."
@@ -3253,7 +3269,7 @@ UpdateJson is `{"period":"2026-09","mode":"Detailed","body":null,
 
 ```text
 Refuse if the KPI's fiscal year is closed. Refuse with "Write something before posting." if every text
-field is blank. Add a "Progress update" row: KPI, Period, Mode (Detailed = 100000000, Simple = 100000001),
+field is blank. Add a "Progress update" row: KPI, Period, Mode (Detailed = 126400000, Simple = 126400001),
 the text fields trimmed, Author = Check username. If status is given and differs from the KPI's Status:
 update the KPI's Status, add a KPI definition change row (field "status", label "Status"), and add a
 "KPI status option" row with that name if none exists yet. Respond Ok = true, Message "Update posted."
@@ -3393,10 +3409,10 @@ closed. Clear Closed on and Closed by. Delete the snapshot row. Add a Fiscal yea
 Reason). Add a recalculation request for the year (From period empty, Refresh hierarchy Yes).
 ```
 
-The "Fiscal year action" choice numbers are, in order: Closed `100000000`,
-Reopened `100000001`, Restored from checkpoint `100000002`, Moved to holding
-`100000003`, Restored from holding `100000004`, Permanently deleted
-`100000005`.
+The "Fiscal year action" choice numbers are, in order: Closed `126400000`,
+Reopened `126400001`, Restored from checkpoint `126400002`, Moved to holding
+`126400003`, Restored from holding `126400004`, Permanently deleted
+`126400005`.
 
 > **Check it worked:** close the sample year. Every KPI score row for all 12 months exists, and adding a figure through A01 is now refused with "FY2026/27 is closed. …". Reopen it with a reason: the Change log screen later shows both events.
 
@@ -5577,7 +5593,7 @@ Office Scripts are switched on or off for the whole company. Send IT this:
 > - **No Copy to option:** download the two files and upload them to the library instead.
 
 **Choice numbers.** Both scripts start with a list called `CHOICES`, holding the
-number of each choice item, as given in step 3.7 (Percentage is `100000000`,
+number of each choice item, as given in step 3.7 (Percentage is `126400000`,
 and so on). If any of your choice numbers are different, change them in both
 scripts before saving.
 
@@ -5594,13 +5610,13 @@ scripts before saving.
 
 // Choice numbers, from step 3.7. Change these if your numbers differ.
 const CHOICES: { [list: string]: { [name: string]: number } } = {
-  metric: { PERCENTAGE: 100000000, DOLLAR: 100000001, QUANTITY: 100000002, DAYS: 100000003, MONTH_COMPLETION: 100000004, VARIANCE: 100000005 },
-  direction: { HIGHER_BETTER: 100000000, LOWER_BETTER: 100000001 },
-  mode: { FIXED: 100000000, RANGE: 100000001 },
-  frequency: { MONTHLY: 100000000, QUARTERLY: 100000001, ANNUAL: 100000002 },
-  phasing: { NONE: 100000000, EVEN: 100000001, CUSTOM: 100000002 },
-  basis: { ACTUAL: 100000000, ESTIMATE: 100000001 },
-  update: { DETAILED: 100000000, SIMPLE: 100000001 },
+  metric: { PERCENTAGE: 126400000, DOLLAR: 126400001, QUANTITY: 126400002, DAYS: 126400003, MONTH_COMPLETION: 126400004, VARIANCE: 126400005 },
+  direction: { HIGHER_BETTER: 126400000, LOWER_BETTER: 126400001 },
+  mode: { FIXED: 126400000, RANGE: 126400001 },
+  frequency: { MONTHLY: 126400000, QUARTERLY: 126400001, ANNUAL: 126400002 },
+  phasing: { NONE: 126400000, EVEN: 126400001, CUSTOM: 126400002 },
+  basis: { ACTUAL: 126400000, ESTIMATE: 126400001 },
+  update: { DETAILED: 126400000, SIMPLE: 126400001 },
 };
 const BANDS = ["POOR", "IMPROVEMENT_NEEDED", "MEET", "GOOD", "VERY_GOOD", "EXCELLENT"];
 const BAND_COLUMNS: { [band: string]: string } = {
@@ -6075,13 +6091,13 @@ function readUpdates(workbook: ExcelScript.Workbook, codes: { [code: string]: bo
 // dataJson is built by the flow from Dataverse rows; see Part 9.
 
 const CHOICES: { [list: string]: { [name: string]: number } } = {
-  metric: { PERCENTAGE: 100000000, DOLLAR: 100000001, QUANTITY: 100000002, DAYS: 100000003, MONTH_COMPLETION: 100000004, VARIANCE: 100000005 },
-  direction: { HIGHER_BETTER: 100000000, LOWER_BETTER: 100000001 },
-  mode: { FIXED: 100000000, RANGE: 100000001 },
-  frequency: { MONTHLY: 100000000, QUARTERLY: 100000001, ANNUAL: 100000002 },
-  phasing: { NONE: 100000000, EVEN: 100000001, CUSTOM: 100000002 },
-  basis: { ACTUAL: 100000000, ESTIMATE: 100000001 },
-  update: { DETAILED: 100000000, SIMPLE: 100000001 },
+  metric: { PERCENTAGE: 126400000, DOLLAR: 126400001, QUANTITY: 126400002, DAYS: 126400003, MONTH_COMPLETION: 126400004, VARIANCE: 126400005 },
+  direction: { HIGHER_BETTER: 126400000, LOWER_BETTER: 126400001 },
+  mode: { FIXED: 126400000, RANGE: 126400001 },
+  frequency: { MONTHLY: 126400000, QUARTERLY: 126400001, ANNUAL: 126400002 },
+  phasing: { NONE: 126400000, EVEN: 126400001, CUSTOM: 126400002 },
+  basis: { ACTUAL: 126400000, ESTIMATE: 126400001 },
+  update: { DETAILED: 126400000, SIMPLE: 126400001 },
 };
 const CURRENCY = "BND";
 const BANDS = ["POOR", "IMPROVEMENT_NEEDED", "MEET", "GOOD", "VERY_GOOD", "EXCELLENT"];
