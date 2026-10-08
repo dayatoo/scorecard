@@ -290,6 +290,7 @@ describe("scoreMonthCompletion", () => {
     assert.equal(roundScore(scoreMonthCompletion(utc(2027, 1, 1), target)), 1.8);
     assert.equal(roundScore(scoreMonthCompletion(utc(2027, 1, 15), target)), 1.5);
     assert.equal(roundScore(scoreMonthCompletion(utc(2027, 2, 1), target)), 1.2);
+    assert.equal(roundScore(scoreMonthCompletion(utc(2027, 2, 14), target)), 0.9);
     assert.equal(roundScore(scoreMonthCompletion(utc(2027, 3, 31), target)), 0);
   });
 

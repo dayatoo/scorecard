@@ -81,10 +81,15 @@ different one; existing KPIs keep whatever unit they were given.
 ### Month of completion
 
 For a milestone, the target month is the Meet target. Finishing one, two or
-three months early scores Good, Very Good or Excellent; one or two months late
-scores Improvement Needed or Poor; later than that scores 0. Within a month the
-score scales by the day — with a target of October 2026, finishing on 1 October
-scores 3.4 and 31 October scores 3.0.
+three months early scores Good, Very Good or Excellent (more than three months
+early is capped at 5.0), and one month late scores Improvement Needed. Within
+each of those months the score scales by the day — with a target of October
+2026, finishing on 1 October scores 3.4 and 31 October scores 3.0.
+
+Two or more months late is Poor, and the score keeps falling from there: it
+starts at 2.4 on the first day of the second month late and drops steadily to
+0 at the end of the fiscal year (31 March). With a target of October 2026,
+finishing on 1 December scores 2.4 and 14 February scores 0.9.
 
 A milestone with no completion date sits out of the scorecard until its target
 month has passed. After that it scores as though it were completed on the last
