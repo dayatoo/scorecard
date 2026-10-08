@@ -308,7 +308,8 @@ A **choice** is a fixed list of options, such as Monthly, Quarterly and Annual.
 Each option has a **label** (the words people see) and a **value** (a number
 the flows use behind the scenes). This guide uses the numbers Power Apps
 suggests: **126,400,000** for the first option, **126,400,001** for the
-second, and so on.
+second, and so on. **Every choice starts again at 126,400,000**: the numbers
+only need to be different within one choice, not across choices.
 
 > **Do this:**
 >
@@ -320,7 +321,7 @@ second, and so on.
 >    - **Value:** leave the number Power Apps suggests. It should be `126,400,000`.
 > 5. Click **+ New choice** to add a row for each further option, in the order 3.7 lists them. Type only the **Label**; leave each suggested **Value** (`126,400,001`, `126,400,002` and so on).
 > 6. Leave everything else as it is: the small colour square, and under **Advanced options** the **Name** (it fills itself in, such as `sc_metrictype`), **External type name** and **Description**.
-> 7. Before you save, check the values run `126,400,000`, `126,400,001`, … with no gaps or repeats, in the same order as the labels. If you deleted a row and added it again, its number may have moved on: type the right number into its **Value** box.
+> 7. Before you save, check the values run `126,400,000`, `126,400,001`, … with no gaps or repeats, in the same order as the labels. If a number is different (for example, the first row suggests where the previous choice left off, or you deleted a row and added it again), type the right number into its **Value** box.
 > 8. Click **Save**.
 >
 > **Check it worked:** the choice appears in the solution. Open it again: its first option's value is `126,400,000`.
